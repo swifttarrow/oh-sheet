@@ -28,14 +28,14 @@ void main() {
       final shape = buttonTheme.shape!.resolve({});
       expect(shape, isA<RoundedRectangleBorder>());
       final rrb = shape as RoundedRectangleBorder;
-      expect(rrb.borderRadius, BorderRadius.circular(24));
+      expect(rrb.borderRadius, BorderRadius.circular(26));
     });
 
     test('cards have rounded corners', () {
       final theme = OhSheetTheme.light;
       final cardTheme = theme.cardTheme;
       final shape = cardTheme.shape as RoundedRectangleBorder;
-      expect(shape.borderRadius, BorderRadius.circular(16));
+      expect(shape.borderRadius, BorderRadius.circular(22));
     });
   });
 

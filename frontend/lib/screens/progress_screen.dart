@@ -9,7 +9,9 @@ import 'package:flutter/material.dart';
 import '../api/client.dart';
 import '../api/models.dart';
 import '../api/ws.dart';
+import '../responsive.dart';
 import '../theme.dart';
+import '../widgets/sticker_widgets.dart';
 import 'result_screen.dart';
 
 // ---------------------------------------------------------------------------
@@ -139,8 +141,10 @@ class _ProgressScreenState extends State<ProgressScreen> {
   @override
   Widget build(BuildContext context) {
     final failed = _failureMessage != null;
+    final orderedEvents = _events.reversed.toList(growable: false);
 
     return Scaffold(
+      backgroundColor: OhSheetColors.cream,
       appBar: AppBar(
         leading: IconButton(
           icon: const Icon(Icons.arrow_back),
@@ -148,109 +152,134 @@ class _ProgressScreenState extends State<ProgressScreen> {
         ),
         title: const Text('Oh Sheet'),
       ),
-      body: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 24),
-        child: Column(
-          children: [
-            const SizedBox(height: 16),
-
-            // Mascot area
-            AnimatedSwitcher(
-              duration: const Duration(milliseconds: 400),
-              child: Image.asset(
-                failed
-                    ? 'assets/mascots/mascot-error.png'
-                    : mascotAssetForStage(_currentStage),
-                key: ValueKey(failed ? 'error' : _currentStage),
-                height: 180,
-              ),
-            ),
-            const SizedBox(height: 20),
-
-            // Stage badge row
-            Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                for (final stage in _displayStages) ...[
-                  _StageBadge(
-                    label: friendlyStageName(stage),
-                    done: _completedStages.contains(stage),
-                    active: _currentStage == stage && !_completedStages.contains(stage),
+      body: SafeArea(
+        child: OhSheetResponsiveBody(
+          maxWidth: OhSheetBreakpoints.contentMedium,
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          child: CustomScrollView(
+            slivers: [
+              SliverToBoxAdapter(
+                child: OhSheetSticker(
+                  child: Column(
+                    children: [
+                      AnimatedSwitcher(
+                        duration: const Duration(milliseconds: 400),
+                        child: Image.asset(
+                          failed
+                              ? 'assets/mascots/mascot-error.png'
+                              : mascotAssetForStage(_currentStage),
+                          key: ValueKey(failed ? 'error' : _currentStage),
+                          height: 176,
+                        ),
+                      ),
+                      const SizedBox(height: 18),
+                      Wrap(
+                        alignment: WrapAlignment.center,
+                        spacing: 8,
+                        runSpacing: 10,
+                        children: [
+                          for (final stage in _displayStages)
+                            _StageBadge(
+                              label: friendlyStageName(stage),
+                              done: _completedStages.contains(stage),
+                              active: _currentStage == stage && !_completedStages.contains(stage),
+                            ),
+                        ],
+                      ),
+                      const SizedBox(height: 22),
+                      Container(
+                        height: 20,
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(14),
+                          border: Border.all(color: OhSheetColors.inkStroke, width: 2.5),
+                          color: Colors.grey.shade200,
+                        ),
+                        clipBehavior: Clip.antiAlias,
+                        child: LinearProgressIndicator(
+                          value: failed ? null : _progress,
+                          minHeight: 20,
+                          backgroundColor: Colors.transparent,
+                          valueColor: AlwaysStoppedAnimation(
+                            failed ? OhSheetColors.error : OhSheetColors.teal,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 20),
+                      if (!failed)
+                        AnimatedSwitcher(
+                          duration: const Duration(milliseconds: 300),
+                          child: Text(
+                            pipelineTips[_tipIndex],
+                            key: ValueKey(_tipIndex),
+                            textAlign: TextAlign.center,
+                            style: TextStyle(
+                              color: OhSheetColors.mutedText,
+                              fontSize: 14,
+                              fontWeight: FontWeight.w600,
+                              fontStyle: FontStyle.italic,
+                            ),
+                          ),
+                        ),
+                      if (failed) ...[
+                        const SizedBox(height: 8),
+                        Text(
+                          _failureMessage!,
+                          textAlign: TextAlign.center,
+                          style: const TextStyle(
+                            color: OhSheetColors.error,
+                            fontSize: 14,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                        const SizedBox(height: 14),
+                        FilledButton(
+                          onPressed: () => Navigator.of(context).pop(),
+                          child: const Text('Back'),
+                        ),
+                      ],
+                    ],
                   ),
-                  if (stage != _displayStages.last) const SizedBox(width: 8),
-                ],
+                ),
+              ),
+              if (orderedEvents.isNotEmpty) ...[
+                const SliverToBoxAdapter(child: SizedBox(height: 20)),
+                SliverToBoxAdapter(
+                  child: OhSheetStickerSectionTitle(
+                    text: 'Activity',
+                    accent: OhSheetColors.orange,
+                  ),
+                ),
+                const SliverToBoxAdapter(child: SizedBox(height: 10)),
               ],
-            ),
-            const SizedBox(height: 24),
-
-            // Progress bar
-            ClipRRect(
-              borderRadius: BorderRadius.circular(8),
-              child: LinearProgressIndicator(
-                value: failed ? null : _progress,
-                minHeight: 10,
-                backgroundColor: Colors.grey.shade200,
-                valueColor: AlwaysStoppedAnimation(
-                  failed ? OhSheetColors.error : OhSheetColors.teal,
-                ),
-              ),
-            ),
-            const SizedBox(height: 24),
-
-            // Rotating tip
-            if (!failed)
-              AnimatedSwitcher(
-                duration: const Duration(milliseconds: 300),
-                child: Text(
-                  pipelineTips[_tipIndex],
-                  key: ValueKey(_tipIndex),
-                  textAlign: TextAlign.center,
-                  style: const TextStyle(
-                    color: OhSheetColors.mutedText,
-                    fontSize: 14,
-                    fontStyle: FontStyle.italic,
+              if (orderedEvents.isNotEmpty)
+                SliverList(
+                  delegate: SliverChildBuilderDelegate(
+                    (context, index) {
+                      final e = orderedEvents[index];
+                      return ListTile(
+                        dense: true,
+                        leading: _eventIcon(e.type),
+                        title: Text(
+                          _friendlyEventText(e),
+                          style: const TextStyle(fontSize: 13),
+                        ),
+                        subtitle: e.message == null
+                            ? null
+                            : Text(
+                                e.message!,
+                                style: const TextStyle(
+                                  fontSize: 12,
+                                  color: OhSheetColors.mutedText,
+                                ),
+                              ),
+                      );
+                    },
+                    childCount: orderedEvents.length,
                   ),
                 ),
-              ),
-
-            // Error state
-            if (failed) ...[
-              const SizedBox(height: 16),
-              Text(
-                _failureMessage!,
-                textAlign: TextAlign.center,
-                style: const TextStyle(color: OhSheetColors.error, fontSize: 14),
-              ),
-              const SizedBox(height: 16),
-              FilledButton(
-                onPressed: () => Navigator.of(context).pop(),
-                child: const Text('Back'),
-              ),
+              const SliverToBoxAdapter(child: SizedBox(height: 24)),
             ],
-
-            const Spacer(),
-
-            // Event log (collapsed, scrollable)
-            Expanded(
-              child: ListView(
-                children: [
-                  for (final e in _events.reversed)
-                    ListTile(
-                      dense: true,
-                      leading: _eventIcon(e.type),
-                      title: Text(
-                        _friendlyEventText(e),
-                        style: const TextStyle(fontSize: 13),
-                      ),
-                      subtitle: e.message == null ? null : Text(
-                        e.message!,
-                        style: const TextStyle(fontSize: 12, color: OhSheetColors.mutedText),
-                      ),
-                    ),
-                ],
-              ),
-            ),
-          ],
+          ),
         ),
       ),
     );
@@ -295,15 +324,23 @@ class _StageBadge extends StatelessWidget {
       bg = OhSheetColors.teal;
       fg = Colors.white;
     } else {
-      bg = Colors.grey.shade200;
+      bg = Colors.white;
       fg = OhSheetColors.mutedText;
     }
 
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
       decoration: BoxDecoration(
         color: bg,
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: OhSheetColors.inkStroke, width: 2),
+        boxShadow: [
+          BoxShadow(
+            color: OhSheetColors.inkStroke.withValues(alpha: 0.06),
+            offset: const Offset(2, 3),
+            blurRadius: 0,
+          ),
+        ],
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
@@ -320,7 +357,7 @@ class _StageBadge extends StatelessWidget {
             ),
             const SizedBox(width: 4),
           ],
-          Text(label, style: TextStyle(color: fg, fontSize: 12, fontWeight: FontWeight.w600)),
+          Text(label, style: TextStyle(color: fg, fontSize: 12, fontWeight: FontWeight.w800)),
         ],
       ),
     );

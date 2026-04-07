@@ -70,9 +70,10 @@ void main() {
       await tester.tap(find.text('YouTube'));
       await tester.pumpAndSettle();
 
-      // Transcribe button should exist but be disabled
-      final button = tester.widget<FilledButton>(find.byType(FilledButton));
-      expect(button.onPressed, isNull);
+      // Primary CTA should exist but be disabled (InkWell onTap null)
+      final cta = find.byKey(const ValueKey('ohsheet_primary_submit'));
+      final ink = find.descendant(of: cta, matching: find.byType(InkWell));
+      expect(tester.widget<InkWell>(ink).onTap, isNull);
     });
 
     testWidgets('submit button is enabled with a valid YouTube URL',
@@ -88,9 +89,10 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      // Transcribe button should be enabled
-      final button = tester.widget<FilledButton>(find.byType(FilledButton));
-      expect(button.onPressed, isNotNull);
+      // Primary CTA should be enabled
+      final cta = find.byKey(const ValueKey('ohsheet_primary_submit'));
+      final ink = find.descendant(of: cta, matching: find.byType(InkWell));
+      expect(tester.widget<InkWell>(ink).onTap, isNotNull);
     });
 
     testWidgets('shows error for invalid URL format', (tester) async {
@@ -143,8 +145,9 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      // Tap Transcribe
-      await tester.tap(find.text("Let's go!"));
+      // Tap primary CTA (full tappable area, not just label text)
+      await tester.ensureVisible(find.byKey(const ValueKey('ohsheet_primary_submit')));
+      await tester.tap(find.byKey(const ValueKey('ohsheet_primary_submit')));
       await tester.pumpAndSettle();
 
       // The API should have received the YouTube URL as the title
