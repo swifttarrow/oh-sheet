@@ -159,12 +159,36 @@ class _UploadScreenState extends State<UploadScreen> {
         };
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Oh Sheet')),
-      body: Padding(
-        padding: const EdgeInsets.all(16),
+      body: SingleChildScrollView(
+        padding: const EdgeInsets.fromLTRB(16, 48, 16, 16),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
+            // Hero section
+            Center(
+              child: Image.asset(
+                'assets/mascots/mascot-home-happy.png',
+                height: 140,
+              ),
+            ),
+            const SizedBox(height: 12),
+            const Text(
+              'Turn any song into piano sheet music',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                fontSize: 20,
+                fontWeight: FontWeight.w700,
+                color: Color(0xFF2D3436),
+              ),
+            ),
+            const SizedBox(height: 8),
+            const Text(
+              'Upload audio, paste a YouTube link, or drop a MIDI file.',
+              textAlign: TextAlign.center,
+              style: TextStyle(fontSize: 14, color: Color(0xFF636E72)),
+            ),
+            const SizedBox(height: 24),
+            // Input mode selector
             SegmentedButton<_SourceMode>(
               segments: const [
                 ButtonSegment(value: _SourceMode.audio, label: Text('Audio')),
@@ -244,7 +268,7 @@ class _UploadScreenState extends State<UploadScreen> {
                       child: CircularProgressIndicator(strokeWidth: 2),
                     )
                   : const Icon(Icons.play_arrow),
-              label: Text(_submitting ? 'Submitting…' : 'Transcribe'),
+              label: Text(_submitting ? 'Working on it…' : "Let's go!"),
             ),
             if (_error != null) ...[
               const SizedBox(height: 16),
