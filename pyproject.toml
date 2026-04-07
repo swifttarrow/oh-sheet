@@ -2,7 +2,7 @@
 name = "ohsheet"
 version = "0.1.0"
 description = "FastAPI backend for the Song-to-Humanized-Piano-Sheet-Music pipeline"
-requires-python = ">=3.11"
+requires-python = ">=3.10"
 license = { text = "Proprietary" }
 authors = [{ name = "Ross" }]
 dependencies = [
@@ -12,6 +12,7 @@ dependencies = [
     "pydantic-settings>=2.1",
     "python-multipart>=0.0.9",
     "websockets>=12.0",
+    "yt-dlp>=2024.1",
 ]
 
 [project.optional-dependencies]

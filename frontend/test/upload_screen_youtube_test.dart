@@ -144,7 +144,7 @@ void main() {
       await tester.pumpAndSettle();
 
       // Tap Transcribe
-      await tester.tap(find.text('Transcribe'));
+      await tester.tap(find.text("Let's go!"));
       await tester.pumpAndSettle();
 
       // The API should have received the YouTube URL as the title
