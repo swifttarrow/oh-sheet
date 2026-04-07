@@ -238,6 +238,8 @@ def _run_mt3_sync(audio_path: Path) -> TranscriptionResult:
     model, device = _load_mt3_model()
     from backend.vendor.mr_mt3.inference import (  # noqa: PLC0415
         rescale_velocity_to_rms,
+    )
+    from backend.vendor.mr_mt3.inference import (
         transcribe as mt3_transcribe,
     )
 

@@ -8,7 +8,7 @@ service, orchestrators (Temporal/Step Functions), and the existing local
 from __future__ import annotations
 
 from enum import Enum
-from typing import Literal, Optional
+from typing import Literal
 
 from pydantic import BaseModel, Field
 
@@ -31,8 +31,8 @@ class WorkerResponse(BaseModel):
     schema_version: str
     job_id: str
     status: Literal["success", "recoverable_error", "fatal_error"]
-    output_uri: Optional[str] = None
-    logs: Optional[str] = None
+    output_uri: str | None = None
+    logs: str | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -45,13 +45,13 @@ class RemoteAudioFile(BaseModel):
     sample_rate: int
     duration_sec: float
     channels: int
-    content_hash: Optional[str] = None
+    content_hash: str | None = None
 
 
 class RemoteMidiFile(BaseModel):
     uri: str
     ticks_per_beat: int
-    content_hash: Optional[str] = None
+    content_hash: str | None = None
 
 
 class SectionLabel(str, Enum):
@@ -91,7 +91,7 @@ class TempoMapEntry(BaseModel):
     bpm: float
 
 
-def sec_to_beat(time_sec: float, tempo_map: list["TempoMapEntry"]) -> float:
+def sec_to_beat(time_sec: float, tempo_map: list[TempoMapEntry]) -> float:
     """Convert real-time seconds to a beat position via the tempo map.
 
     Walks the map and uses the last anchor at or before ``time_sec`` —
@@ -108,7 +108,7 @@ def sec_to_beat(time_sec: float, tempo_map: list["TempoMapEntry"]) -> float:
     return entry.beat + (time_sec - entry.time_sec) * (entry.bpm / 60.0)
 
 
-def beat_to_sec(beat: float, tempo_map: list["TempoMapEntry"]) -> float:
+def beat_to_sec(beat: float, tempo_map: list[TempoMapEntry]) -> float:
     """Convert a beat position to real-time seconds via the tempo map."""
     if not tempo_map:
         raise ValueError("tempo_map is empty")
@@ -126,15 +126,15 @@ def beat_to_sec(beat: float, tempo_map: list["TempoMapEntry"]) -> float:
 # ---------------------------------------------------------------------------
 
 class InputMetadata(BaseModel):
-    title: Optional[str] = None
-    artist: Optional[str] = None
+    title: str | None = None
+    artist: str | None = None
     source: Literal["title_lookup", "audio_upload", "midi_upload"]
 
 
 class InputBundle(BaseModel):
     schema_version: str = SCHEMA_VERSION
-    audio: Optional[RemoteAudioFile] = None
-    midi: Optional[RemoteMidiFile] = None
+    audio: RemoteAudioFile | None = None
+    midi: RemoteMidiFile | None = None
     metadata: InputMetadata
 
 
@@ -152,7 +152,7 @@ class Note(BaseModel):
 class MidiTrack(BaseModel):
     notes: list[Note]
     instrument: InstrumentRole
-    program: Optional[int] = Field(default=None, ge=0, le=127)  # GM program emitted by the model
+    program: int | None = Field(default=None, ge=0, le=127)  # GM program emitted by the model
     confidence: float = Field(..., ge=0.0, le=1.0)
 
 
@@ -250,8 +250,8 @@ class ExpressiveNote(BaseModel):
 class DynamicMarking(BaseModel):
     beat: float
     type: Literal["pp", "p", "mp", "mf", "f", "ff", "crescendo", "decrescendo"]
-    span_beats: Optional[float] = None
-    target: Optional[str] = None
+    span_beats: float | None = None
+    target: str | None = None
 
 
 class Articulation(BaseModel):
@@ -270,7 +270,7 @@ class PedalEvent(BaseModel):
 class TempoChange(BaseModel):
     beat: float
     type: Literal["accel", "rit", "a_tempo", "fermata"]
-    target_bpm: Optional[float] = None
+    target_bpm: float | None = None
 
 
 class ExpressionMap(BaseModel):
@@ -307,7 +307,7 @@ class EngravedOutput(BaseModel):
     pdf_uri: str
     musicxml_uri: str
     humanized_midi_uri: str
-    audio_preview_uri: Optional[str] = None
+    audio_preview_uri: str | None = None
 
 
 # ---------------------------------------------------------------------------

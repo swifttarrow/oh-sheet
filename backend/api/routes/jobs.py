@@ -1,7 +1,7 @@
 """Job submission and inspection."""
 from __future__ import annotations
 
-from typing import Annotated, Optional
+from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
@@ -36,10 +36,10 @@ class JobCreateRequest(BaseModel):
     source.
     """
 
-    audio: Optional[RemoteAudioFile] = None
-    midi: Optional[RemoteMidiFile] = None
-    title: Optional[str] = None
-    artist: Optional[str] = None
+    audio: RemoteAudioFile | None = None
+    midi: RemoteMidiFile | None = None
+    title: str | None = None
+    artist: str | None = None
 
     skip_humanizer: bool = False
     difficulty: Difficulty = "intermediate"
@@ -49,10 +49,10 @@ class JobSummary(BaseModel):
     job_id: str
     status: str
     variant: str
-    title: Optional[str] = None
-    artist: Optional[str] = None
-    error: Optional[str] = None
-    result: Optional[EngravedOutput] = None
+    title: str | None = None
+    artist: str | None = None
+    error: str | None = None
+    result: EngravedOutput | None = None
 
 
 def _record_to_summary(record: JobRecord) -> JobSummary:

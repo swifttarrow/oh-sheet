@@ -8,8 +8,8 @@ forward them to WebSocket subscribers.
 from __future__ import annotations
 
 import logging
+from collections.abc import Callable
 from pathlib import Path
-from typing import Callable, Optional
 from urllib.parse import urlparse
 
 from backend.contracts import (
@@ -203,7 +203,7 @@ class PipelineRunner:
         job_id: str,
         bundle: InputBundle,
         config: PipelineConfig,
-        on_event: Optional[EventCallback] = None,
+        on_event: EventCallback | None = None,
     ) -> EngravedOutput:
         plan = config.get_execution_plan()
         n = len(plan)
@@ -213,10 +213,10 @@ class PipelineRunner:
                 return
             on_event(JobEvent(job_id=job_id, type=event_type, stage=stage, **kw))
 
-        txr: Optional[TranscriptionResult] = None
-        score: Optional[PianoScore] = None
-        perf: Optional[HumanizedPerformance] = None
-        result: Optional[EngravedOutput] = None
+        txr: TranscriptionResult | None = None
+        score: PianoScore | None = None
+        perf: HumanizedPerformance | None = None
+        result: EngravedOutput | None = None
 
         title = bundle.metadata.title or "Untitled"
         composer = bundle.metadata.artist or "Unknown"
