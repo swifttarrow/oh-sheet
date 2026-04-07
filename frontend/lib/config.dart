@@ -1,0 +1,35 @@
+/// Runtime configuration.
+///
+/// Override at build time with:
+///   flutter run --dart-define=API_BASE_URL=http://192.168.1.42:8000
+///
+/// Defaults pick a sensible host per platform: Android emulators reach the
+/// host machine at 10.0.2.2; everything else uses localhost.
+library;
+
+import 'dart:io' show Platform;
+
+import 'package:flutter/foundation.dart';
+
+class AppConfig {
+  static const String _envBaseUrl = String.fromEnvironment('API_BASE_URL');
+
+  static String get apiBaseUrl {
+    if (_envBaseUrl.isNotEmpty) return _envBaseUrl;
+    if (kIsWeb) return 'http://localhost:8000';
+    try {
+      if (Platform.isAndroid) return 'http://10.0.2.2:8000';
+    } catch (_) {
+      // Platform isn't available on web; fall through.
+    }
+    return 'http://localhost:8000';
+  }
+
+  /// ws:// (or wss://) variant of the API base, used for the live job stream.
+  static String get wsBaseUrl {
+    final base = apiBaseUrl;
+    if (base.startsWith('https://')) return 'wss://${base.substring(8)}';
+    if (base.startsWith('http://')) return 'ws://${base.substring(7)}';
+    return base;
+  }
+}

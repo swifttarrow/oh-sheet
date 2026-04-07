@@ -1,0 +1,24 @@
+name: ohsheet_app
+description: Oh Sheet — cross-platform Flutter client for the FastAPI pipeline.
+publish_to: 'none'
+version: 0.1.0+1
+
+environment:
+  sdk: ">=3.3.0 <4.0.0"
+  flutter: ">=3.19.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+  http: ^1.2.0
+  web_socket_channel: ^2.4.0
+  file_picker: ^8.0.0
+  url_launcher: ^6.2.5
+
+dev_dependencies:
+  flutter_lints: ^4.0.0
+  flutter_test:
+    sdk: flutter
+
+flutter:
+  uses-material-design: true

@@ -2,7 +2,6 @@
 name = "ohsheet"
 version = "0.1.0"
 description = "FastAPI backend for the Song-to-Humanized-Piano-Sheet-Music pipeline"
-readme = "README.md"
 requires-python = ">=3.11"
 license = { text = "Proprietary" }
 authors = [{ name = "Ross" }]
@@ -20,16 +19,38 @@ dev = [
     "pytest>=8.0",
     "httpx>=0.26",
 ]
+youtube = [
+    "yt-dlp>=2024.1",
+]
+# Pretrained MT3 baseline (backend.vendor.mr_mt3). Heavy ML deps — installed
+# only when you actually want to run the model. Without these the
+# TranscribeService falls back to a stub TranscriptionResult.
+mt3 = [
+    "torch>=2.1",
+    "torchaudio>=2.1",
+    "librosa>=0.10",
+    "numpy>=1.26",
+    "note-seq>=0.0.5",
+    "transformers>=4.40",
+    "einops>=0.7",
+    "tqdm>=4.66",
+    "absl-py>=2.0",
+]
 
 [project.scripts]
-ohsheet = "ohsheet.main:run"
+ohsheet = "backend.main:run"
 
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
-packages = ["ohsheet"]
+packages = ["backend"]
+# Ship the vendored MT3 checkpoint + config alongside the Python sources so
+# `pip install ohsheet[mt3]` produces a self-contained baseline transcriber.
+[tool.hatch.build.targets.wheel.force-include]
+"backend/vendor/mr_mt3/pretrained/mt3.pth" = "backend/vendor/mr_mt3/pretrained/mt3.pth"
+"backend/vendor/mr_mt3/config/mt3_config.json" = "backend/vendor/mr_mt3/config/mt3_config.json"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

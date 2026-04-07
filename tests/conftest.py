@@ -5,9 +5,9 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
-from ohsheet.api import deps
-from ohsheet.config import settings
-from ohsheet.main import create_app
+from backend.api import deps
+from backend.config import settings
+from backend.main import create_app
 
 
 @pytest.fixture(autouse=True)

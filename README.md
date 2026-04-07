@@ -34,22 +34,22 @@ MP3 / MIDI / Song Link
 
 ### Pipeline Variants
 
-| Variant | Entry Point | Stages | Use Case |
-|---------|-------------|--------|----------|
-| `full` | Song title/link | 1 → 2 → 3 → 4 → 5 | "Turn this Spotify song into sheet music" |
-| `audio_upload` | MP3/WAV file | 2 → 3 → 4 → 5 | User uploads their own audio |
-| `midi_upload` | MIDI file | 3 → 4 → 5 | Skip transcription, arrange existing MIDI |
-| `sheet_only` | Audio/MIDI | 1/2 → 3 → 5 | Skip humanization, quantized output only |
+| Variant        | Entry Point     | Stages            | Use Case                                  |
+| -------------- | --------------- | ----------------- | ----------------------------------------- |
+| `full`         | Song title/link | 1 → 2 → 3 → 4 → 5 | "Turn this Spotify song into sheet music" |
+| `audio_upload` | MP3/WAV file    | 2 → 3 → 4 → 5     | User uploads their own audio              |
+| `midi_upload`  | MIDI file       | 3 → 4 → 5         | Skip transcription, arrange existing MIDI |
+| `sheet_only`   | Audio/MIDI      | 1/2 → 3 → 5       | Skip humanization, quantized output only  |
 
 ### Data Flow Between Stages
 
 ```
 InputBundle          TranscriptionResult      PianoScore
-  audio ──────────►   stems (separated)  ──►   right_hand[]
-  midi (optional)     midi_tracks[]            left_hand[]
-  metadata            harmonic_analysis        metadata (key, tempo, difficulty)
-                        chords[]
+  audio ──────────►   midi_tracks[]      ──►   right_hand[]
+  midi (optional)     harmonic_analysis        left_hand[]
+  metadata              chords[]               metadata (key, tempo, difficulty)
                         sections[]
+                      quality
 
 PianoScore           HumanizedPerformance     EngravedOutput
   ──────────────►     expressive_notes[] ──►   pdf (bytes)
@@ -61,27 +61,42 @@ PianoScore           HumanizedPerformance     EngravedOutput
 
 ## Tech Stack
 
-| Stage | Primary Tool | Fallback |
-|-------|-------------|----------|
-| Transcription | MT3 / Custom Conformer | Basic Pitch |
-| Chord/Structure | madmom | librosa |
-| Arrangement | music21 | LLM (GPT-4) |
-| Humanization | Rule-based + ML | — |
-| Engraving | LilyPond | MuseScore CLI |
+| Stage           | Primary Tool           | Fallback      |
+| --------------- | ---------------------- | ------------- |
+| Transcription   | MT3 / Custom Conformer | Basic Pitch   |
+| Chord/Structure | madmom                 | librosa       |
+| Arrangement     | music21                | LLM (GPT-4)   |
+| Humanization    | Rule-based + ML        | —             |
+| Engraving       | LilyPond               | MuseScore CLI |
 
 ## Status
 
-This repo currently contains the **API skeleton**. Each stage service is a
-stub that returns shape-correct contract objects but does **not** run real ML
-inference, `music21`, LilyPond, etc. The wrappers will delegate to the
-existing pipeline implementations in a follow-up PR.
+This repo currently contains the **API skeleton + Flutter client skeleton**.
+Each backend stage service is a stub that returns shape-correct contract
+objects but does **not** run real ML inference, `music21`, LilyPond, etc.
+The wrappers will delegate to the existing pipeline implementations in a
+follow-up PR.
+
+## Repo layout
+
+```
+oh-sheet/
+├── pyproject.toml          # Python project (FastAPI service)
+├── backend/                # Python package — importable as `backend`
+├── tests/                  # pytest suite
+├── frontend/               # Flutter cross-platform client
+│   ├── lib/                # Dart sources
+│   └── pubspec.yaml
+├── Makefile                # top-level orchestration
+└── README.md
+```
 
 ## Architecture
 
 ### Backend (FastAPI)
 
 ```
-ohsheet/
+backend/
 ├── main.py              # FastAPI app factory + uvicorn entry
 ├── config.py            # Pydantic settings
 ├── contracts.py         # Pydantic models — mirrors api-contracts-v2.md (3.0.0)
@@ -103,8 +118,25 @@ ohsheet/
         ├── health.py
         ├── uploads.py   # POST /v1/uploads/{audio,midi} → Claim-Check URIs
         ├── jobs.py      # POST /v1/jobs, GET /v1/jobs/{id}, list
+        ├── artifacts.py # GET  /v1/artifacts/{job_id}/{kind} — download outputs
         ├── stages.py    # POST /v1/stages/{ingest,…} — worker envelope
         └── ws.py        # WS  /v1/jobs/{id}/ws — live event stream
+```
+
+### Frontend (Flutter)
+
+```
+frontend/lib/
+├── main.dart                # MaterialApp + OhSheetApi singleton
+├── config.dart              # API base URL via --dart-define=API_BASE_URL
+├── api/
+│   ├── models.dart          # JobSummary, JobEvent, RemoteAudioFile, RemoteMidiFile
+│   ├── client.dart          # uploads / createJob / getJob / artifactUrl
+│   └── ws.dart              # WebSocket job-event stream
+└── screens/
+    ├── upload_screen.dart   # Audio / MIDI / Title segmented input
+    ├── progress_screen.dart # Live WS progress bar + stage list
+    └── result_screen.dart   # Download PDF / MIDI / MusicXML buttons
 ```
 
 ### System Overview
@@ -123,14 +155,36 @@ ohsheet/
 
 ## Run
 
+Install both sides and start the dev servers (requires Python 3.11+ and the
+Flutter SDK on your `$PATH`):
+
 ```bash
-pip install -e ".[dev]"
-ohsheet                              # or: uvicorn ohsheet.main:app --reload
+make install      # pip install -e .[dev] + flutter pub get in frontend/
+make backend      # uvicorn on http://localhost:8000  (terminal 1)
+make frontend     # flutter run -d chrome             (terminal 2)
+```
+
+`make help` lists every target. Useful overrides:
+
+```bash
+make frontend DEVICE=ios                                  # run on a different device
+make frontend API_BASE_URL=http://192.168.1.42:8000       # point at a non-localhost backend
+make backend  PORT=9000                                   # bind a different port
 ```
 
 OpenAPI docs at <http://localhost:8000/docs>.
 
-## Submit a job
+> **First-time Flutter setup.** The `frontend/` directory ships with
+> `lib/`, `pubspec.yaml`, and `analysis_options.yaml` — but no platform
+> scaffolding (iOS / Android / web / macOS folders). Generate them with:
+>
+> ```bash
+> cd frontend && flutter create --platforms=web,ios,android,macos .
+> ```
+>
+> This is non-destructive: it only adds files and won't touch the existing Dart sources.
+
+## Submit a job (curl)
 
 ```bash
 # 1. Upload an audio file → returns a RemoteAudioFile (Claim-Check URI)
@@ -143,6 +197,11 @@ curl -X POST http://localhost:8000/v1/jobs \
 
 # 3. Stream live updates over WebSocket
 wscat -c ws://localhost:8000/v1/jobs/<job_id>/ws
+
+# 4. Once the job has succeeded, download the artifacts
+curl -OJ http://localhost:8000/v1/artifacts/<job_id>/pdf
+curl -OJ http://localhost:8000/v1/artifacts/<job_id>/midi
+curl -OJ http://localhost:8000/v1/artifacts/<job_id>/musicxml
 ```
 
 ## Per-stage worker endpoints
@@ -182,13 +241,13 @@ Full API spec: [TuneChat API Contracts](https://github.com/robin-raq/TuneChat/bl
 ## Tests
 
 ```bash
-pytest
+make test          # → pytest
 ```
 
 ## Wiring real services
 
-Each file under `ohsheet/services/` has a top-of-file docstring marking what
-to replace. The plan:
+Each file under `backend/services/` has a top-of-file docstring marking
+what to replace. The plan:
 
 1. Move (or `pip install -e`) the existing pipeline modules so they're
    importable.
