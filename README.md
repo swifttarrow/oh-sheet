@@ -43,11 +43,11 @@ MP3 / MIDI / Song Link
 
 ```
 InputBundle          TranscriptionResult      PianoScore
-  audio ──────────►   stems (separated)  ──►   right_hand[]
-  midi (optional)     midi_tracks[]            left_hand[]
-  metadata            harmonic_analysis        metadata (key, tempo, difficulty)
-                        chords[]
+  audio ──────────►   midi_tracks[]      ──►   right_hand[]
+  midi (optional)     harmonic_analysis        left_hand[]
+  metadata              chords[]               metadata (key, tempo, difficulty)
                         sections[]
+                      quality
 
 PianoScore           HumanizedPerformance     EngravedOutput
   ──────────────►     expressive_notes[] ──►   pdf (bytes)

@@ -21,7 +21,6 @@ from backend.contracts import (
     PianoScore,
     PipelineConfig,
     QualitySignal,
-    SeparatedStems,
     TempoMapEntry,
     TranscriptionResult,
 )
@@ -45,7 +44,6 @@ def _bundle_to_transcription(bundle: InputBundle) -> TranscriptionResult:
     """
     return TranscriptionResult(
         schema_version=SCHEMA_VERSION,
-        stems=SeparatedStems(),
         midi_tracks=[
             MidiTrack(
                 notes=[
@@ -53,7 +51,7 @@ def _bundle_to_transcription(bundle: InputBundle) -> TranscriptionResult:
                     Note(pitch=62, onset_sec=0.5, offset_sec=1.0, velocity=80),
                 ],
                 instrument=InstrumentRole.PIANO,
-                source_stem="midi_upload",
+                program=0,
                 confidence=0.9,
             ),
         ],

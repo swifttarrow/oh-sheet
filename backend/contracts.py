@@ -109,21 +109,8 @@ class InputBundle(BaseModel):
 
 
 # ---------------------------------------------------------------------------
-# Contract 2 — TRANSCRIBE & ISOLATE
+# Contract 2 — TRANSCRIBE
 # ---------------------------------------------------------------------------
-
-class SeparatedStems(BaseModel):
-    """Explicit URIs for stems. None means the stem was not isolated/found."""
-    vocals: Optional[RemoteAudioFile] = None
-    drums: Optional[RemoteAudioFile] = None
-    bass: Optional[RemoteAudioFile] = None
-    other: Optional[RemoteAudioFile] = None
-    piano: Optional[RemoteAudioFile] = None
-
-    @property
-    def has_rhythm_section(self) -> bool:
-        return bool(self.drums and self.bass)
-
 
 class Note(BaseModel):
     pitch: int = Field(..., ge=0, le=127)
@@ -135,7 +122,7 @@ class Note(BaseModel):
 class MidiTrack(BaseModel):
     notes: list[Note]
     instrument: InstrumentRole
-    source_stem: str
+    program: Optional[int] = Field(default=None, ge=0, le=127)  # GM program emitted by the model
     confidence: float = Field(..., ge=0.0, le=1.0)
 
 
@@ -163,7 +150,6 @@ class HarmonicAnalysis(BaseModel):
 
 class TranscriptionResult(BaseModel):
     schema_version: str = SCHEMA_VERSION
-    stems: SeparatedStems = Field(default_factory=SeparatedStems)
     midi_tracks: list[MidiTrack]
     analysis: HarmonicAnalysis
     quality: QualitySignal

@@ -6,8 +6,16 @@ All values can be overridden via environment variables prefixed with
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Optional
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+# Default MT3 checkpoint lives next to the vendored source tree at
+# backend/vendor/mr_mt3/pretrained/mt3.pth (tracked via git-lfs).
+_VENDORED_MT3_CHECKPOINT = (
+    Path(__file__).resolve().parent
+    / "vendor" / "mr_mt3" / "pretrained" / "mt3.pth"
+)
 
 
 class Settings(BaseSettings):
@@ -25,6 +33,14 @@ class Settings(BaseSettings):
 
     # Worker timeout used by OrchestratorCommand envelopes.
     job_timeout_sec: int = 600
+
+    # ---- MT3 baseline transcription ----------------------------------------
+    # Path to the pretrained MT3 checkpoint. Defaults to the vendored copy
+    # at backend/vendor/mr_mt3/pretrained/mt3.pth (git-lfs). Override via
+    # OHSHEET_MT3_CHECKPOINT_PATH to point at a fine-tuned checkpoint.
+    mt3_checkpoint_path: Optional[Path] = _VENDORED_MT3_CHECKPOINT
+    # Inference knobs.
+    mt3_batch_size: int = 4
 
 
 settings = Settings()
