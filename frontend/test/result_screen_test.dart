@@ -57,7 +57,8 @@ void main() {
 
     testWidgets('shows MIDI download button', (tester) async {
       await tester.pumpWidget(_app());
-      expect(find.textContaining('MIDI'), findsOneWidget);
+      // Button text is just "MIDI" (exact match), not the playback label
+      expect(find.text('MIDI'), findsOneWidget);
     });
 
     testWidgets('shows MusicXML download button', (tester) async {
@@ -68,6 +69,11 @@ void main() {
     testWidgets('shows transcribe another button', (tester) async {
       await tester.pumpWidget(_app());
       expect(find.textContaining('another'), findsOneWidget);
+    });
+
+    testWidgets('shows MIDI player section header', (tester) async {
+      await tester.pumpWidget(_app());
+      expect(find.text('Listen'), findsOneWidget);
     });
   });
 }

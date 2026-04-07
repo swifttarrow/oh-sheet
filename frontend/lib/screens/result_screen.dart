@@ -7,6 +7,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../api/client.dart';
 import '../api/models.dart';
 import '../theme.dart';
+import '../widgets/midi_player.dart';
 
 class ResultScreen extends StatelessWidget {
   const ResultScreen({super.key, required this.api, required this.job});
@@ -61,6 +62,31 @@ class ResultScreen extends StatelessWidget {
                 ),
               ),
             ],
+            const SizedBox(height: 24),
+
+            // MIDI player section
+            const Align(
+              alignment: Alignment.centerLeft,
+              child: Text(
+                'Listen',
+                style: TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.w700,
+                  color: OhSheetColors.darkText,
+                ),
+              ),
+            ),
+            const SizedBox(height: 8),
+            Container(
+              height: 100,
+              width: double.infinity,
+              decoration: BoxDecoration(
+                color: Colors.white,
+                border: Border.all(color: Colors.grey.shade300),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: const MidiPlayerWidget(),
+            ),
             const SizedBox(height: 24),
 
             // Download buttons
