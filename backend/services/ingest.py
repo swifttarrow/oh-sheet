@@ -52,6 +52,7 @@ def extract_youtube_id(url: str) -> str | None:
     if host not in _YOUTUBE_HOSTS:
         return None
     # youtu.be/<id>
+    video_id: str | None
     if host == "youtu.be":
         video_id = parsed.path.lstrip("/").split("/")[0]
     else:
@@ -74,11 +75,11 @@ def _download_youtube_sync(url: str, blob_store) -> RemoteAudioFile:
 
     try:
         import yt_dlp
-    except ImportError:
+    except ImportError as err:
         raise RuntimeError(
             "yt-dlp is required for YouTube downloads. "
             "Install with: pip install ohsheet[youtube]"
-        )
+        ) from err
 
     video_id = extract_youtube_id(url)
     if video_id is None:
@@ -206,6 +207,7 @@ class IngestService:
             audio is None
             and midi is None
             and payload.metadata.source == "title_lookup"
+            and payload.metadata.title is not None
             and is_youtube_url(payload.metadata.title)
         ):
             audio = await asyncio.to_thread(

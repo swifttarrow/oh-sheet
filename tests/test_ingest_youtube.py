@@ -6,7 +6,7 @@ They define the expected behavior for YouTube URL detection and download.
 from __future__ import annotations
 
 import asyncio
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import patch
 
 import pytest
 
@@ -16,8 +16,7 @@ from backend.contracts import (
     InputMetadata,
     RemoteAudioFile,
 )
-from backend.services.ingest import IngestService, is_youtube_url, extract_youtube_id
-
+from backend.services.ingest import IngestService, extract_youtube_id, is_youtube_url
 
 # ---------------------------------------------------------------------------
 # Unit tests: YouTube URL detection
