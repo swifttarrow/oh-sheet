@@ -85,7 +85,7 @@ class ResultScreen extends StatelessWidget {
                 border: Border.all(color: Colors.grey.shade300),
                 borderRadius: BorderRadius.circular(12),
               ),
-              child: const MidiPlayerWidget(),
+              child: MidiPlayerWidget(midiUrl: api.artifactUrl(job.jobId, 'midi')),
             ),
             const SizedBox(height: 24),
 
