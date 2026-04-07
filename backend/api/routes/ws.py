@@ -4,6 +4,12 @@ Connect to ``/v1/jobs/{job_id}/ws`` to stream JobEvents as JSON. Late
 subscribers receive a replay of all events that have already happened so
 they don't miss the start of the pipeline. The connection closes after the
 terminal event (``job_succeeded`` or ``job_failed``).
+
+This serves as the **callback mechanism** for the frontend: the Flutter
+progress screen subscribes here and transitions to the result screen when
+``job_succeeded`` arrives. No separate HTTP callback endpoint is needed
+for MVP — the in-process pipeline emits events via JobManager._emit(),
+which fans them out to all active WebSocket subscribers.
 """
 from __future__ import annotations
 
