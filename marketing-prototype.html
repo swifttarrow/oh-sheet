@@ -1,0 +1,694 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Oh Sheet - Marketing Prototype</title>
+  <style>
+    :root {
+      --bg: #070b14;
+      --panel: #0f172a;
+      --panel-soft: #111d3a;
+      --text: #e2e8f0;
+      --muted: #9aa8be;
+      --brand: #60a5fa;
+      --brand-2: #22d3ee;
+      --ok: #10b981;
+      --active: #f59e0b;
+      --border: rgba(148, 163, 184, 0.28);
+      --shadow: 0 20px 45px rgba(0, 0, 0, 0.5);
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      display: grid;
+      place-items: center;
+      font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+      color: var(--text);
+      background:
+        radial-gradient(circle at 15% 20%, rgba(34, 211, 238, 0.13), transparent 45%),
+        radial-gradient(circle at 85% 10%, rgba(96, 165, 250, 0.12), transparent 50%),
+        var(--bg);
+      padding: 24px;
+    }
+
+    .shell {
+      width: min(900px, 100%);
+      background: linear-gradient(175deg, rgba(15, 23, 42, 0.9), rgba(7, 11, 20, 0.96));
+      border: 1px solid var(--border);
+      border-radius: 20px;
+      box-shadow: var(--shadow);
+      padding: 36px;
+    }
+
+    h1 {
+      margin: 0 0 10px;
+      font-size: clamp(1.6rem, 3.5vw, 2.3rem);
+      letter-spacing: 0.3px;
+    }
+
+    .lead {
+      margin: 0 0 28px;
+      color: var(--muted);
+      max-width: 58ch;
+      line-height: 1.5;
+    }
+
+    .input-row {
+      display: grid;
+      gap: 12px;
+      grid-template-columns: 1fr auto;
+      align-items: end;
+    }
+
+    .field {
+      display: grid;
+      gap: 8px;
+    }
+
+    .field label {
+      font-size: 0.95rem;
+      color: #c8d4e9;
+    }
+
+    input[type="text"] {
+      width: 100%;
+      padding: 14px 15px;
+      font-size: 1rem;
+      color: var(--text);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      background: rgba(15, 23, 42, 0.8);
+      outline: none;
+    }
+
+    input[type="text"]:focus {
+      border-color: var(--brand);
+      box-shadow: 0 0 0 3px rgba(96, 165, 250, 0.2);
+    }
+
+    button {
+      border: none;
+      border-radius: 12px;
+      padding: 14px 22px;
+      font-size: 1rem;
+      font-weight: 700;
+      color: #041321;
+      background: linear-gradient(125deg, var(--brand), var(--brand-2));
+      cursor: pointer;
+      transition: transform 0.15s ease, filter 0.15s ease;
+      min-width: 130px;
+    }
+
+    button:hover {
+      transform: translateY(-1px);
+      filter: brightness(1.05);
+    }
+
+    button:disabled {
+      cursor: not-allowed;
+      transform: none;
+      filter: grayscale(0.15) brightness(0.75);
+    }
+
+    .hint {
+      margin-top: 12px;
+      color: var(--muted);
+      font-size: 0.92rem;
+    }
+
+    .modal[hidden] {
+      display: none;
+    }
+
+    .modal {
+      position: fixed;
+      inset: 0;
+      z-index: 50;
+      display: grid;
+      place-items: center;
+      background: rgba(2, 6, 23, 0.78);
+      backdrop-filter: blur(4px);
+      padding: 20px;
+    }
+
+    .modal-panel {
+      width: min(980px, 100%);
+      max-height: min(92vh, 860px);
+      overflow: auto;
+      border-radius: 18px;
+      border: 1px solid var(--border);
+      background: linear-gradient(180deg, #0e1732 0%, #070d1f 100%);
+      box-shadow: var(--shadow);
+      padding: 24px;
+    }
+
+    .modal-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      margin-bottom: 16px;
+    }
+
+    .modal-head h2 {
+      margin: 0;
+      font-size: 1.25rem;
+    }
+
+    .close-btn {
+      padding: 8px 12px;
+      min-width: 90px;
+      font-size: 0.9rem;
+      border: 1px solid var(--border);
+      color: var(--text);
+      background: rgba(15, 23, 42, 0.8);
+    }
+
+    .progress {
+      height: 8px;
+      background: rgba(148, 163, 184, 0.2);
+      border-radius: 99px;
+      overflow: hidden;
+      margin-bottom: 18px;
+    }
+
+    .progress > span {
+      display: block;
+      width: 0%;
+      height: 100%;
+      background: linear-gradient(90deg, var(--brand), var(--brand-2));
+      transition: width 0.06s linear;
+    }
+
+    .steps {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 14px;
+    }
+
+    .step {
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      background: rgba(15, 23, 42, 0.58);
+      padding: 14px;
+    }
+
+    .step h3 {
+      margin: 0 0 8px;
+      font-size: 1rem;
+    }
+
+    .badge {
+      display: inline-block;
+      border-radius: 999px;
+      padding: 4px 10px;
+      font-size: 0.74rem;
+      font-weight: 700;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      margin-bottom: 10px;
+      border: 1px solid var(--border);
+      color: var(--muted);
+      background: rgba(15, 23, 42, 0.72);
+    }
+
+    .step.active {
+      border-color: rgba(245, 158, 11, 0.7);
+      background: rgba(245, 158, 11, 0.12);
+    }
+
+    .step.active .badge {
+      color: #ffddb0;
+      border-color: rgba(245, 158, 11, 0.7);
+      background: rgba(245, 158, 11, 0.18);
+    }
+
+    .step.done {
+      border-color: rgba(16, 185, 129, 0.7);
+      background: rgba(16, 185, 129, 0.12);
+    }
+
+    .step.done .badge {
+      color: #b9f5d8;
+      border-color: rgba(16, 185, 129, 0.7);
+      background: rgba(16, 185, 129, 0.18);
+    }
+
+    .asset {
+      width: 100%;
+      margin-top: 6px;
+      border-radius: 10px;
+      background: rgba(2, 6, 23, 0.55);
+      border: 1px solid rgba(148, 163, 184, 0.25);
+    }
+
+    .asset-note {
+      margin-top: 7px;
+      color: #c7d2e6;
+      font-size: 0.82rem;
+      line-height: 1.45;
+    }
+
+    .status-line {
+      margin: 14px 2px 0;
+      color: #d2def1;
+      font-size: 0.95rem;
+    }
+
+    @media (max-width: 880px) {
+      .steps {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main class="shell">
+    <h1>Turn any song into polished piano sheet music</h1>
+    <p class="lead">
+      Search a song title, trigger one click, and show the full transcription
+      pipeline in action from source audio to a finished engraved result.
+    </p>
+
+    <div class="input-row">
+      <div class="field">
+        <label for="songInput">Song name</label>
+        <input
+          id="songInput"
+          type="text"
+          placeholder="Type a song name..."
+          autocomplete="off"
+          spellcheck="false"
+        />
+      </div>
+      <button id="transcribeBtn" disabled>Transcribe</button>
+    </div>
+  </main>
+
+  <section class="modal" id="pipelineModal" hidden>
+    <div class="modal-panel" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
+      <div class="modal-head">
+        <h2 id="modalTitle">Transcription Pipeline</h2>
+        <button class="close-btn" id="closeModalBtn" type="button">Close</button>
+      </div>
+
+      <div class="progress" aria-label="Pipeline progress">
+        <span id="progressFill"></span>
+      </div>
+
+      <div class="steps">
+        <article class="step" id="step1">
+          <div class="badge" id="badge1">Pending</div>
+          <h3>1. Uploading original</h3>
+          <p class="asset-note">In demo mode, background audio starts with this step.</p>
+        </article>
+
+        <article class="step" id="step2">
+          <div class="badge" id="badge2">Pending</div>
+          <h3>2. Transcribing to MIDI</h3>
+          <p class="asset-note">Background track switches to transcription preview audio.</p>
+        </article>
+
+        <article class="step" id="step3">
+          <div class="badge" id="badge3">Pending</div>
+          <h3>3. Engraving final output</h3>
+          <p class="asset-note">Sheet music preview appears as engraving completes.</p>
+          <img
+            id="asset3Image"
+            class="asset"
+            alt="Final engraved sheet music preview"
+            data-src="./assets/rising-sun-sheet-screenshot.png"
+            hidden
+          />
+        </article>
+      </div>
+
+      <p class="status-line" id="statusLine">Waiting for transcription to start...</p>
+    </div>
+  </section>
+
+  <!-- Hidden audio tracks for demo recording -->
+  <audio id="bgTrack1" preload="auto" src="./assets/rising-sun-1.mp3" hidden></audio>
+  <audio id="bgTrack2" preload="auto" src="./assets/rising-sun-2.mp3" hidden></audio>
+  <audio id="bgTrack3" preload="auto" src="./assets/rising-sun-3.mp3" hidden></audio>
+
+  <script>
+    const songInput = document.getElementById("songInput");
+    const transcribeBtn = document.getElementById("transcribeBtn");
+    const pipelineModal = document.getElementById("pipelineModal");
+    const closeModalBtn = document.getElementById("closeModalBtn");
+    const progressFill = document.getElementById("progressFill");
+    const statusLine = document.getElementById("statusLine");
+    const asset3Image = document.getElementById("asset3Image");
+
+    const stepEls = [
+      document.getElementById("step1"),
+      document.getElementById("step2"),
+      document.getElementById("step3")
+    ];
+    const badgeEls = [
+      document.getElementById("badge1"),
+      document.getElementById("badge2"),
+      document.getElementById("badge3")
+    ];
+
+    const backgroundTracks = [
+      document.getElementById("bgTrack1"),
+      document.getElementById("bgTrack2"),
+      document.getElementById("bgTrack3")
+    ];
+
+    const songOptions = [
+      "House of the Rising Sun",
+      "The Sound of Silence",
+      "Hallelujah",
+      "Yesterday",
+      "Imagine"
+    ];
+
+    const stageText = [
+      "Uploading original recording...",
+      "Running audio-to-MIDI transcription...",
+      "Engraving the final score and performance preview..."
+    ];
+
+    let stageIndex = -1;
+    let runToken = 0;
+    let progressTicker = null;
+    let progressValue = 0;
+
+    const progressRanges = [
+      { start: 0, end: 33.3333 },
+      { start: 33.3333, end: 66.6666 },
+      { start: 66.6666, end: 99.5 }
+    ];
+    const fallbackStepDurationsMs = [12600, 14800, 17900];
+
+    function stopBackgroundTracks() {
+      backgroundTracks.forEach((track) => {
+        track.pause();
+        track.currentTime = 0;
+      });
+    }
+
+    function stopProgressTicker() {
+      if (progressTicker !== null) {
+        window.cancelAnimationFrame(progressTicker);
+        progressTicker = null;
+      }
+    }
+
+    function setProgress(nextValue) {
+      progressValue = Math.max(progressValue, Math.min(nextValue, 100));
+      progressFill.style.width = `${progressValue}%`;
+    }
+
+    function startProgressTicker(index, durationMs) {
+      stopProgressTicker();
+      const { start, end } = progressRanges[index];
+      setProgress(start);
+      const startTime = window.performance.now();
+
+      function tick() {
+        const elapsed = window.performance.now() - startTime;
+        const ratio = Math.min(Math.max(elapsed / durationMs, 0), 1);
+        const next = start + ((end - start) * ratio);
+        setProgress(next);
+        if (ratio < 1) {
+          progressTicker = window.requestAnimationFrame(tick);
+        } else {
+          progressTicker = null;
+        }
+      }
+
+      progressTicker = window.requestAnimationFrame(tick);
+    }
+
+    function resetState() {
+      runToken += 1;
+      stageIndex = -1;
+      progressValue = 0;
+      stopProgressTicker();
+      stopBackgroundTracks();
+      delete asset3Image.dataset.retried;
+      asset3Image.hidden = true;
+      stepEls.forEach((el) => el.className = "step");
+      badgeEls.forEach((el) => el.textContent = "Pending");
+      progressFill.style.width = "0%";
+      statusLine.textContent = "Waiting for transcription to start...";
+    }
+
+    function updateButtonState() {
+      const valid = songOptions.includes(songInput.value.trim());
+      transcribeBtn.disabled = !valid;
+    }
+
+    async function tryPlay(mediaEl) {
+      try {
+        await mediaEl.play();
+        return { ok: true };
+      } catch {
+        return { ok: false };
+      }
+    }
+
+    function setStepUi(index) {
+      stageIndex = index;
+
+      stepEls.forEach((el, i) => {
+        el.classList.remove("active", "done");
+        if (i < index) {
+          el.classList.add("done");
+        } else if (i === index) {
+          el.classList.add("active");
+        }
+      });
+
+      badgeEls.forEach((badge, i) => {
+        if (i < index) {
+          badge.textContent = "Complete";
+        } else if (i === index) {
+          badge.textContent = "In progress";
+        } else {
+          badge.textContent = "Pending";
+        }
+      });
+
+      if (index < 2) {
+        asset3Image.hidden = true;
+      } else {
+        loadStep3Image();
+        asset3Image.hidden = false;
+      }
+      statusLine.textContent = stageText[index];
+    }
+
+    function wait(ms) {
+      return new Promise((resolve) => {
+        window.setTimeout(resolve, ms);
+      });
+    }
+
+    function loadStep3Image() {
+      const configuredSrc = asset3Image.dataset.src || "./assets/rising-sun-sheet-screenshot.png";
+      const resolvedSrc = new URL(configuredSrc, window.location.href).href;
+      if (asset3Image.src !== resolvedSrc) {
+        asset3Image.src = resolvedSrc;
+      }
+    }
+
+    function waitForAudioMetadata(track, timeoutMs = 2500) {
+      if (!track) {
+        return Promise.resolve();
+      }
+
+      const hasDuration = Number.isFinite(track.duration) && track.duration > 0;
+      if (hasDuration) {
+        return Promise.resolve();
+      }
+
+      return new Promise((resolve) => {
+        let done = false;
+        const timeoutId = window.setTimeout(() => {
+          if (done) {
+            return;
+          }
+          done = true;
+          track.removeEventListener("loadedmetadata", onReady);
+          track.removeEventListener("durationchange", onReady);
+          resolve();
+        }, timeoutMs);
+
+        function onReady() {
+          const ready = Number.isFinite(track.duration) && track.duration > 0;
+          if (!ready || done) {
+            return;
+          }
+          done = true;
+          window.clearTimeout(timeoutId);
+          track.removeEventListener("loadedmetadata", onReady);
+          track.removeEventListener("durationchange", onReady);
+          resolve();
+        }
+
+        track.addEventListener("loadedmetadata", onReady);
+        track.addEventListener("durationchange", onReady);
+      });
+    }
+
+    function getStepDurationMs(index) {
+      const fallbackMs = fallbackStepDurationsMs[index] || 8000;
+      const track = backgroundTracks[index];
+      if (!track) {
+        return fallbackMs;
+      }
+
+      const seconds = track.duration;
+      if (!Number.isFinite(seconds) || seconds <= 0) {
+        return fallbackMs;
+      }
+
+      return seconds * 1000;
+    }
+
+    function waitForTrackCompletion(track, durationMs, token) {
+      if (!track) {
+        return wait(durationMs);
+      }
+
+      return new Promise((resolve) => {
+        let finished = false;
+
+        function cleanup() {
+          track.removeEventListener("ended", onEnded);
+          window.clearTimeout(timeoutId);
+          window.clearInterval(cancelCheckId);
+        }
+
+        function finish() {
+          if (finished) {
+            return;
+          }
+          finished = true;
+          cleanup();
+          resolve();
+        }
+
+        function onEnded() {
+          finish();
+        }
+
+        const timeoutId = window.setTimeout(finish, durationMs + 150);
+        const cancelCheckId = window.setInterval(() => {
+          if (token !== runToken) {
+            finish();
+          }
+        }, 100);
+
+        track.addEventListener("ended", onEnded);
+      });
+    }
+
+    async function playBackgroundTrack(index) {
+      stopBackgroundTracks();
+      const track = backgroundTracks[index];
+      if (!track) {
+        return;
+      }
+      track.muted = false;
+      track.volume = 1;
+      track.currentTime = 0;
+      await tryPlay(track);
+    }
+
+    async function playStep(index, token) {
+      setStepUi(index);
+      await playBackgroundTrack(index);
+      await waitForAudioMetadata(backgroundTracks[index]);
+      const durationMs = getStepDurationMs(index);
+      startProgressTicker(index, durationMs);
+
+      await waitForTrackCompletion(backgroundTracks[index], durationMs, token);
+      if (token !== runToken) {
+        return false;
+      }
+
+      stopProgressTicker();
+      setProgress(progressRanges[index].end);
+      return true;
+    }
+
+    function completePipeline() {
+      stopProgressTicker();
+      progressValue = 100;
+      progressFill.style.width = "100%";
+      badgeEls[2].textContent = "Complete";
+      stepEls[2].classList.remove("active");
+      stepEls[2].classList.add("done");
+      statusLine.textContent = "Done. Your score package is ready.";
+    }
+
+    async function runPipeline() {
+      const token = runToken;
+      for (let i = 0; i < stepEls.length; i += 1) {
+        if (token !== runToken) {
+          return;
+        }
+        const completed = await playStep(i, token);
+        if (!completed) {
+          return;
+        }
+        if (token !== runToken) {
+          return;
+        }
+      }
+
+      if (token === runToken) {
+        completePipeline();
+      }
+    }
+
+    songInput.addEventListener("input", updateButtonState);
+    songInput.addEventListener("change", updateButtonState);
+
+    transcribeBtn.addEventListener("click", () => {
+      resetState();
+      pipelineModal.hidden = false;
+      runPipeline();
+    });
+
+    closeModalBtn.addEventListener("click", () => {
+      resetState();
+      pipelineModal.hidden = true;
+    });
+
+    pipelineModal.addEventListener("click", (event) => {
+      if (event.target === pipelineModal) {
+        resetState();
+        pipelineModal.hidden = true;
+      }
+    });
+
+    asset3Image.addEventListener("error", () => {
+      if (asset3Image.dataset.retried === "1") {
+        return;
+      }
+      asset3Image.dataset.retried = "1";
+      asset3Image.src = "./assets/rising-sun-sheet-screenshot.png";
+    });
+
+    document.addEventListener("keydown", (event) => {
+      if (event.key === "Escape" && !pipelineModal.hidden) {
+        resetState();
+        pipelineModal.hidden = true;
+      }
+    });
+  </script>
+</body>
+</html>
