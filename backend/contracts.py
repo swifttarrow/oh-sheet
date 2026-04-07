@@ -91,6 +91,36 @@ class TempoMapEntry(BaseModel):
     bpm: float
 
 
+def sec_to_beat(time_sec: float, tempo_map: list["TempoMapEntry"]) -> float:
+    """Convert real-time seconds to a beat position via the tempo map.
+
+    Walks the map and uses the last anchor at or before ``time_sec`` —
+    constant-tempo songs collapse to the trivial ``beat = sec * bpm/60``.
+    """
+    if not tempo_map:
+        raise ValueError("tempo_map is empty")
+    entry = tempo_map[0]
+    for e in tempo_map:
+        if e.time_sec <= time_sec:
+            entry = e
+        else:
+            break
+    return entry.beat + (time_sec - entry.time_sec) * (entry.bpm / 60.0)
+
+
+def beat_to_sec(beat: float, tempo_map: list["TempoMapEntry"]) -> float:
+    """Convert a beat position to real-time seconds via the tempo map."""
+    if not tempo_map:
+        raise ValueError("tempo_map is empty")
+    entry = tempo_map[0]
+    for e in tempo_map:
+        if e.beat <= beat:
+            entry = e
+        else:
+            break
+    return entry.time_sec + (beat - entry.beat) * (60.0 / entry.bpm)
+
+
 # ---------------------------------------------------------------------------
 # Contract 1 — INPUT INGESTION
 # ---------------------------------------------------------------------------
@@ -109,21 +139,8 @@ class InputBundle(BaseModel):
 
 
 # ---------------------------------------------------------------------------
-# Contract 2 — TRANSCRIBE & ISOLATE
+# Contract 2 — TRANSCRIBE
 # ---------------------------------------------------------------------------
-
-class SeparatedStems(BaseModel):
-    """Explicit URIs for stems. None means the stem was not isolated/found."""
-    vocals: Optional[RemoteAudioFile] = None
-    drums: Optional[RemoteAudioFile] = None
-    bass: Optional[RemoteAudioFile] = None
-    other: Optional[RemoteAudioFile] = None
-    piano: Optional[RemoteAudioFile] = None
-
-    @property
-    def has_rhythm_section(self) -> bool:
-        return bool(self.drums and self.bass)
-
 
 class Note(BaseModel):
     pitch: int = Field(..., ge=0, le=127)
@@ -135,7 +152,7 @@ class Note(BaseModel):
 class MidiTrack(BaseModel):
     notes: list[Note]
     instrument: InstrumentRole
-    source_stem: str
+    program: Optional[int] = Field(default=None, ge=0, le=127)  # GM program emitted by the model
     confidence: float = Field(..., ge=0.0, le=1.0)
 
 
@@ -163,7 +180,6 @@ class HarmonicAnalysis(BaseModel):
 
 class TranscriptionResult(BaseModel):
     schema_version: str = SCHEMA_VERSION
-    stems: SeparatedStems = Field(default_factory=SeparatedStems)
     midi_tracks: list[MidiTrack]
     analysis: HarmonicAnalysis
     quality: QualitySignal

@@ -14,13 +14,15 @@ PORT         ?= 8000
 
 DART_DEFINE := $(if $(API_BASE_URL),--dart-define=API_BASE_URL=$(API_BASE_URL),)
 
-.PHONY: help install install-backend install-frontend backend frontend test test-backend lint clean
+.PHONY: help install install-backend install-mt3 install-frontend backend frontend test test-backend lint clean
 
 help:
 	@echo "Oh Sheet — make targets"
 	@echo ""
-	@echo "  make install            install backend (editable) + flutter pub get"
-	@echo "  make install-backend    pip install -e .[dev]"
+	@echo "  make install            full install: backend + MT3 deps + flutter pub get"
+	@echo "  make install-backend    pip install -e .[dev]  (API only — TranscribeService"
+	@echo "                          will fall back to a 4-note stub without MT3)"
+	@echo "  make install-mt3        pip install -e .[mt3]  (torch + note-seq, ~2 GB)"
 	@echo "  make install-frontend   flutter pub get inside frontend/"
 	@echo ""
 	@echo "  make backend            run uvicorn dev server on $(HOST):$(PORT)"
@@ -33,10 +35,13 @@ help:
 
 # ---- install ----------------------------------------------------------------
 
-install: install-backend install-frontend
+install: install-backend install-mt3 install-frontend
 
 install-backend:
 	pip install -e ".[dev]"
+
+install-mt3:
+	pip install -e ".[mt3]"
 
 install-frontend:
 	cd $(FRONTEND) && flutter pub get
