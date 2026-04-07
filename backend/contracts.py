@@ -91,6 +91,36 @@ class TempoMapEntry(BaseModel):
     bpm: float
 
 
+def sec_to_beat(time_sec: float, tempo_map: list["TempoMapEntry"]) -> float:
+    """Convert real-time seconds to a beat position via the tempo map.
+
+    Walks the map and uses the last anchor at or before ``time_sec`` —
+    constant-tempo songs collapse to the trivial ``beat = sec * bpm/60``.
+    """
+    if not tempo_map:
+        raise ValueError("tempo_map is empty")
+    entry = tempo_map[0]
+    for e in tempo_map:
+        if e.time_sec <= time_sec:
+            entry = e
+        else:
+            break
+    return entry.beat + (time_sec - entry.time_sec) * (entry.bpm / 60.0)
+
+
+def beat_to_sec(beat: float, tempo_map: list["TempoMapEntry"]) -> float:
+    """Convert a beat position to real-time seconds via the tempo map."""
+    if not tempo_map:
+        raise ValueError("tempo_map is empty")
+    entry = tempo_map[0]
+    for e in tempo_map:
+        if e.beat <= beat:
+            entry = e
+        else:
+            break
+    return entry.time_sec + (beat - entry.beat) * (60.0 / entry.bpm)
+
+
 # ---------------------------------------------------------------------------
 # Contract 1 — INPUT INGESTION
 # ---------------------------------------------------------------------------
