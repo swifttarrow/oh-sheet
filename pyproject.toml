@@ -20,6 +20,9 @@ dev = [
     "pytest>=8.0",
     "httpx>=0.26",
 ]
+youtube = [
+    "yt-dlp>=2024.1",
+]
 # Pretrained MT3 baseline (backend.vendor.mr_mt3). Heavy ML deps — installed
 # only when you actually want to run the model. Without these the
 # TranscribeService falls back to a stub TranscriptionResult.
