@@ -1,0 +1,945 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Oh Sheet — Wireframes</title>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@300;400;500;600;700&family=Space+Grotesk:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+<style>
+  :root {
+    --bg: #0a0a0f;
+    --surface: #12121a;
+    --surface-2: #1a1a26;
+    --surface-3: #222233;
+    --border: #2a2a3a;
+    --text: #e8e8f0;
+    --text-muted: #7a7a8e;
+    --accent: #7c3aed;
+    --accent-glow: rgba(124, 58, 237, 0.15);
+    --accent-light: #a78bfa;
+    --success: #34d399;
+    --warning: #fbbf24;
+    --danger: #f87171;
+    --radius: 12px;
+    --font-mono: 'IBM Plex Mono', monospace;
+    --font-display: 'Space Grotesk', sans-serif;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: var(--font-mono);
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* ── Section Dividers ──────────────────── */
+  .screen-divider {
+    text-align: center;
+    padding: 60px 20px 30px;
+    position: relative;
+  }
+  .screen-divider::before {
+    content: '';
+    position: absolute;
+    top: 30px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 80%;
+    max-width: 600px;
+    height: 1px;
+    background: linear-gradient(90deg, transparent, var(--border), transparent);
+  }
+  .screen-label {
+    font-family: var(--font-display);
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 4px;
+    text-transform: uppercase;
+    color: var(--accent);
+    background: var(--bg);
+    padding: 0 16px;
+    display: inline-block;
+    position: relative;
+  }
+
+  /* ── Shared ────────────────────────────── */
+  .container {
+    max-width: 900px;
+    margin: 0 auto;
+    padding: 0 24px;
+  }
+
+  .logo {
+    font-family: var(--font-display);
+    font-size: 20px;
+    font-weight: 700;
+    letter-spacing: -0.5px;
+  }
+  .logo .accent { color: var(--accent); }
+  .logo i { margin-right: 6px; font-size: 16px; color: var(--accent); }
+
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 12px 24px;
+    font-family: var(--font-mono);
+    font-size: 13px;
+    font-weight: 500;
+    border: none;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+  .btn-primary {
+    background: var(--accent);
+    color: white;
+  }
+  .btn-primary:hover {
+    background: #6d28d9;
+    box-shadow: 0 0 30px var(--accent-glow);
+  }
+  .btn-secondary {
+    background: var(--surface-2);
+    color: var(--text);
+    border: 1px solid var(--border);
+  }
+  .btn-secondary:hover {
+    background: var(--surface-3);
+    border-color: var(--accent);
+  }
+  .btn-ghost {
+    background: transparent;
+    color: var(--text-muted);
+    border: 1px solid var(--border);
+  }
+  .btn-ghost:hover {
+    color: var(--text);
+    border-color: var(--text-muted);
+  }
+
+  /* ── Nav ────────────────────────────────── */
+  nav {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 20px 24px;
+    max-width: 900px;
+    margin: 0 auto;
+  }
+  nav .nav-links {
+    display: flex;
+    gap: 24px;
+    font-size: 13px;
+    color: var(--text-muted);
+  }
+  nav .nav-links a {
+    color: inherit;
+    text-decoration: none;
+    transition: color 0.2s;
+  }
+  nav .nav-links a:hover { color: var(--text); }
+
+  /* ══════════════════════════════════════════
+     SCREEN 1: UPLOAD / SEARCH
+     ══════════════════════════════════════════ */
+  .hero {
+    text-align: center;
+    padding: 60px 0 40px;
+  }
+  .hero h1 {
+    font-family: var(--font-display);
+    font-size: 42px;
+    font-weight: 700;
+    letter-spacing: -1.5px;
+    margin-bottom: 12px;
+    line-height: 1.1;
+  }
+  .hero h1 .accent { color: var(--accent); }
+  .hero p {
+    font-size: 14px;
+    color: var(--text-muted);
+    max-width: 480px;
+    margin: 0 auto;
+  }
+
+  .upload-zone {
+    border: 2px dashed var(--border);
+    border-radius: var(--radius);
+    padding: 48px 32px;
+    text-align: center;
+    margin: 24px 0;
+    background: var(--surface);
+    transition: all 0.3s;
+    cursor: pointer;
+    position: relative;
+    overflow: hidden;
+  }
+  .upload-zone::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: radial-gradient(circle at 50% 50%, var(--accent-glow), transparent 70%);
+    opacity: 0;
+    transition: opacity 0.3s;
+  }
+  .upload-zone:hover {
+    border-color: var(--accent);
+  }
+  .upload-zone:hover::before {
+    opacity: 1;
+  }
+  .upload-zone i {
+    font-size: 36px;
+    color: var(--accent-light);
+    margin-bottom: 16px;
+    display: block;
+    position: relative;
+  }
+  .upload-zone .upload-label {
+    font-family: var(--font-display);
+    font-size: 16px;
+    font-weight: 500;
+    margin-bottom: 6px;
+    position: relative;
+  }
+  .upload-zone .upload-hint {
+    font-size: 12px;
+    color: var(--text-muted);
+    position: relative;
+  }
+  .upload-formats {
+    display: flex;
+    gap: 8px;
+    justify-content: center;
+    margin-top: 16px;
+    position: relative;
+  }
+  .format-tag {
+    font-size: 10px;
+    font-weight: 600;
+    padding: 4px 10px;
+    border-radius: 4px;
+    background: var(--surface-2);
+    color: var(--text-muted);
+    letter-spacing: 1px;
+  }
+
+  .divider-or {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    margin: 20px 0;
+    font-size: 11px;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 2px;
+  }
+  .divider-or::before, .divider-or::after {
+    content: '';
+    flex: 1;
+    height: 1px;
+    background: var(--border);
+  }
+
+  .search-bar {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 24px;
+  }
+  .search-bar input {
+    flex: 1;
+    padding: 14px 16px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    color: var(--text);
+    font-family: var(--font-mono);
+    font-size: 14px;
+    outline: none;
+    transition: border-color 0.2s;
+  }
+  .search-bar input::placeholder { color: var(--text-muted); }
+  .search-bar input:focus { border-color: var(--accent); }
+
+  .options-row {
+    display: flex;
+    gap: 12px;
+    margin-bottom: 28px;
+    flex-wrap: wrap;
+  }
+  .option-group {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    flex: 1;
+    min-width: 200px;
+  }
+  .option-group label {
+    font-size: 11px;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 1px;
+  }
+  .option-group select {
+    padding: 10px 12px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    color: var(--text);
+    font-family: var(--font-mono);
+    font-size: 13px;
+    outline: none;
+    cursor: pointer;
+  }
+
+  .generate-btn-wrap {
+    text-align: center;
+    margin: 32px 0;
+  }
+  .generate-btn-wrap .btn {
+    padding: 16px 48px;
+    font-size: 14px;
+    font-weight: 600;
+    letter-spacing: 0.5px;
+  }
+
+  .recent-jobs {
+    margin-top: 48px;
+    padding-top: 32px;
+    border-top: 1px solid var(--border);
+  }
+  .recent-jobs h3 {
+    font-family: var(--font-display);
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--text-muted);
+    margin-bottom: 16px;
+    text-transform: uppercase;
+    letter-spacing: 2px;
+  }
+  .job-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 14px 16px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    margin-bottom: 8px;
+    font-size: 13px;
+    transition: border-color 0.2s;
+    cursor: pointer;
+  }
+  .job-row:hover { border-color: var(--accent); }
+  .job-title { font-weight: 500; }
+  .job-meta { color: var(--text-muted); font-size: 12px; }
+  .job-status {
+    font-size: 11px;
+    font-weight: 600;
+    padding: 4px 10px;
+    border-radius: 4px;
+    letter-spacing: 0.5px;
+  }
+  .status-completed { background: rgba(52, 211, 153, 0.1); color: var(--success); }
+  .status-processing { background: var(--accent-glow); color: var(--accent-light); }
+
+  /* ══════════════════════════════════════════
+     SCREEN 2: PROCESSING
+     ══════════════════════════════════════════ */
+  .processing-screen {
+    padding: 40px 0 60px;
+  }
+  .processing-header {
+    text-align: center;
+    margin-bottom: 48px;
+  }
+  .processing-header h2 {
+    font-family: var(--font-display);
+    font-size: 24px;
+    font-weight: 600;
+    margin-bottom: 4px;
+  }
+  .processing-header .song-name {
+    color: var(--accent-light);
+    font-size: 14px;
+  }
+
+  .stepper {
+    display: flex;
+    justify-content: space-between;
+    position: relative;
+    margin: 0 auto 48px;
+    max-width: 700px;
+  }
+  .stepper::before {
+    content: '';
+    position: absolute;
+    top: 20px;
+    left: 40px;
+    right: 40px;
+    height: 2px;
+    background: var(--border);
+  }
+  .stepper::after {
+    content: '';
+    position: absolute;
+    top: 20px;
+    left: 40px;
+    width: 45%;
+    height: 2px;
+    background: var(--accent);
+    transition: width 0.5s;
+  }
+  .step {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 10px;
+    position: relative;
+    z-index: 1;
+  }
+  .step-dot {
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 14px;
+    font-weight: 600;
+    transition: all 0.3s;
+  }
+  .step-done .step-dot {
+    background: var(--accent);
+    color: white;
+  }
+  .step-active .step-dot {
+    background: var(--surface);
+    border: 2px solid var(--accent);
+    color: var(--accent);
+    box-shadow: 0 0 20px var(--accent-glow);
+    animation: pulse 2s infinite;
+  }
+  .step-pending .step-dot {
+    background: var(--surface-2);
+    border: 2px solid var(--border);
+    color: var(--text-muted);
+  }
+  .step-label {
+    font-size: 11px;
+    font-weight: 500;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    color: var(--text-muted);
+    white-space: nowrap;
+  }
+  .step-done .step-label { color: var(--text); }
+  .step-active .step-label { color: var(--accent-light); }
+
+  @keyframes pulse {
+    0%, 100% { box-shadow: 0 0 20px var(--accent-glow); }
+    50% { box-shadow: 0 0 40px rgba(124, 58, 237, 0.3); }
+  }
+
+  .processing-detail {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 32px;
+    text-align: center;
+    max-width: 500px;
+    margin: 0 auto;
+  }
+  .processing-detail .stage-name {
+    font-family: var(--font-display);
+    font-size: 18px;
+    font-weight: 600;
+    color: var(--accent-light);
+    margin-bottom: 8px;
+  }
+  .processing-detail .stage-desc {
+    font-size: 13px;
+    color: var(--text-muted);
+    margin-bottom: 20px;
+  }
+  .progress-bar {
+    width: 100%;
+    height: 4px;
+    background: var(--surface-3);
+    border-radius: 2px;
+    overflow: hidden;
+    margin-bottom: 16px;
+  }
+  .progress-fill {
+    height: 100%;
+    width: 65%;
+    background: linear-gradient(90deg, var(--accent), var(--accent-light));
+    border-radius: 2px;
+    animation: shimmer 2s infinite;
+  }
+  @keyframes shimmer {
+    0% { opacity: 1; }
+    50% { opacity: 0.7; }
+    100% { opacity: 1; }
+  }
+  .elapsed {
+    font-size: 12px;
+    color: var(--text-muted);
+    margin-bottom: 20px;
+    font-variant-numeric: tabular-nums;
+  }
+  .elapsed span { color: var(--text); font-weight: 500; }
+
+  /* ══════════════════════════════════════════
+     SCREEN 3: RESULTS
+     ══════════════════════════════════════════ */
+  .results-screen {
+    padding: 40px 0 80px;
+  }
+  .results-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    margin-bottom: 24px;
+    gap: 16px;
+    flex-wrap: wrap;
+  }
+  .results-header h2 {
+    font-family: var(--font-display);
+    font-size: 28px;
+    font-weight: 700;
+    letter-spacing: -0.5px;
+  }
+  .results-header .song-artist {
+    font-size: 14px;
+    color: var(--text-muted);
+    margin-top: 2px;
+  }
+
+  .meta-tags {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+    margin-bottom: 24px;
+  }
+  .meta-tag {
+    font-size: 11px;
+    padding: 6px 12px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    color: var(--text-muted);
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .meta-tag i { color: var(--accent-light); font-size: 10px; }
+
+  .sheet-preview {
+    background: #f8f8f4;
+    border-radius: var(--radius);
+    padding: 32px;
+    margin-bottom: 24px;
+    min-height: 320px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    position: relative;
+    overflow: hidden;
+  }
+  .sheet-preview .staff {
+    width: 100%;
+    max-width: 600px;
+  }
+  .staff-line {
+    border-bottom: 1px solid #ccc;
+    height: 8px;
+    position: relative;
+  }
+  .staff-line:last-child { border-bottom: none; }
+  .staff-group {
+    margin-bottom: 24px;
+  }
+  .sheet-placeholder {
+    color: #999;
+    font-size: 13px;
+    font-family: var(--font-mono);
+    margin-top: 16px;
+  }
+  .clef {
+    font-size: 48px;
+    color: #444;
+    position: absolute;
+    left: 0;
+    top: -16px;
+  }
+  .notes-placeholder {
+    display: flex;
+    gap: 24px;
+    margin-top: 12px;
+  }
+  .note-dot {
+    width: 10px;
+    height: 10px;
+    background: #333;
+    border-radius: 50%;
+    position: relative;
+  }
+  .note-dot::after {
+    content: '';
+    position: absolute;
+    right: -2px;
+    top: -20px;
+    width: 2px;
+    height: 20px;
+    background: #333;
+  }
+
+  .playback-bar {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    padding: 16px 20px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    margin-bottom: 24px;
+  }
+  .play-btn {
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    background: var(--accent);
+    border: none;
+    color: white;
+    font-size: 14px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+  }
+  .play-btn:hover { background: #6d28d9; }
+  .playback-track {
+    flex: 1;
+    height: 4px;
+    background: var(--surface-3);
+    border-radius: 2px;
+    position: relative;
+  }
+  .playback-progress {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 30%;
+    height: 100%;
+    background: var(--accent);
+    border-radius: 2px;
+  }
+  .playback-progress::after {
+    content: '';
+    position: absolute;
+    right: -5px;
+    top: -3px;
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background: var(--accent-light);
+  }
+  .playback-time {
+    font-size: 12px;
+    color: var(--text-muted);
+    font-variant-numeric: tabular-nums;
+    flex-shrink: 0;
+  }
+  .tempo-control {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 12px;
+    color: var(--text-muted);
+    flex-shrink: 0;
+    padding-left: 16px;
+    border-left: 1px solid var(--border);
+  }
+  .tempo-control input[type="range"] {
+    width: 60px;
+    accent-color: var(--accent);
+  }
+
+  .action-buttons {
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+    margin-bottom: 16px;
+  }
+  .btn i { font-size: 12px; }
+
+  .tunechat-cta {
+    background: linear-gradient(135deg, var(--surface), var(--surface-2));
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 24px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    margin-top: 24px;
+  }
+  .tunechat-cta .cta-text h4 {
+    font-family: var(--font-display);
+    font-size: 15px;
+    font-weight: 600;
+    margin-bottom: 4px;
+  }
+  .tunechat-cta .cta-text p {
+    font-size: 12px;
+    color: var(--text-muted);
+  }
+  .tunechat-btn {
+    background: #c41e3a;
+    color: white;
+    white-space: nowrap;
+  }
+  .tunechat-btn:hover {
+    background: #a01830;
+    box-shadow: 0 0 30px rgba(196, 30, 58, 0.2);
+  }
+
+  /* ── Responsive ────────────────────────── */
+  @media (max-width: 640px) {
+    .hero h1 { font-size: 28px; }
+    .stepper { flex-direction: column; gap: 16px; align-items: flex-start; padding-left: 32px; }
+    .stepper::before { top: 0; bottom: 0; left: 19px; width: 2px; height: auto; }
+    .stepper::after { top: 0; left: 19px; width: 2px; height: 45%; }
+    .step { flex-direction: row; gap: 16px; }
+    .results-header { flex-direction: column; }
+    .playback-bar { flex-wrap: wrap; }
+    .tempo-control { border-left: none; padding-left: 0; }
+    .tunechat-cta { flex-direction: column; text-align: center; }
+  }
+</style>
+</head>
+<body>
+
+<!-- NAV -->
+<nav>
+  <div class="logo"><i class="fas fa-music"></i> Oh <span class="accent">Sheet</span></div>
+  <div class="nav-links">
+    <a href="#">Docs</a>
+    <a href="#">API</a>
+    <a href="https://github.com/swifttarrow/oh-sheet">GitHub</a>
+  </div>
+</nav>
+
+<!-- ═══════════════════════════════════════════════
+     SCREEN 1: UPLOAD / SEARCH
+     ═══════════════════════════════════════════════ -->
+<div class="screen-divider">
+  <span class="screen-label">Screen 1 &mdash; Upload / Search</span>
+</div>
+
+<section class="container">
+  <div class="hero">
+    <h1>Any song. <span class="accent">Piano sheet.</span></h1>
+    <p>Upload an MP3 or MIDI file, or search by song name. We'll transcribe, arrange, and engrave it into playable piano sheet music.</p>
+  </div>
+
+  <div class="upload-zone">
+    <i class="fas fa-cloud-arrow-up"></i>
+    <div class="upload-label">Drop a file here or click to browse</div>
+    <div class="upload-hint">We'll handle the rest</div>
+    <div class="upload-formats">
+      <span class="format-tag">MP3</span>
+      <span class="format-tag">WAV</span>
+      <span class="format-tag">MIDI</span>
+      <span class="format-tag">FLAC</span>
+    </div>
+  </div>
+
+  <div class="divider-or">or search by name</div>
+
+  <div class="search-bar">
+    <input type="text" placeholder="Search for a song (e.g. Turkish March, Fur Elise...)">
+    <button class="btn btn-secondary"><i class="fas fa-search"></i></button>
+  </div>
+
+  <div class="options-row">
+    <div class="option-group">
+      <label>Difficulty</label>
+      <select>
+        <option>Auto-detect</option>
+        <option>Grade 1 (Beginner)</option>
+        <option>Grade 2</option>
+        <option>Grade 3 (Intermediate)</option>
+        <option>Grade 4</option>
+        <option>Grade 5 (Advanced)</option>
+      </select>
+    </div>
+    <div class="option-group">
+      <label>Output Format</label>
+      <select>
+        <option>PDF + MusicXML + MIDI</option>
+        <option>PDF only</option>
+        <option>MusicXML only</option>
+      </select>
+    </div>
+  </div>
+
+  <div class="generate-btn-wrap">
+    <button class="btn btn-primary"><i class="fas fa-wand-magic-sparkles"></i> Generate Sheet Music</button>
+  </div>
+
+  <div class="recent-jobs">
+    <h3>Recent</h3>
+    <div class="job-row">
+      <div>
+        <div class="job-title">Apple &mdash; Charli XCX</div>
+        <div class="job-meta">2 minutes ago &middot; Grade 3</div>
+      </div>
+      <span class="job-status status-completed">Completed</span>
+    </div>
+    <div class="job-row">
+      <div>
+        <div class="job-title">Turkish March &mdash; Mozart</div>
+        <div class="job-meta">Processing &middot; Grade 1</div>
+      </div>
+      <span class="job-status status-processing">Processing</span>
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════════════════════════════════════════
+     SCREEN 2: PROCESSING
+     ═══════════════════════════════════════════════ -->
+<div class="screen-divider">
+  <span class="screen-label">Screen 2 &mdash; Processing</span>
+</div>
+
+<section class="container processing-screen">
+  <div class="processing-header">
+    <h2>Processing your song</h2>
+    <div class="song-name">Turkish March &mdash; Mozart</div>
+  </div>
+
+  <div class="stepper">
+    <div class="step step-done">
+      <div class="step-dot"><i class="fas fa-check" style="font-size:12px"></i></div>
+      <span class="step-label">Ingest</span>
+    </div>
+    <div class="step step-done">
+      <div class="step-dot"><i class="fas fa-check" style="font-size:12px"></i></div>
+      <span class="step-label">Transcribe</span>
+    </div>
+    <div class="step step-active">
+      <div class="step-dot">3</div>
+      <span class="step-label">Arrange</span>
+    </div>
+    <div class="step step-pending">
+      <div class="step-dot">4</div>
+      <span class="step-label">Humanize</span>
+    </div>
+    <div class="step step-pending">
+      <div class="step-dot">5</div>
+      <span class="step-label">Engrave</span>
+    </div>
+  </div>
+
+  <div class="processing-detail">
+    <div class="stage-name">Arranging for Piano</div>
+    <div class="stage-desc">Reducing multi-instrument transcription to a two-handed piano score...</div>
+    <div class="progress-bar"><div class="progress-fill"></div></div>
+    <div class="elapsed">Elapsed: <span>0:47</span></div>
+    <button class="btn btn-ghost"><i class="fas fa-xmark"></i> Cancel</button>
+  </div>
+</section>
+
+<!-- ═══════════════════════════════════════════════
+     SCREEN 3: RESULTS
+     ═══════════════════════════════════════════════ -->
+<div class="screen-divider">
+  <span class="screen-label">Screen 3 &mdash; Results</span>
+</div>
+
+<section class="container results-screen">
+  <div class="results-header">
+    <div>
+      <h2>Turkish March</h2>
+      <div class="song-artist">Wolfgang Amadeus Mozart</div>
+    </div>
+    <button class="btn btn-ghost"><i class="fas fa-arrow-left"></i> Try another</button>
+  </div>
+
+  <div class="meta-tags">
+    <span class="meta-tag"><i class="fas fa-signal"></i> Grade 1 (Beginner)</span>
+    <span class="meta-tag"><i class="fas fa-drum"></i> 120 BPM</span>
+    <span class="meta-tag"><i class="fas fa-key"></i> A minor</span>
+    <span class="meta-tag"><i class="fas fa-clock"></i> 3:24</span>
+    <span class="meta-tag"><i class="fas fa-file-lines"></i> 4 pages</span>
+  </div>
+
+  <div class="sheet-preview">
+    <div class="staff">
+      <div class="staff-group" style="position:relative;padding-left:40px;">
+        <div style="position:absolute;left:0;top:-4px;font-size:36px;color:#555;">&#119070;</div>
+        <div class="staff-line"></div>
+        <div class="staff-line"></div>
+        <div class="staff-line"></div>
+        <div class="staff-line"></div>
+        <div class="staff-line"></div>
+      </div>
+      <div class="staff-group">
+        <div class="staff-line"></div>
+        <div class="staff-line"></div>
+        <div class="staff-line"></div>
+        <div class="staff-line"></div>
+        <div class="staff-line"></div>
+      </div>
+      <div class="staff-group">
+        <div class="staff-line"></div>
+        <div class="staff-line"></div>
+        <div class="staff-line"></div>
+        <div class="staff-line"></div>
+        <div class="staff-line"></div>
+      </div>
+    </div>
+    <div class="sheet-placeholder">Sheet music renders here (MusicXML / PDF preview)</div>
+  </div>
+
+  <div class="playback-bar">
+    <button class="play-btn"><i class="fas fa-play"></i></button>
+    <div class="playback-track"><div class="playback-progress"></div></div>
+    <div class="playback-time">1:02 / 3:24</div>
+    <div class="tempo-control">
+      <span>Tempo</span>
+      <input type="range" min="50" max="200" value="120">
+      <span>120</span>
+    </div>
+  </div>
+
+  <div class="action-buttons">
+    <button class="btn btn-primary"><i class="fas fa-file-pdf"></i> Download PDF</button>
+    <button class="btn btn-secondary"><i class="fas fa-file-code"></i> MusicXML</button>
+    <button class="btn btn-secondary"><i class="fas fa-file-audio"></i> MIDI</button>
+    <button class="btn btn-ghost"><i class="fas fa-share-nodes"></i> Share</button>
+  </div>
+
+  <div class="tunechat-cta">
+    <div class="cta-text">
+      <h4><i class="fas fa-music" style="margin-right:6px;color:var(--accent-light)"></i> Practice with others</h4>
+      <p>Open this score in TuneChat to play along with friends, get AI coaching, and see everyone's notes on the staff in real time.</p>
+    </div>
+    <button class="btn tunechat-btn"><i class="fas fa-external-link-alt"></i> Open in TuneChat</button>
+  </div>
+</section>
+
+<div style="height:60px"></div>
+
+</body>
+</html>
