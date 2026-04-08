@@ -10,7 +10,8 @@ so the same service code can be invoked by an out-of-process orchestrator.
 """
 from __future__ import annotations
 
-from typing import Annotated, Any, Awaitable, Callable
+from collections.abc import Awaitable, Callable
+from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel

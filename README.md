@@ -1,4 +1,4 @@
-https://github.com/user-attachments/assets/2dec590d-654a-46da-ac67-d90a69a56dde
+https://github.com/user-attachments/assets/444634d1-0c96-484a-9329-af9d62a8a187
 
 # Oh Sheet
 
@@ -34,12 +34,12 @@ MP3 / MIDI / Song Link
 
 ### Pipeline Variants
 
-| Variant | Entry Point | Stages | Use Case |
-|---------|-------------|--------|----------|
-| `full` | Song title/link | 1 → 2 → 3 → 4 → 5 | "Turn this Spotify song into sheet music" |
-| `audio_upload` | MP3/WAV file | 2 → 3 → 4 → 5 | User uploads their own audio |
-| `midi_upload` | MIDI file | 3 → 4 → 5 | Skip transcription, arrange existing MIDI |
-| `sheet_only` | Audio/MIDI | 1/2 → 3 → 5 | Skip humanization, quantized output only |
+| Variant        | Entry Point     | Stages            | Use Case                                  |
+| -------------- | --------------- | ----------------- | ----------------------------------------- |
+| `full`         | Song title/link | 1 → 2 → 3 → 4 → 5 | "Turn this Spotify song into sheet music" |
+| `audio_upload` | MP3/WAV file    | 2 → 3 → 4 → 5     | User uploads their own audio              |
+| `midi_upload`  | MIDI file       | 3 → 4 → 5         | Skip transcription, arrange existing MIDI |
+| `sheet_only`   | Audio/MIDI      | 1/2 → 3 → 5       | Skip humanization, quantized output only  |
 
 ### Data Flow Between Stages
 
@@ -61,13 +61,13 @@ PianoScore           HumanizedPerformance     EngravedOutput
 
 ## Tech Stack
 
-| Stage | Primary Tool | Fallback |
-|-------|-------------|----------|
-| Transcription | MT3 / Custom Conformer | Basic Pitch |
-| Chord/Structure | madmom | librosa |
-| Arrangement | music21 | LLM (GPT-4) |
-| Humanization | Rule-based + ML | — |
-| Engraving | LilyPond | MuseScore CLI |
+| Stage           | Primary Tool           | Fallback      |
+| --------------- | ---------------------- | ------------- |
+| Transcription   | MT3 / Custom Conformer | Basic Pitch   |
+| Chord/Structure | madmom                 | librosa       |
+| Arrangement     | music21                | LLM (GPT-4)   |
+| Humanization    | Rule-based + ML        | —             |
+| Engraving       | LilyPond               | MuseScore CLI |
 
 ## Status
 
@@ -177,9 +177,11 @@ OpenAPI docs at <http://localhost:8000/docs>.
 > **First-time Flutter setup.** The `frontend/` directory ships with
 > `lib/`, `pubspec.yaml`, and `analysis_options.yaml` — but no platform
 > scaffolding (iOS / Android / web / macOS folders). Generate them with:
+>
 > ```bash
 > cd frontend && flutter create --platforms=web,ios,android,macos .
 > ```
+>
 > This is non-destructive: it only adds files and won't touch the existing Dart sources.
 
 ## Submit a job (curl)

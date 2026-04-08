@@ -18,7 +18,13 @@ dependencies = [
 [project.optional-dependencies]
 dev = [
     "pytest>=8.0",
+    "pytest-cov>=5.0",
     "httpx>=0.26",
+    "ruff>=0.4",
+    "mypy>=1.10",
+]
+youtube = [
+    "yt-dlp>=2024.1",
 ]
 # Pretrained MT3 baseline (backend.vendor.mr_mt3). Heavy ML deps — installed
 # only when you actually want to run the model. Without these the
@@ -53,3 +59,34 @@ packages = ["backend"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 filterwarnings = ["ignore::DeprecationWarning"]
+addopts = "--cov=backend --cov-report=term-missing --cov-report=xml"
+
+[tool.ruff]
+target-version = "py311"
+line-length = 120
+exclude = ["backend/vendor"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "W", "UP", "B", "SIM"]
+ignore = [
+    "UP042",   # StrEnum migration — deferred to avoid runtime changes
+    "SIM105",  # contextlib.suppress — style preference
+    "SIM108",  # ternary operator — readability call
+    "SIM115",  # context manager for tempfiles — not always applicable
+    "E731",    # lambda assignment — existing pattern
+    "B007",    # unused loop var — existing pattern
+    "B905",    # zip strict — existing pattern
+]
+
+[tool.mypy]
+python_version = "3.11"
+packages = ["backend"]
+warn_return_any = false
+warn_unused_configs = true
+disallow_untyped_defs = false
+ignore_missing_imports = true
+exclude = ["backend/vendor"]
+
+[[tool.mypy.overrides]]
+module = "backend.services.engrave"
+disable_error_code = ["union-attr", "arg-type"]

@@ -1,8 +1,8 @@
 """JobEvent — single message broadcast over the WebSocket and stored on the record."""
 from __future__ import annotations
 
-from datetime import datetime, timezone
-from typing import Any, Literal, Optional
+from datetime import UTC, datetime
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
@@ -21,14 +21,14 @@ EventType = Literal[
 
 
 def _utcnow_iso() -> str:
-    return datetime.now(tz=timezone.utc).isoformat()
+    return datetime.now(tz=UTC).isoformat()
 
 
 class JobEvent(BaseModel):
     job_id: str
     type: EventType
-    stage: Optional[str] = None
-    message: Optional[str] = None
-    progress: Optional[float] = None         # 0.0 - 1.0
-    data: Optional[dict[str, Any]] = None
+    stage: str | None = None
+    message: str | None = None
+    progress: float | None = None         # 0.0 - 1.0
+    data: dict[str, Any] | None = None
     timestamp: str = Field(default_factory=_utcnow_iso)

@@ -10,7 +10,6 @@ import asyncio
 import logging
 import uuid
 from dataclasses import dataclass, field
-from typing import Optional
 
 from backend.contracts import EngravedOutput, InputBundle, PipelineConfig
 from backend.jobs.events import JobEvent, JobStatus
@@ -25,11 +24,11 @@ class JobRecord:
     status: JobStatus
     config: PipelineConfig
     bundle: InputBundle
-    result: Optional[EngravedOutput] = None
-    error: Optional[str] = None
+    result: EngravedOutput | None = None
+    error: str | None = None
     events: list[JobEvent] = field(default_factory=list)
     subscribers: list[asyncio.Queue] = field(default_factory=list)
-    task: Optional[asyncio.Task] = None
+    task: asyncio.Task | None = None
 
 
 class JobManager:
@@ -98,7 +97,7 @@ class JobManager:
 
     # ---- queries ---------------------------------------------------------
 
-    def get(self, job_id: str) -> Optional[JobRecord]:
+    def get(self, job_id: str) -> JobRecord | None:
         return self._jobs.get(job_id)
 
     def list(self) -> list[JobRecord]:
@@ -106,7 +105,7 @@ class JobManager:
 
     # ---- websocket subscription -----------------------------------------
 
-    async def subscribe(self, job_id: str) -> Optional[asyncio.Queue]:
+    async def subscribe(self, job_id: str) -> asyncio.Queue | None:
         record = self.get(job_id)
         if record is None:
             return None
