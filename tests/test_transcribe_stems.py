@@ -34,8 +34,14 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-import pretty_midi
 import pytest
+
+# pretty_midi ships with the ``basic-pitch`` extra, not with ``dev``, so
+# CI runs that only install ``.[dev]`` must skip this whole module
+# rather than error out during collection. Matches the importorskip
+# convention used in test_bass_extraction.py, test_melody_extraction.py,
+# etc.
+pretty_midi = pytest.importorskip("pretty_midi")
 
 from backend.contracts import InstrumentRole
 from backend.services import transcribe as transcribe_mod
@@ -142,10 +148,11 @@ def test_basic_pitch_single_pass_drops_model_output_when_asked(monkeypatch, tmp_
         pass
 
     # Stub basic_pitch.inference.predict to return our fake output
-    # without touching disk. Basic Pitch's package is installed in
-    # this environment so we can import + patch directly.
-    import basic_pitch.inference as bp_inf
-    import basic_pitch.note_creation as bp_nc
+    # without touching disk. Skip if basic_pitch isn't installed —
+    # pretty_midi can technically be present without basic_pitch even
+    # though the extras group bundles them together.
+    bp_inf = pytest.importorskip("basic_pitch.inference")
+    bp_nc = pytest.importorskip("basic_pitch.note_creation")
     monkeypatch.setattr(
         bp_inf,
         "predict",
