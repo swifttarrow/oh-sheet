@@ -16,7 +16,15 @@ class AppConfig {
 
   static String get apiBaseUrl {
     if (_envBaseUrl.isNotEmpty) return _envBaseUrl;
-    if (kIsWeb) return 'http://localhost:8000';
+    if (kIsWeb) {
+      // In production (Cloud Run), use same-origin relative URLs.
+      // In local dev, the page is served on a different port, so use localhost:8000.
+      final host = Uri.base.host;
+      if (host == 'localhost' || host == '127.0.0.1') {
+        return 'http://localhost:8000';
+      }
+      return '';
+    }
     try {
       if (Platform.isAndroid) return 'http://10.0.2.2:8000';
     } catch (_) {
