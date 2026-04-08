@@ -1,0 +1,28 @@
+[project]
+name = "ohsheet-decomposer"
+version = "0.1.0"
+description = "Decomposer worker -- transcription stage for Oh Sheet pipeline"
+requires-python = ">=3.10"
+dependencies = [
+    "celery[redis]>=5.3",
+    "ohsheet-shared @ file:../shared",
+]
+
+[project.optional-dependencies]
+# The real transcription deps -- not needed for stub mode
+transcription = [
+    "ohsheet @ file:..",
+]
+dev = [
+    "pytest>=8.0",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.metadata]
+allow-direct-references = true
+
+[tool.hatch.build.targets.wheel]
+packages = ["decomposer"]
