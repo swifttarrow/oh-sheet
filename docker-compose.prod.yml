@@ -1,8 +1,9 @@
 services:
   redis:
     image: redis:7-alpine
-    ports:
-      - "6379:6379"
+    restart: unless-stopped
+    volumes:
+      - redis-data:/data
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
@@ -10,33 +11,29 @@ services:
       retries: 5
 
   orchestrator:
-    build:
-      context: .
-      dockerfile: Dockerfile.dev
-    command: uvicorn backend.main:app --host 0.0.0.0 --port 8000 --reload
+    build: .
+    command: uvicorn backend.main:app --host 0.0.0.0 --port 8000 --workers 2
+    restart: unless-stopped
     ports:
       - "8000:8000"
     environment:
       OHSHEET_BLOB_ROOT: /app/blob
       OHSHEET_REDIS_URL: redis://redis:6379/0
     volumes:
-      - ./blob:/app/blob
-      - ./backend:/app/backend
+      - blob-data:/app/blob
     depends_on:
       redis:
         condition: service_healthy
 
   worker-ingest:
-    build:
-      context: .
-      dockerfile: Dockerfile.dev
-    command: celery -A backend.workers.celery_app worker -Q ingest -c 1 --loglevel=info
+    build: .
+    command: celery -A backend.workers.celery_app worker -Q ingest -c 1 --loglevel=warning
+    restart: unless-stopped
     environment:
       OHSHEET_BLOB_ROOT: /app/blob
       OHSHEET_REDIS_URL: redis://redis:6379/0
     volumes:
-      - ./blob:/app/blob
-      - ./backend:/app/backend
+      - blob-data:/app/blob
     depends_on:
       redis:
         condition: service_healthy
@@ -45,11 +42,12 @@ services:
     build:
       context: .
       dockerfile: svc-decomposer/Dockerfile
+    restart: unless-stopped
     environment:
       OHSHEET_BLOB_ROOT: /app/blob
       OHSHEET_REDIS_URL: redis://redis:6379/0
     volumes:
-      - ./blob:/app/blob
+      - blob-data:/app/blob
     depends_on:
       redis:
         condition: service_healthy
@@ -58,41 +56,42 @@ services:
     build:
       context: .
       dockerfile: svc-assembler/Dockerfile
+    restart: unless-stopped
     environment:
       OHSHEET_BLOB_ROOT: /app/blob
       OHSHEET_REDIS_URL: redis://redis:6379/0
     volumes:
-      - ./blob:/app/blob
+      - blob-data:/app/blob
     depends_on:
       redis:
         condition: service_healthy
 
   worker-humanize:
-    build:
-      context: .
-      dockerfile: Dockerfile.dev
-    command: celery -A backend.workers.celery_app worker -Q humanize -c 1 --loglevel=info
+    build: .
+    command: celery -A backend.workers.celery_app worker -Q humanize -c 1 --loglevel=warning
+    restart: unless-stopped
     environment:
       OHSHEET_BLOB_ROOT: /app/blob
       OHSHEET_REDIS_URL: redis://redis:6379/0
     volumes:
-      - ./blob:/app/blob
-      - ./backend:/app/backend
+      - blob-data:/app/blob
     depends_on:
       redis:
         condition: service_healthy
 
   worker-engrave:
-    build:
-      context: .
-      dockerfile: Dockerfile.dev
-    command: celery -A backend.workers.celery_app worker -Q engrave -c 1 --loglevel=info
+    build: .
+    command: celery -A backend.workers.celery_app worker -Q engrave -c 1 --loglevel=warning
+    restart: unless-stopped
     environment:
       OHSHEET_BLOB_ROOT: /app/blob
       OHSHEET_REDIS_URL: redis://redis:6379/0
     volumes:
-      - ./blob:/app/blob
-      - ./backend:/app/backend
+      - blob-data:/app/blob
     depends_on:
       redis:
         condition: service_healthy
+
+volumes:
+  redis-data:
+  blob-data:

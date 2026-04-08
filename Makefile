@@ -25,7 +25,7 @@ help:
 	@echo "  make install-basic-pitch  pip install -e .[basic-pitch]  (basic-pitch[onnx] + pretty_midi)"
 	@echo "  make install-frontend     flutter pub get inside frontend/"
 	@echo ""
-	@echo "  make backend            run uvicorn dev server on $(HOST):$(PORT)"
+	@echo "  make backend            docker-compose up (Redis + Celery workers + API on :8000)"
 	@echo "  make frontend           flutter run -d $(DEVICE) (override DEVICE=ios|android|macos|...)"
 	@echo "                          set API_BASE_URL=http://host:port to point at a non-default backend"
 	@echo ""
@@ -54,7 +54,7 @@ install-frontend:
 # ---- run --------------------------------------------------------------------
 
 backend:
-	uvicorn backend.main:app --reload --host $(HOST) --port $(PORT)
+	docker compose up --build
 
 frontend:
 	cd $(FRONTEND) && flutter run -d $(DEVICE) $(DART_DEFINE)
