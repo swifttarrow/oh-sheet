@@ -18,7 +18,6 @@ class WebMidiPlayer extends StatefulWidget {
 
 class _WebMidiPlayerState extends State<WebMidiPlayer> {
   late final String _playerViewType;
-  late final String _visualizerViewType;
 
   @override
   void initState() {

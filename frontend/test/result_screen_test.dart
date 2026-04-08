@@ -1,4 +1,4 @@
-/// TDD: Tests for the restyled result screen with mascot and download buttons.
+// TDD: Tests for the restyled result screen with mascot and download buttons.
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/testing.dart' as http_testing;

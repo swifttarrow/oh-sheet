@@ -1,5 +1,4 @@
-/// TDD: Tests for the restyled progress screen with mascot and stage badges.
-import 'package:flutter/material.dart';
+// TDD: Tests for the restyled progress screen with mascot and stage badges.
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:ohsheet_app/screens/progress_screen.dart';

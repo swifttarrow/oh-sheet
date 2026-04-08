@@ -1,4 +1,4 @@
-/// TDD: Tests for the welcome hero section on UploadScreen.
+// TDD: Tests for the welcome hero section on UploadScreen.
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/testing.dart' as http_testing;

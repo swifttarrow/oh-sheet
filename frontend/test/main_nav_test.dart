@@ -1,8 +1,6 @@
-/// TDD: Tests for the bottom navigation bar shell.
+// TDD: Tests for the bottom navigation bar shell.
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:http/testing.dart' as http_testing;
-import 'package:http/http.dart' as http;
 
 import 'package:ohsheet_app/main.dart';
 

@@ -1,4 +1,4 @@
-/// TDD: Tests for the Oh Sheet kawaii theme system.
+// TDD: Tests for the Oh Sheet kawaii theme system.
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
