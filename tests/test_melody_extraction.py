@@ -13,6 +13,11 @@ import pytest
 np = pytest.importorskip("numpy")
 
 from backend.services.melody_extraction import (  # noqa: E402
+    DEFAULT_BACKFILL_ENABLED,
+    DEFAULT_BACKFILL_MAX_AMP,
+    DEFAULT_BACKFILL_MIN_AMP,
+    DEFAULT_BACKFILL_MIN_DURATION_SEC,
+    DEFAULT_BACKFILL_OVERLAP_FRACTION,
     DEFAULT_MATCH_FRACTION,
     DEFAULT_MAX_TRANSITION_BINS,
     DEFAULT_MELODY_HIGH_MIDI,
@@ -233,18 +238,23 @@ def test_extract_melody_sends_out_of_band_notes_to_chords():
 def test_extract_melody_note_disagreeing_with_path_goes_to_chords():
     # Path traces MIDI 60 throughout, but the event is at MIDI 72.
     # With match_fraction = 0.6 the note should land in the chord bucket.
+    # Back-fill is off here so the test isolates the disagreement path —
+    # otherwise the stable MIDI 60 run would synthesize a new melody note.
     c = _blank_contour(int(1.1 * FRAME_RATE_HZ))
     _paint(c, 0, int(FRAME_RATE_HZ), 60)
     events = [_ne(0.0, 1.0, 72)]
-    melody, chords, stats = extract_melody(c, events)
+    melody, chords, stats = extract_melody(c, events, backfill_enabled=False)
     assert melody == []
     assert chords == events
 
 
 def test_extract_melody_empty_events():
+    # Back-fill off so an empty input → empty output (no synthesis from
+    # the painted peak). Back-fill's own behavior is covered in the
+    # dedicated tests below.
     c = _blank_contour(50)
     _paint(c, 0, 50, 60)
-    melody, chords, stats = extract_melody(c, [])
+    melody, chords, stats = extract_melody(c, [], backfill_enabled=False)
     assert melody == [] and chords == []
     assert stats.melody_note_count == 0 and stats.chord_note_count == 0
 
@@ -255,6 +265,96 @@ def test_extract_melody_tiny_contour_is_skipped():
     melody, chords, stats = extract_melody(c, events)
     assert stats.skipped
     assert chords == events
+
+
+# ---------------------------------------------------------------------------
+# Back-fill of stable Viterbi runs the upstream note tracker missed
+# ---------------------------------------------------------------------------
+
+def test_backfill_adds_stable_run_without_matching_event():
+    # 300 ms stable peak at MIDI 67 (G4), no upstream events at all.
+    frames = int(round(0.35 * FRAME_RATE_HZ))
+    c = _blank_contour(frames)
+    run_end = int(round(0.30 * FRAME_RATE_HZ))
+    _paint(c, 0, run_end, 67, salience=0.9)
+
+    melody, chords, stats = extract_melody(c, [])
+    assert not stats.skipped
+    # Nothing was passed in → chord bucket is empty.
+    assert chords == []
+    # Exactly one back-filled note at MIDI 67 spanning ~300 ms.
+    assert len(melody) == 1
+    assert stats.backfilled_note_count == 1
+    start, end, pitch, amp, bends = melody[0]
+    assert pitch == 67
+    assert 0.25 <= (end - start) <= 0.35
+    assert bends is None
+    assert DEFAULT_BACKFILL_MIN_AMP <= amp <= DEFAULT_BACKFILL_MAX_AMP
+
+
+def test_backfill_skips_runs_shorter_than_min_duration():
+    # 80 ms peak — below the 120 ms back-fill floor.
+    frames = int(round(0.12 * FRAME_RATE_HZ))
+    c = _blank_contour(frames)
+    run_end = int(round(0.08 * FRAME_RATE_HZ))
+    _paint(c, 0, run_end, 67, salience=0.9)
+
+    melody, chords, stats = extract_melody(c, [])
+    assert stats.backfilled_note_count == 0
+    assert melody == []
+
+
+def test_backfill_skips_when_existing_event_covers_the_run():
+    # 300 ms stable peak at MIDI 67, plus an upstream Basic Pitch event
+    # covering the same window — back-fill should skip (no duplication).
+    frames = int(round(0.35 * FRAME_RATE_HZ))
+    c = _blank_contour(frames)
+    run_end = int(round(0.30 * FRAME_RATE_HZ))
+    _paint(c, 0, run_end, 67, salience=0.9)
+    events = [_ne(0.0, 0.30, 67, amp=0.8)]
+
+    melody, chords, stats = extract_melody(c, events)
+    assert stats.backfilled_note_count == 0
+    # Only the original upstream event survives, un-duplicated.
+    assert len(melody) == 1
+    assert melody[0][3] == 0.8  # original amplitude preserved
+
+
+def test_backfill_amplitude_is_clipped_to_max():
+    # Peak salience 0.95 > max_amp (0.60) — synthesized amp must be clipped.
+    frames = int(round(0.35 * FRAME_RATE_HZ))
+    c = _blank_contour(frames)
+    run_end = int(round(0.30 * FRAME_RATE_HZ))
+    _paint(c, 0, run_end, 67, salience=0.95)
+
+    melody, _, stats = extract_melody(c, [])
+    assert stats.backfilled_note_count == 1
+    _, _, _, amp, _ = melody[0]
+    assert amp == pytest.approx(DEFAULT_BACKFILL_MAX_AMP, abs=1e-6)
+
+
+def test_backfill_respects_enabled_flag():
+    frames = int(round(0.35 * FRAME_RATE_HZ))
+    c = _blank_contour(frames)
+    _paint(c, 0, int(round(0.30 * FRAME_RATE_HZ)), 67, salience=0.9)
+
+    melody, _, stats = extract_melody(c, [], backfill_enabled=False)
+    assert stats.backfilled_note_count == 0
+    assert melody == []
+
+
+def test_backfill_does_not_invent_notes_below_melody_band():
+    # Peak inside the low-register slice that would belong to bass.
+    # The Viterbi band mask already prevents a path at MIDI 40, so we
+    # should not see a back-filled note here either — the tracer is
+    # unvoiced for this frame range.
+    frames = int(round(0.35 * FRAME_RATE_HZ))
+    c = _blank_contour(frames)
+    _paint(c, 0, int(round(0.30 * FRAME_RATE_HZ)), 40, salience=0.9)
+
+    melody, _, stats = extract_melody(c, [])
+    assert stats.backfilled_note_count == 0
+    assert melody == []
 
 
 # ---------------------------------------------------------------------------
@@ -272,3 +372,8 @@ def test_config_defaults_match_module_defaults():
     assert s.melody_max_transition_bins == DEFAULT_MAX_TRANSITION_BINS
     assert s.melody_match_fraction == DEFAULT_MATCH_FRACTION
     assert s.melody_extraction_enabled is True
+    assert s.melody_backfill_enabled is DEFAULT_BACKFILL_ENABLED
+    assert s.melody_backfill_min_duration_sec == DEFAULT_BACKFILL_MIN_DURATION_SEC
+    assert s.melody_backfill_overlap_fraction == DEFAULT_BACKFILL_OVERLAP_FRACTION
+    assert s.melody_backfill_min_amp == DEFAULT_BACKFILL_MIN_AMP
+    assert s.melody_backfill_max_amp == DEFAULT_BACKFILL_MAX_AMP

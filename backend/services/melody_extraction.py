@@ -82,6 +82,20 @@ DEFAULT_MIN_NOTE_FRAMES = 4          # ≈ 46 ms
 DEFAULT_MATCH_TOL_SEMITONES = 1.0
 DEFAULT_MATCH_FRACTION = 0.6
 
+# ---------------------------------------------------------------------------
+# Back-fill defaults — recover stable Viterbi runs that the upstream Basic
+# Pitch note tracker never emitted (soft sustained melody notes drowned out
+# by louder accompaniment). Deliberately conservative: only long, clean
+# runs are back-filled, and the synthesized amplitude is clipped low so
+# recovery notes don't outshine real ones in the downstream velocity map.
+# ---------------------------------------------------------------------------
+
+DEFAULT_BACKFILL_ENABLED = True
+DEFAULT_BACKFILL_MIN_DURATION_SEC = 0.12
+DEFAULT_BACKFILL_OVERLAP_FRACTION = 0.5
+DEFAULT_BACKFILL_MIN_AMP = 0.15
+DEFAULT_BACKFILL_MAX_AMP = 0.60
+
 
 # ---------------------------------------------------------------------------
 # Stats surfaced back to the caller for telemetry / QualitySignal
@@ -94,6 +108,10 @@ class MelodyExtractionStats:
     melody_note_count: int = 0
     chord_note_count: int = 0
     voiced_frame_fraction: float = 0.0  # share of frames on the Viterbi path
+    # Count of melody notes synthesized from the Viterbi path because no
+    # matching upstream note event existed (back-fill of soft sustained
+    # melody lines the Basic Pitch note tracker missed).
+    backfilled_note_count: int = 0
     warnings: list[str] = field(default_factory=list)
     # True when numpy (or contour input) was unavailable and we skipped
     # extraction entirely. Callers should fall back to a single-track
@@ -109,6 +127,11 @@ class MelodyExtractionStats:
                 f"melody split: {self.melody_note_count} melody / "
                 f"{self.chord_note_count} chord notes "
                 f"({self.voiced_frame_fraction * 100:.0f}% voiced)"
+            )
+        if self.backfilled_note_count:
+            out.append(
+                f"melody: back-filled {self.backfilled_note_count} "
+                f"missed notes from Viterbi path"
             )
         out.extend(self.warnings)
         return out
@@ -301,10 +324,10 @@ def _path_to_midi_runs(path: Any) -> list[tuple[int, int, int]]:
 
 
 # ---------------------------------------------------------------------------
-# Note tagging against Basic Pitch events
+# Note tagging against a Viterbi path
 # ---------------------------------------------------------------------------
 
-def _split_notes_by_melody_agreement(
+def _split_notes_by_path_agreement(
     events: list[NoteEvent],
     path: Any,
     *,
@@ -314,35 +337,35 @@ def _split_notes_by_melody_agreement(
     match_tolerance_semitones: float,
     match_fraction: float,
 ) -> tuple[list[NoteEvent], list[NoteEvent]]:
-    """Tag each Basic Pitch note as melody or chord.
+    """Tag each note tuple as in-voice or out-of-voice w.r.t. a Viterbi path.
 
-    A note becomes MELODY when:
+    A note becomes *in-voice* (first return list) when:
       1. Its pitch lies inside ``[low_midi, high_midi]``.
       2. At least ``match_fraction`` of its frames overlap a voiced
          Viterbi path frame within ``match_tolerance_semitones``.
 
-    Everything else flows to the CHORDS bucket, including legitimate
-    below-range notes (bass lines) and above-range ones (very high
-    harmonies). Those could be split further in Phase 3.
+    Everything else flows to the *out-of-voice* (second return list)
+    bucket. The function is voice-agnostic — Phase 2 (melody) and Phase
+    3 (bass) call it with different bands and paths.
     """
     if not events:
         return [], []
 
     n_frames = len(path)
-    melody: list[NoteEvent] = []
-    chords: list[NoteEvent] = []
+    in_voice: list[NoteEvent] = []
+    out_of_voice: list[NoteEvent] = []
     tol_bins = match_tolerance_semitones * BINS_PER_SEMITONE
 
     for ev in events:
         start_sec, end_sec, pitch, amp, bends = ev
         if pitch < low_midi or pitch > high_midi:
-            chords.append(ev)
+            out_of_voice.append(ev)
             continue
 
         f0 = max(0, int(round(start_sec * frame_rate_hz)))
         f1 = min(n_frames, int(round(end_sec * frame_rate_hz)))
         if f1 <= f0:
-            chords.append(ev)
+            out_of_voice.append(ev)
             continue
 
         target_bin = midi_to_bin(pitch)
@@ -356,11 +379,105 @@ def _split_notes_by_melody_agreement(
                 match += 1
 
         if total > 0 and (match / total) >= match_fraction:
-            melody.append(ev)
+            in_voice.append(ev)
         else:
-            chords.append(ev)
+            out_of_voice.append(ev)
 
-    return melody, chords
+    return in_voice, out_of_voice
+
+
+# ---------------------------------------------------------------------------
+# Back-fill — synthesize notes for stable Viterbi runs with no matching event
+# ---------------------------------------------------------------------------
+
+def _backfill_missed_melody_notes(
+    melody_events: list[NoteEvent],
+    contour: Any,  # np.ndarray (frames, N_CONTOUR_BINS)
+    path: Any,     # np.ndarray (frames,), int; -1 = unvoiced
+    *,
+    frame_rate_hz: float,
+    min_duration_sec: float,
+    overlap_fraction: float,
+    min_amp: float,
+    max_amp: float,
+    match_tolerance_semitones: float,
+) -> tuple[list[NoteEvent], int]:
+    """Synthesize melody note events for stable Viterbi runs with no match.
+
+    The Viterbi F0 tracer sees the contour salience matrix directly, so
+    it finds stable melody fundamentals that the upstream Basic Pitch
+    note tracker sometimes misses — typically soft sustained lines under
+    louder accompaniment. When we find a run of ≥ ``min_duration_sec``
+    frames at a single pitch that does not overlap any existing melody
+    event (within ``match_tolerance_semitones`` and by at least
+    ``overlap_fraction`` of the run's duration), we build a synthetic
+    ``NoteEvent`` from it.
+
+    The synthesized amplitude is the mean contour salience inside the
+    run at the target bin, **clipped** to ``[min_amp, max_amp]``. The
+    upper clip matters: these are recovery notes, not hero notes, and
+    uncapped they'd arrive at the downstream velocity formula with
+    values that rival real detections.
+
+    **Do not re-run** :func:`cleanup_note_events` over a back-filled
+    list — the low clipped amplitude makes synthesized notes look like
+    ghost tails and they get dropped, defeating the purpose.
+
+    Returns ``(combined_events, added_count)``.
+    """
+    import numpy as np  # noqa: PLC0415
+
+    runs = _path_to_midi_runs(path)
+    if not runs:
+        return list(melody_events), 0
+
+    min_frames = max(1, int(round(min_duration_sec * frame_rate_hz)))
+    added: list[NoteEvent] = []
+
+    for start_f, end_f, midi in runs:
+        if end_f - start_f < min_frames:
+            continue
+
+        start_sec = start_f / frame_rate_hz
+        end_sec = end_f / frame_rate_hz
+        run_duration = end_sec - start_sec
+        if run_duration <= 0:
+            continue
+
+        # Skip the run if any existing melody event already covers it.
+        has_match = False
+        for ev in melody_events:
+            ev_start, ev_end, ev_pitch, _, _ = ev
+            if abs(ev_pitch - midi) > match_tolerance_semitones:
+                continue
+            overlap_start = max(start_sec, ev_start)
+            overlap_end = min(end_sec, ev_end)
+            overlap = overlap_end - overlap_start
+            if overlap >= overlap_fraction * run_duration:
+                has_match = True
+                break
+        if has_match:
+            continue
+
+        # Synthesize. Amplitude = clipped mean salience at the target
+        # bin across the run. Casting to float keeps the tuple layout
+        # consistent with the Basic Pitch-sourced entries.
+        target_bin = midi_to_bin(midi)
+        if 0 <= target_bin < contour.shape[1]:
+            bin_slice = contour[start_f:end_f, target_bin]
+            mean_salience = float(np.mean(bin_slice)) if bin_slice.size else 0.0
+        else:
+            mean_salience = 0.0
+        amp = max(min_amp, min(max_amp, mean_salience))
+
+        added.append((start_sec, end_sec, int(midi), amp, None))
+
+    if not added:
+        return list(melody_events), 0
+
+    combined = list(melody_events) + added
+    combined.sort(key=lambda e: (e[0], e[2]))
+    return combined, len(added)
 
 
 # ---------------------------------------------------------------------------
@@ -381,6 +498,11 @@ def extract_melody(
     match_tolerance_semitones: float = DEFAULT_MATCH_TOL_SEMITONES,
     match_fraction: float = DEFAULT_MATCH_FRACTION,
     frame_rate_hz: float = FRAME_RATE_HZ,
+    backfill_enabled: bool = DEFAULT_BACKFILL_ENABLED,
+    backfill_min_duration_sec: float = DEFAULT_BACKFILL_MIN_DURATION_SEC,
+    backfill_overlap_fraction: float = DEFAULT_BACKFILL_OVERLAP_FRACTION,
+    backfill_min_amp: float = DEFAULT_BACKFILL_MIN_AMP,
+    backfill_max_amp: float = DEFAULT_BACKFILL_MAX_AMP,
 ) -> tuple[list[NoteEvent], list[NoteEvent], MelodyExtractionStats]:
     """Run Phase 2 melody extraction over Basic Pitch output.
 
@@ -388,6 +510,12 @@ def extract_melody(
     unavailable or the contour matrix is missing / malformed, returns
     ``([], note_events, stats)`` with ``stats.skipped = True`` so the
     caller can fall back to a single-track result without losing notes.
+
+    When ``backfill_enabled``, stable Viterbi runs with no matching
+    Basic Pitch note are synthesized into the melody list before
+    return. See :func:`_backfill_missed_melody_notes` for the semantics
+    — in short, this recovers soft sustained lead notes the polyphonic
+    tracker lost under accompaniment.
 
     Tuning: the defaults are conservative. For songs with a strong
     vocal lead, raising ``match_fraction`` to ~0.75 and narrowing
@@ -447,7 +575,7 @@ def extract_melody(
     voiced_frac = float((path >= 0).mean()) if len(path) else 0.0
     stats.voiced_frame_fraction = voiced_frac
 
-    melody, chords = _split_notes_by_melody_agreement(
+    melody, chords = _split_notes_by_path_agreement(
         note_events,
         path,
         low_midi=melody_low_midi,
@@ -457,13 +585,45 @@ def extract_melody(
         match_fraction=match_fraction,
     )
 
+    # Back-fill stable Viterbi runs that no Basic Pitch event covers.
+    # Runs whose rounded-integer MIDI falls outside the melody band are
+    # filtered here (via ``low/high_midi``) so a low-band peak the tracer
+    # catches doesn't get back-filled as a melody note.
+    if backfill_enabled:
+        try:
+            melody, backfill_count = _backfill_missed_melody_notes(
+                melody,
+                contour_arr,
+                path,
+                frame_rate_hz=frame_rate_hz,
+                min_duration_sec=backfill_min_duration_sec,
+                overlap_fraction=backfill_overlap_fraction,
+                min_amp=backfill_min_amp,
+                max_amp=backfill_max_amp,
+                match_tolerance_semitones=match_tolerance_semitones,
+            )
+            # Restrict added notes to the melody band — the Viterbi path
+            # is already band-masked, but be defensive in case a future
+            # caller widens it.
+            if backfill_count:
+                melody = [
+                    ev for ev in melody
+                    if melody_low_midi <= ev[2] <= melody_high_midi
+                ]
+            stats.backfilled_note_count = backfill_count
+        except Exception as exc:  # noqa: BLE001 — never let back-fill sink transcribe
+            log.warning("melody back-fill failed: %s", exc)
+            stats.warnings.append(f"back-fill failed: {exc}")
+
     stats.melody_note_count = len(melody)
     stats.chord_note_count = len(chords)
     log.debug(
-        "melody extraction: %d notes → %d melody / %d chords (%.0f%% voiced)",
+        "melody extraction: %d notes → %d melody / %d chords "
+        "(+%d back-filled, %.0f%% voiced)",
         len(note_events),
         len(melody),
         len(chords),
+        stats.backfilled_note_count,
         voiced_frac * 100.0,
     )
     return melody, chords, stats

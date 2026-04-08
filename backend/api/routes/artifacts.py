@@ -18,13 +18,14 @@ from backend.storage.local import LocalBlobStore
 
 router = APIRouter()
 
-ArtifactKind = Literal["pdf", "musicxml", "midi"]
+ArtifactKind = Literal["pdf", "musicxml", "midi", "transcription_midi"]
 
 # kind → (uri attribute on EngravedOutput, media type, downloaded filename suffix)
 _KIND_INFO: dict[str, tuple[str, str, str]] = {
-    "pdf":      ("pdf_uri",            "application/pdf",                       "sheet.pdf"),
-    "musicxml": ("musicxml_uri",       "application/vnd.recordare.musicxml+xml", "score.musicxml"),
-    "midi":     ("humanized_midi_uri", "audio/midi",                            "humanized.mid"),
+    "pdf":                ("pdf_uri",                "application/pdf",                       "sheet.pdf"),
+    "musicxml":           ("musicxml_uri",           "application/vnd.recordare.musicxml+xml", "score.musicxml"),
+    "midi":               ("humanized_midi_uri",     "audio/midi",                            "humanized.mid"),
+    "transcription_midi": ("transcription_midi_uri", "audio/midi",                            "transcription.mid"),
 }
 
 
@@ -53,6 +54,15 @@ def download_artifact(
 
     attr, media_type, suffix = _KIND_INFO[kind]
     uri = getattr(record.result, attr)
+    if uri is None:
+        # Optional artifacts (e.g. transcription_midi) won't exist for
+        # every variant — midi_upload skips transcription, and the stub
+        # fallback doesn't persist a MIDI file. Return 404 so clients can
+        # distinguish "never produced" from "job failed".
+        raise HTTPException(
+            status_code=404,
+            detail=f"Job {job_id} has no {kind!r} artifact.",
+        )
 
     try:
         data = blob.get_bytes(uri)
