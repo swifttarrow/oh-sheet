@@ -1,18 +1,23 @@
-"""Transcription stage — pretrained MT3 baseline.
+"""Transcription stage — Basic Pitch baseline.
 
-Wraps the vendored MR-MT3 inference helpers under
-``backend.vendor.mr_mt3`` into the async pipeline. The model architecture
-and the pretrained checkpoint both live in-tree
-(``backend/vendor/mr_mt3/``); the checkpoint is tracked via git-lfs.
+Wraps Spotify's `basic-pitch`_ polyphonic pitch-tracker into the async
+pipeline. Basic Pitch is a lightweight CNN that consumes arbitrary mixed
+audio and emits polyphonic note events with per-note amplitudes. It
+produces a single un-instrumented pitch stream — we collapse the whole
+prediction into one ``PIANO`` track, which is the right shape for a
+piano-reduction pipeline anyway.
 
-This is a baseline — MT3 takes the full mix and emits GM-program-tagged
-notes, so the contract no longer carries any stem URIs. Source separation
-is intentionally out of scope.
+Backend selection is left to basic-pitch's auto-pick order via
+``ICASSP_2022_MODEL_PATH``: on Darwin this resolves to the CoreML
+model (fastest on Apple Silicon), on Linux CI it falls through to
+ONNX/TFLite. The model is cached at module scope so the runtime only
+loads once per process.
 
-If torch / the checkpoint / the audio file aren't available the service
-falls back to a small stub TranscriptionResult so the rest of the pipeline
-(and the unit tests, which run without torch installed) can still be
-exercised end-to-end.
+If basic-pitch isn't installed, or inference fails on a specific audio
+file, the service falls back to a tiny stub ``TranscriptionResult`` so
+the rest of the pipeline can still be exercised end-to-end.
+
+.. _basic-pitch: https://github.com/spotify/basic-pitch
 """
 from __future__ import annotations
 
@@ -40,107 +45,91 @@ from backend.services.audio_timing import tempo_map_from_audio_path
 log = logging.getLogger(__name__)
 
 
-# Cached MT3 model — building it costs ~5s and a few hundred MB of RAM, so we
-# load it once per process. Held as Any to avoid importing torch at module
-# import time (heavy dep, optional for the stub fallback).
-_MT3_MODEL: Any = None
-_MT3_DEVICE: Any = None
+# Cached Basic Pitch model — building the inference session (CoreML on
+# Darwin, ONNX/TFLite elsewhere) costs ~1s, so we load it once per process.
+# Held as Any to avoid importing basic_pitch at module import time
+# (optional dep, stub path needs to work without it).
+_BP_MODEL: Any = None
 
 
-def _gm_to_role(program: int, is_drum: bool) -> InstrumentRole:
-    """GM program → InstrumentRole. Mirrors transcribe_mrmt3._gm_to_role."""
-    if is_drum:
-        return InstrumentRole.OTHER
-    if program < 8:
-        return InstrumentRole.PIANO
-    if 24 <= program <= 31:
-        return InstrumentRole.CHORDS
-    if 32 <= program <= 39:
-        return InstrumentRole.BASS
-    if 40 <= program <= 51:
-        return InstrumentRole.CHORDS
-    if 56 <= program <= 71:
-        return InstrumentRole.CHORDS
-    if 72 <= program <= 79:
-        return InstrumentRole.MELODY
-    return InstrumentRole.OTHER
-
-
-def _track_confidence(notes: list[Any], role: InstrumentRole) -> float:
-    """Heuristic per-track confidence (mirrors transcribe_mrmt3)."""
-    if not notes:
-        return 0.1
-    durations = [n.end_time - n.start_time for n in notes]
-    median_dur = sorted(durations)[len(durations) // 2]
-    short_frac = sum(1 for d in durations if d < 0.05) / len(durations)
-    dur_score = max(0.0, 1.0 - short_frac * 2)
-    span = max(notes[-1].end_time - notes[0].start_time, 1.0)
-    density = len(notes) / span
-    if density < 15:
-        density_score = min(1.0, density / 2.0)
-    else:
-        density_score = max(0.3, 1.0 - (density - 15) / 30)
-    role_bonus = 0.15 if role in (
-        InstrumentRole.PIANO, InstrumentRole.BASS, InstrumentRole.MELODY
-    ) else 0.0
-    conf = (
-        0.3 * dur_score
-        + 0.3 * density_score
-        + 0.2 * min(median_dur / 0.3, 1.0)
-        + 0.2
-        + role_bonus
-    )
-    return round(min(max(conf, 0.1), 1.0), 2)
-
-
-def _ns_to_transcription_result(
-    ns: Any,
+def _pretty_midi_to_transcription_result(
+    pm: Any,
+    note_events: list[tuple[float, float, int, float, Any]],
+    model_output: dict[str, Any],
     default_bpm: float = 120.0,
     *,
     tempo_map_override: list[TempoMapEntry] | None = None,
 ) -> TranscriptionResult:
-    """Convert a note_seq.NoteSequence to our pydantic TranscriptionResult.
+    """Convert Basic Pitch's output into our pydantic TranscriptionResult.
 
-    Self-contained — does *not* import temp1/contracts. Harmonic key/chords
-    stay placeholder until a dedicated analysis stage exists.
+    Basic Pitch emits a single polyphonic pitch stream (no instrument
+    separation), so we collapse everything into one ``PIANO`` MidiTrack.
+    Per-note confidence comes straight from the model's sigmoid output
+    (note_events[i][3] is the amplitude at the onset frame, which is the
+    same scalar basic_pitch uses to derive the MIDI velocity).
 
-    If ``tempo_map_override`` is set (e.g. from waveform beat tracking), it
-    replaces the single-tempo map derived from the NoteSequence so arrange's
-    ``sec_to_beat`` aligns quantization to real beats.
+    If ``tempo_map_override`` is provided (e.g. from waveform beat
+    tracking), it replaces the single-anchor map we'd otherwise build
+    from ``pm.estimate_tempo`` so arrange's ``sec_to_beat`` aligns
+    quantization to the real pulse of the recording.
     """
-    # Group notes by (program, is_drum)
-    groups: dict[tuple[int, bool], list[Any]] = {}
-    for note in ns.notes:
-        key = (int(note.program), bool(note.is_drum))
-        groups.setdefault(key, []).append(note)
+    import numpy as np  # noqa: PLC0415 — heavy/optional dep
+
+    contract_notes: list[Note] = []
+    amplitudes: list[float] = []
+    for instrument in pm.instruments:
+        if instrument.is_drum:
+            continue
+        for n in instrument.notes:
+            contract_notes.append(
+                Note(
+                    pitch=int(n.pitch),
+                    onset_sec=float(n.start),
+                    offset_sec=float(n.end),
+                    velocity=int(n.velocity),
+                )
+            )
+    # note_events is the source of truth for per-note confidence; amplitudes
+    # are sigmoid probabilities in [0, 1] from model_output["note"] at each
+    # detected onset frame.
+    for _start, _end, _pitch, amplitude, _bends in note_events:
+        amplitudes.append(float(amplitude))
+
+    contract_notes.sort(key=lambda n: (n.onset_sec, n.pitch))
+
+    # Overall confidence — mean of per-note amplitudes, scaled and clamped.
+    # Fall back to model_output["note"] mean if note_events is empty.
+    if amplitudes:
+        per_note_conf = float(np.mean(amplitudes))
+    else:
+        note_grid = model_output.get("note")
+        per_note_conf = float(np.mean(note_grid)) if note_grid is not None else 0.3
+    track_conf = round(min(max(per_note_conf, 0.1), 1.0), 2)
 
     midi_tracks: list[MidiTrack] = []
-    for (program, is_drum), notes in groups.items():
-        if not notes:
-            continue
-        role = _gm_to_role(program, is_drum)
-        contract_notes = [
-            Note(
-                pitch=int(n.pitch),
-                onset_sec=float(n.start_time),
-                offset_sec=float(n.end_time),
-                velocity=int(n.velocity),
+    if contract_notes:
+        midi_tracks.append(
+            MidiTrack(
+                notes=contract_notes,
+                instrument=InstrumentRole.PIANO,
+                program=0,
+                confidence=track_conf,
             )
-            for n in notes
-        ]
-        midi_tracks.append(MidiTrack(
-            notes=contract_notes,
-            instrument=role,
-            program=None if is_drum else program,
-            confidence=_track_confidence(notes, role),
-        ))
+        )
 
+    # Tempo map — prefer the waveform-derived beat grid when available.
+    # Basic Pitch itself does not estimate tempo, so without the override
+    # we fall back to pretty_midi's estimate (single global BPM).
     if tempo_map_override:
         tempo_map = tempo_map_override
     else:
         bpm = default_bpm
-        if ns.tempos:
-            bpm = float(ns.tempos[0].qpm)
+        try:
+            estimated = float(pm.estimate_tempo())
+            if 40.0 <= estimated <= 240.0:
+                bpm = estimated
+        except Exception:  # noqa: BLE001 — estimate_tempo can raise on sparse input
+            pass
         tempo_map = [TempoMapEntry(time_sec=0.0, beat=0.0, bpm=bpm)]
 
     analysis = HarmonicAnalysis(
@@ -151,18 +140,16 @@ def _ns_to_transcription_result(
         sections=[],
     )
 
-    total_notes = sum(len(t.notes) for t in midi_tracks)
-    warnings: list[str] = ["Pretrained MT3 baseline (no source separation)"]
+    total_notes = len(contract_notes)
+    warnings: list[str] = [
+        "Basic Pitch baseline (polyphonic pitch tracker, no instrument separation)"
+    ]
     if tempo_map_override:
         warnings.append("tempo_map from audio beat tracking (librosa)")
     if total_notes < 20:
         warnings.append(f"Low note count ({total_notes}) — possible quality issue")
-    avg_conf = (
-        sum(t.confidence for t in midi_tracks) / len(midi_tracks)
-        if midi_tracks else 0.3
-    )
     quality = QualitySignal(
-        overall_confidence=round(avg_conf, 2),
+        overall_confidence=track_conf if midi_tracks else 0.1,
         warnings=warnings,
     )
 
@@ -200,39 +187,23 @@ def _stub_result(reason: str) -> TranscriptionResult:
         ),
         quality=QualitySignal(
             overall_confidence=0.3,
-            warnings=[f"MT3 fallback stub: {reason}"],
+            warnings=[f"Basic Pitch fallback stub: {reason}"],
         ),
     )
 
 
-def _load_mt3_model() -> tuple[Any, Any]:
-    """Lazy-load the MT3 model on first use. Cached for the process lifetime."""
-    global _MT3_MODEL, _MT3_DEVICE
-    if _MT3_MODEL is not None:
-        return _MT3_MODEL, _MT3_DEVICE
+def _load_basic_pitch_model() -> Any:
+    """Lazy-load the Basic Pitch model. Cached for the process lifetime."""
+    global _BP_MODEL
+    if _BP_MODEL is not None:
+        return _BP_MODEL
 
-    ckpt = settings.mt3_checkpoint_path
-    if ckpt is None:
-        raise RuntimeError("OHSHEET_MT3_CHECKPOINT_PATH not configured")
-    if not Path(ckpt).is_file():
-        raise FileNotFoundError(f"MT3 checkpoint missing: {ckpt}")
+    from basic_pitch import ICASSP_2022_MODEL_PATH  # noqa: PLC0415
+    from basic_pitch.inference import Model  # noqa: PLC0415
 
-    import torch  # noqa: PLC0415 — heavy/optional dep
-
-    from backend.vendor.mr_mt3.inference import load_model  # noqa: PLC0415
-
-    if torch.backends.mps.is_available():
-        device = torch.device("mps")
-    elif torch.cuda.is_available():
-        device = torch.device("cuda")
-    else:
-        device = torch.device("cpu")
-
-    log.info("Loading pretrained MT3 from %s on %s", ckpt, device)
-    model, _config = load_model(str(ckpt), device)
-    _MT3_MODEL = model
-    _MT3_DEVICE = device
-    return model, device
+    log.info("Loading Basic Pitch model from %s", ICASSP_2022_MODEL_PATH)
+    _BP_MODEL = Model(ICASSP_2022_MODEL_PATH)
+    return _BP_MODEL
 
 
 def _audio_path_from_uri(uri: str) -> Path:
@@ -247,27 +218,26 @@ def _audio_path_from_uri(uri: str) -> Path:
     return Path(parsed.path)
 
 
-def _run_mt3_sync(audio_path: Path) -> TranscriptionResult:
-    """Synchronous MT3 inference. Run inside asyncio.to_thread."""
-    model, device = _load_mt3_model()
-    from backend.vendor.mr_mt3.inference import (  # noqa: PLC0415
-        rescale_velocity_to_rms,
-    )
-    from backend.vendor.mr_mt3.inference import (
-        transcribe as mt3_transcribe,
-    )
+def _run_basic_pitch_sync(audio_path: Path) -> TranscriptionResult:
+    """Synchronous Basic Pitch inference. Run inside asyncio.to_thread."""
+    model = _load_basic_pitch_model()
+    from basic_pitch.inference import predict  # noqa: PLC0415
 
-    ns = mt3_transcribe(
+    model_output, midi_data, note_events = predict(
         str(audio_path),
-        model,
-        device,
-        batch_size=settings.mt3_batch_size,
+        model_or_model_path=model,
+        onset_threshold=settings.basic_pitch_onset_threshold,
+        frame_threshold=settings.basic_pitch_frame_threshold,
+        minimum_note_length=settings.basic_pitch_minimum_note_length_ms,
     )
-    # MT3 is trained with num_velocity_bins=1 → all velocities = 127. Reshape
-    # them via onset RMS so dynamics survive into the score.
-    ns = rescale_velocity_to_rms(ns, str(audio_path))
+    # Waveform-derived tempo_map (best-effort; None on failure).
     audio_tempo_map = tempo_map_from_audio_path(audio_path)
-    return _ns_to_transcription_result(ns, tempo_map_override=audio_tempo_map)
+    return _pretty_midi_to_transcription_result(
+        midi_data,
+        note_events,
+        model_output,
+        tempo_map_override=audio_tempo_map,
+    )
 
 
 class TranscribeService:
@@ -292,26 +262,26 @@ class TranscribeService:
                 blob = get_blob_store()
                 data = blob.get_bytes(payload.audio.uri)
             except Exception as fetch_exc:  # noqa: BLE001
-                log.warning("Could not fetch audio for MT3: %s", fetch_exc)
+                log.warning("Could not fetch audio for Basic Pitch: %s", fetch_exc)
                 return _stub_result(f"audio fetch failed: {fetch_exc}")
             suffix = f".{payload.audio.format}"
             tmp = tempfile.NamedTemporaryFile(suffix=suffix, delete=False)
             tmp.write(data)
             tmp.close()
             audio_path = Path(tmp.name)
-            log.debug("Staged %s → %s for MT3 (%s)", payload.audio.uri, audio_path, exc)
+            log.debug(
+                "Staged %s → %s for Basic Pitch (%s)",
+                payload.audio.uri, audio_path, exc,
+            )
 
         if not audio_path.is_file():
             return _stub_result(f"audio file missing: {audio_path}")
 
         try:
-            return await asyncio.to_thread(_run_mt3_sync, audio_path)
-        except FileNotFoundError as exc:
-            log.warning("MT3 checkpoint unavailable, using stub: %s", exc)
-            return _stub_result(str(exc))
+            return await asyncio.to_thread(_run_basic_pitch_sync, audio_path)
         except ImportError as exc:
-            log.warning("MT3 deps unavailable (%s) — using stub", exc)
+            log.warning("Basic Pitch deps unavailable (%s) — using stub", exc)
             return _stub_result(f"missing dependency: {exc}")
         except Exception as exc:  # noqa: BLE001 — boundary; we don't want one bad audio file to crash the worker
-            log.exception("MT3 inference failed for %s", audio_path)
+            log.exception("Basic Pitch inference failed for %s", audio_path)
             return _stub_result(f"inference failed: {exc}")

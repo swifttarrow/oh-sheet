@@ -9,13 +9,6 @@ from pathlib import Path
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-# Default MT3 checkpoint lives next to the vendored source tree at
-# backend/vendor/mr_mt3/pretrained/mt3.pth (tracked via git-lfs).
-_VENDORED_MT3_CHECKPOINT = (
-    Path(__file__).resolve().parent
-    / "vendor" / "mr_mt3" / "pretrained" / "mt3.pth"
-)
-
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
@@ -33,13 +26,13 @@ class Settings(BaseSettings):
     # Worker timeout used by OrchestratorCommand envelopes.
     job_timeout_sec: int = 600
 
-    # ---- MT3 baseline transcription ----------------------------------------
-    # Path to the pretrained MT3 checkpoint. Defaults to the vendored copy
-    # at backend/vendor/mr_mt3/pretrained/mt3.pth (git-lfs). Override via
-    # OHSHEET_MT3_CHECKPOINT_PATH to point at a fine-tuned checkpoint.
-    mt3_checkpoint_path: Path | None = _VENDORED_MT3_CHECKPOINT
-    # Inference knobs.
-    mt3_batch_size: int = 4
+    # ---- Basic Pitch transcription -----------------------------------------
+    # Tunable knobs passed through to basic_pitch.inference.predict(). Defaults
+    # mirror upstream (basic_pitch.constants.DEFAULT_*). The ONNX model ships
+    # inside the basic-pitch wheel, so there's no checkpoint path to configure.
+    basic_pitch_onset_threshold: float = 0.5
+    basic_pitch_frame_threshold: float = 0.3
+    basic_pitch_minimum_note_length_ms: float = 127.7
 
 
 settings = Settings()

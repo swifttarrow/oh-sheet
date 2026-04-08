@@ -3,12 +3,11 @@
 Takes a seconds-domain TranscriptionResult and emits a beat-domain
 PianoScore. The pipeline mirrors temp1/arrange.py at a smaller scale:
 
-  1. Cross-track dedup of same-pitch notes (MT3 emits duplicates per program)
-  2. Hand assignment — melody → RH, bass → LH, anything else by middle C
-  3. Quantize onsets/durations to a 1/16th-note grid
-  4. Voice assignment within each hand
-  5. Velocity normalization across both hands
-  6. Build PianoScore with chords / sections converted to beat-domain
+  1. Hand assignment — melody → RH, bass → LH, anything else by middle C
+  2. Quantize onsets/durations to a 1/16th-note grid
+  3. Voice assignment within each hand
+  4. Velocity normalization across both hands
+  5. Build PianoScore with chords / sections converted to beat-domain
 """
 from __future__ import annotations
 
@@ -41,7 +40,6 @@ MAX_VOICES_RH = 4
 MAX_VOICES_LH = 3
 MIN_TRACK_CONFIDENCE = 0.35
 NEAR_OVERLAP_TOL = 0.15      # beats
-DEDUP_TIME_TOL = 0.20        # seconds
 
 _VEL_TARGET_MIN = 35
 _VEL_TARGET_MAX = 120
@@ -58,57 +56,6 @@ def _quantize(onset: float, grid: float = QUANT_GRID) -> float:
 
 def _quantize_duration(dur: float, grid: float = QUANT_GRID) -> float:
     return max(round(dur / grid) * grid, grid)
-
-
-# ---------------------------------------------------------------------------
-# Cross-track deduplication
-# ---------------------------------------------------------------------------
-
-def _dedup_across_tracks(tracks: list[MidiTrack]) -> list[MidiTrack]:
-    """Merge same-pitch notes across tracks within DEDUP_TIME_TOL seconds.
-
-    MT3 frequently emits the same audio event under several GM programs;
-    keeping the loudest copy avoids them landing on different grid spots.
-    """
-    indexed: list[tuple[int, float, int, int, int]] = []  # (pitch, onset, vel, ti, ni)
-    for ti, track in enumerate(tracks):
-        for ni, n in enumerate(track.notes):
-            indexed.append((n.pitch, n.onset_sec, n.velocity, ti, ni))
-    if not indexed:
-        return tracks
-
-    indexed.sort(key=lambda x: (x[0], x[1]))
-
-    keep: set[tuple[int, int]] = set()
-    used = [False] * len(indexed)
-    for i in range(len(indexed)):
-        if used[i]:
-            continue
-        best = i
-        j = i + 1
-        while (
-            j < len(indexed)
-            and indexed[j][0] == indexed[i][0]
-            and indexed[j][1] - indexed[i][1] <= DEDUP_TIME_TOL
-        ):
-            if indexed[j][2] > indexed[best][2]:
-                best = j
-            j += 1
-        for k in range(i, j):
-            used[k] = True
-        keep.add((indexed[best][3], indexed[best][4]))
-
-    result: list[MidiTrack] = []
-    for ti, track in enumerate(tracks):
-        filtered = [n for ni, n in enumerate(track.notes) if (ti, ni) in keep]
-        if filtered:
-            result.append(MidiTrack(
-                notes=filtered,
-                instrument=track.instrument,
-                program=track.program,
-                confidence=track.confidence,
-            ))
-    return result
 
 
 # ---------------------------------------------------------------------------
@@ -298,8 +245,7 @@ def _arrange_sync(
         # Fall back to all tracks rather than emit an empty score
         pitched_tracks = list(payload.midi_tracks)
 
-    deduped = _dedup_across_tracks(pitched_tracks)
-    rh_raw, lh_raw = _assign_hands(deduped, tempo_map)
+    rh_raw, lh_raw = _assign_hands(pitched_tracks, tempo_map)
 
     max_rh = MAX_VOICES_RH if difficulty != "beginner" else 2
     max_lh = MAX_VOICES_LH if difficulty != "beginner" else 1

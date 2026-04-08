@@ -1,0 +1,23 @@
+.git
+.github
+.pytest_cache
+.coverage
+.venv
+venv
+__pycache__
+*.pyc
+blob/
+dist/
+build/
+htmlcov/
+*.egg-info
+.env
+.DS_Store
+.vscode
+.idea
+# Root-level marketing assets (not frontend/assets/ which is copied in Stage 1)
+assets/
+marketing-prototype.html
+frontend/.dart_tool
+frontend/build
+frontend/.packages

@@ -26,19 +26,31 @@ dev = [
 youtube = [
     "yt-dlp>=2024.1",
 ]
-# Pretrained MT3 baseline (backend.vendor.mr_mt3). Heavy ML deps — installed
-# only when you actually want to run the model. Without these the
-# TranscribeService falls back to a stub TranscriptionResult.
-mt3 = [
-    "torch>=2.1",
-    "torchaudio>=2.1",
-    "librosa>=0.10",
+# Basic Pitch transcription baseline. basic-pitch ships the ICASSP-2022
+# model weights inside the wheel, so there's no checkpoint to vendor.
+#
+# Heads-up on the `--no-deps` dance in the Makefile: basic-pitch 0.4.0 has
+# `tensorflow-macos>=2.4.1,<2.15.1` as a *base* dependency on Darwin when
+# python_version > '3.11', and tensorflow-macos has no wheels for Python
+# 3.13. So we install basic-pitch itself with `--no-deps` and pin its
+# actual runtime deps here instead. At import time basic-pitch auto-picks
+# the first available backend from coreml/tf/tflite/onnx, so with
+# coremltools + onnxruntime installed and tensorflow absent it falls
+# back to a CoreML or ONNX session without complaint.
+#
+# Without this extra the TranscribeService falls back to a stub
+# TranscriptionResult.
+basic-pitch = [
+    "coremltools; platform_system == 'Darwin'",
+    "librosa>=0.8.0",
+    "mir_eval>=0.6.0",
     "numpy>=1.26",
-    "note-seq>=0.0.5",
-    "transformers>=4.40",
-    "einops>=0.7",
-    "tqdm>=4.66",
-    "absl-py>=2.0",
+    "onnxruntime>=1.19",
+    "pretty_midi>=0.2.10",
+    "resampy>=0.2.2,<0.4.3",
+    "scikit-learn",
+    "scipy>=1.4.1",
+    "typing_extensions",
 ]
 
 [project.scripts]
@@ -50,11 +62,6 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["backend"]
-# Ship the vendored MT3 checkpoint + config alongside the Python sources so
-# `pip install ohsheet[mt3]` produces a self-contained baseline transcriber.
-[tool.hatch.build.targets.wheel.force-include]
-"backend/vendor/mr_mt3/pretrained/mt3.pth" = "backend/vendor/mr_mt3/pretrained/mt3.pth"
-"backend/vendor/mr_mt3/config/mt3_config.json" = "backend/vendor/mr_mt3/config/mt3_config.json"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
@@ -64,7 +71,6 @@ addopts = "--cov=backend --cov-report=term-missing --cov-report=xml"
 [tool.ruff]
 target-version = "py311"
 line-length = 120
-exclude = ["backend/vendor"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "W", "UP", "B", "SIM"]
@@ -85,7 +91,6 @@ warn_return_any = false
 warn_unused_configs = true
 disallow_untyped_defs = false
 ignore_missing_imports = true
-exclude = ["backend/vendor"]
 
 [[tool.mypy.overrides]]
 module = "backend.services.engrave"

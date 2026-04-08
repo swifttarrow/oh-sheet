@@ -13,7 +13,7 @@ MP3 / MIDI / Song Link
 ┌─── INGEST ───┐    Validate input, normalize audio, extract metadata
 └───────┬───────┘
         ▼
-┌─ TRANSCRIBE ─┐    Full-mix audio → MIDI (MT3 / custom conformer)
+┌─ TRANSCRIBE ─┐    Full-mix audio → MIDI (Basic Pitch)
 │              │    Chord detection, beat tracking, key/tempo analysis
 └───────┬───────┘
         ▼
@@ -63,7 +63,7 @@ PianoScore           HumanizedPerformance     EngravedOutput
 
 | Stage           | Primary Tool           | Fallback      |
 | --------------- | ---------------------- | ------------- |
-| Transcription   | MT3 / Custom Conformer | Basic Pitch   |
+| Transcription   | Basic Pitch            | —             |
 | Chord/Structure | madmom                 | librosa       |
 | Arrangement     | music21                | LLM (GPT-4)   |
 | Humanization    | Rule-based + ML        | —             |
@@ -105,7 +105,7 @@ backend/
 │   └── local.py         # file:// backed local store; S3 stub goes here next
 ├── services/            # Stage workers — STUBS
 │   ├── ingest.py
-│   ├── transcribe.py    # → wraps MT4 v5
+│   ├── transcribe.py    # → wraps Basic Pitch (ONNX)
 │   ├── arrange.py       # → wraps temp1/arrange.py
 │   ├── humanize.py      # → wraps temp1/humanize.py
 │   └── engrave.py       # → wraps temp1/engrave.py (LilyPond)
@@ -122,6 +122,24 @@ backend/
         ├── stages.py    # POST /v1/stages/{ingest,…} — worker envelope
         └── ws.py        # WS  /v1/jobs/{id}/ws — live event stream
 ```
+
+#### Transcription tempo_map
+
+Basic Pitch is a polyphonic pitch tracker and does **not** estimate
+tempo, so out of the box the transcribe stage would emit a single global
+BPM anchor at `t=0` and every downstream `sec_to_beat` call would drift
+against the real pulse of the recording. To fix that,
+`backend/services/audio_timing.py` runs `librosa.beat.beat_track` on the
+waveform after inference and builds a piecewise `TempoMapEntry` list —
+one anchor per detected beat, with each segment's BPM derived from the
+inter-beat interval. `TranscribeService` injects this map into
+`HarmonicAnalysis.tempo_map` and appends a `tempo_map from audio beat
+tracking (librosa)` warning so the override is visible in the quality
+signal. When `librosa` is missing, beat tracking fails, or the audio is
+too short (< 0.5 s), the service falls back silently to the
+single-anchor map derived from `pretty_midi.estimate_tempo`. MIDI-upload
+jobs are unaffected — they already build a multi-point map from
+`pretty_midi` tempo changes.
 
 ### Frontend (Flutter)
 
@@ -147,7 +165,7 @@ frontend/lib/
 │  Frontend    │ ──────────────►│  Pipeline    │ ──────────────►│  (optional)  │
 │  (SPA)       │                │  (FastAPI)   │                │              │
 │              │◄─── progress ──│              │                │  Rooms       │
-│  Upload      │   via WS      │  MT3         │                │  Shared Piano│
+│  Upload      │   via WS      │  Basic Pitch │                │  Shared Piano│
 │  Progress    │                │  music21     │                │  AI Coach    │
 │  Download    │                │  LilyPond    │                │  Live Playback│
 └──────────────┘                └──────────────┘                └──────────────┘
@@ -252,5 +270,5 @@ what to replace. The plan:
 1. Move (or `pip install -e`) the existing pipeline modules so they're
    importable.
 2. Replace the stub bodies with calls into the real implementations.
-3. Use `asyncio.to_thread()` for CPU-bound stages (MT4 inference, LilyPond).
+3. Use `asyncio.to_thread()` for CPU-bound stages (Basic Pitch inference, LilyPond).
 4. Add an `S3BlobStore` alongside `LocalBlobStore`.

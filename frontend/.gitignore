@@ -20,3 +20,4 @@ app.*.map.json
 
 # OS
 .DS_Store
+frontend/pubspec.lock
