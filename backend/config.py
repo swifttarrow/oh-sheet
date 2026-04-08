@@ -137,14 +137,31 @@ class Settings(BaseSettings):
     # leaving this on is safe even on boxes where demucs/torch
     # aren't installed.
     #
-    # Caveats operators should know about:
-    #   * Demucs is heavy: ~80 MB weights, 0.2–0.5x real-time on CPU,
-    #     2–3x real-time on Apple MPS, 5–10x on CUDA. Jobs get
-    #     noticeably slower when this is on.
-    #   * The default htdemucs pretrained weights are CC BY-NC 4.0.
-    #     Commercial deployments must either swap in a commercially
-    #     licensed model, train their own, or set
-    #     ``OHSHEET_DEMUCS_ENABLED=0`` to force the single-mix path.
+    # Latency budget operators should know about:
+    #   * Demucs separation itself is heavy: ~80 MB weights,
+    #     0.2–0.5x real-time on CPU, 2–3x real-time on Apple MPS,
+    #     5–10x on CUDA. Pay this once per job.
+    #   * After separation the stems path runs Basic Pitch three
+    #     times — once per stem (vocals/bass/other). The three
+    #     passes run **in parallel** by default (see
+    #     ``demucs_parallel_stems`` below), and since the bulk of
+    #     Basic Pitch's wall time happens in GIL-releasing C
+    #     extensions (ONNX Runtime, librosa, numpy) on a multi-core
+    #     host the three passes overlap down to roughly one Basic
+    #     Pitch pass of wall time. On a single-core host or with
+    #     parallelism disabled, expect ~3x Basic Pitch cost instead.
+    #
+    # Rough wall-clock with the defaults (multi-core + parallel):
+    #     stems path ≈ 1x Demucs + 1x Basic Pitch
+    #     single-mix path ≈ 1x Basic Pitch
+    # So flipping Demucs on costs you approximately one full Demucs
+    # pass in additional wall time — roughly 2–10x the Basic Pitch
+    # cost depending on CPU/GPU.
+    #
+    # The default htdemucs pretrained weights are CC BY-NC 4.0.
+    # Commercial deployments must either swap in a commercially
+    # licensed model, train their own, or set
+    # ``OHSHEET_DEMUCS_ENABLED=0`` to force the single-mix path.
     demucs_enabled: bool = True
     demucs_model: str = "htdemucs"
     demucs_device: str | None = None             # None → auto: cuda → mps → cpu
@@ -152,6 +169,22 @@ class Settings(BaseSettings):
     demucs_shifts: int = 1                       # upstream default; >1 improves SDR
     demucs_overlap: float = 0.25
     demucs_split: bool = True
+
+    # Parallel Basic Pitch inference across stems. When enabled, the
+    # three per-stem passes run concurrently in a ThreadPoolExecutor
+    # sharing the cached ``basic_pitch.inference.Model`` — safe because
+    # the underlying ONNX / CoreML sessions are documented thread-safe
+    # and ``basic_pitch.inference`` has no module-level mutable state.
+    # Disable to reproduce the old serial behavior (useful for
+    # debugging single-thread traces or for hosts where the process
+    # is already CPU-saturated and parallelism would just thrash).
+    demucs_parallel_stems: bool = True
+    # Upper bound on concurrent stem workers. The effective worker
+    # count is ``min(this, active_stem_count)`` — usually 3
+    # (vocals/bass/other). Raising this above 3 has no effect today
+    # but leaves room for future per-stem fan-out (e.g. a secondary
+    # accompaniment pass on the ``other`` stem).
+    demucs_parallel_max_workers: int = 3
 
     # Per-consumer routing. Each flag gates whether the corresponding
     # stem is used; flipping individual switches off is the escape

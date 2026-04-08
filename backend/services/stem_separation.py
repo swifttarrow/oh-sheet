@@ -18,12 +18,16 @@ a *mixed* waveform, and a proper source-separation front-end renders
 them redundant.
 
 Everything here is feature-flagged via
-:attr:`backend.config.Settings.demucs_enabled` (off by default) and
-degrades gracefully. Any failure — missing ``demucs`` / ``torch``,
+:attr:`backend.config.Settings.demucs_enabled` — **on by default**,
+because the stems path produces cleaner role splits than the
+single-mix Viterbi heuristics whenever ``demucs`` is installed.
+Every failure mode degrades gracefully: missing ``demucs`` / ``torch``,
 unreadable audio, model load crash, apply_model OOM, tempfile write
-failure — returns ``(None, stats)`` with ``stats.skipped = True`` and
+failure all return ``(None, stats)`` with ``stats.skipped = True`` and
 a descriptive warning, so the caller falls back to the original
-single-mix Basic Pitch path without losing notes.
+single-mix Basic Pitch path without losing notes. Commercial
+deployments that can't accept the CC BY-NC ``htdemucs`` weights
+should set ``OHSHEET_DEMUCS_ENABLED=0`` to force the fallback.
 
 Cost
 ----

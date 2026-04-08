@@ -25,6 +25,7 @@ import asyncio
 import io
 import logging
 import tempfile
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -358,7 +359,11 @@ class _BasicPitchPass:
     cleanup_stats: CleanupStats
 
 
-def _basic_pitch_single_pass(audio_path: Path) -> _BasicPitchPass:
+def _basic_pitch_single_pass(
+    audio_path: Path,
+    *,
+    keep_model_output: bool = True,
+) -> _BasicPitchPass:
     """Run preprocess → Basic Pitch → cleanup for one audio file.
 
     Factored out of :func:`_run_basic_pitch_sync` so the Demucs path
@@ -374,6 +379,17 @@ def _basic_pitch_single_pass(audio_path: Path) -> _BasicPitchPass:
     old inline code did — the preprocessed tempfile (if any) is
     unlinked in a ``finally`` regardless of whether ``predict``
     succeeded, so we never leak temp WAVs on the inference path.
+
+    ``keep_model_output`` defaults to True for the single-mix path,
+    where the downstream Viterbi melody/bass extractors read
+    ``model_output["contour"]``. The stems path passes False so the
+    contour tensor (tens of MB per stem — three copies in the
+    parallel path) can be garbage-collected as soon as Basic Pitch's
+    note events are extracted. On the stems path that matrix is
+    dead data: the ``if not events_by_role`` guard in
+    :func:`_run_with_stems` makes the ``model_output.get("note")``
+    confidence fallback in :func:`_pretty_midi_to_transcription_result`
+    unreachable.
     """
     model = _load_basic_pitch_model()
     from basic_pitch.inference import predict  # noqa: PLC0415
@@ -435,6 +451,15 @@ def _basic_pitch_single_pass(audio_path: Path) -> _BasicPitchPass:
             cleaned_events = note_events  # fall back to raw
             cleanup_stats.warnings.append("cleanup: rebuild failed, using raw pm")
 
+    # Drop the shared reference to ``model_output`` before the
+    # function returns when the caller doesn't need it. The local
+    # binding above goes out of scope regardless, but keeping this
+    # explicit means the stems path never hands a live reference
+    # to the contour tensor back to the orchestrator — the C-backed
+    # numpy arrays can be reclaimed before the next stem's
+    # ``predict()`` allocates its own.
+    if not keep_model_output:
+        model_output.clear()
     return _BasicPitchPass(
         cleaned_events=cleaned_events,
         model_output=model_output,
@@ -627,41 +652,86 @@ def _run_with_stems(
     stay off in this code path regardless, because their purpose is
     to compensate for the single-mix Basic Pitch limitation the
     stems already fix.
+
+    Parallelism
+    -----------
+    The three Basic Pitch passes (vocals / bass / other) are
+    independent, so by default they run concurrently in a
+    :class:`~concurrent.futures.ThreadPoolExecutor` gated by
+    :attr:`Settings.demucs_parallel_stems`. The shared cached
+    ``basic_pitch.inference.Model`` is safe to call from multiple
+    threads because its backing session — ONNX Runtime on Linux/CI,
+    CoreML on Darwin — is documented thread-safe for concurrent
+    ``.run()`` / ``.predict()`` calls, and ``basic_pitch.inference``
+    itself has no module-level mutable state to race on. Most of the
+    wall time (session inference, numpy window packing, ``librosa``
+    resampling) happens in C extensions that release the GIL, so on
+    a multi-core host the three passes overlap to ~1x Basic Pitch
+    cost instead of ~3x.
+
+    Set ``OHSHEET_DEMUCS_PARALLEL_STEMS=0`` to force serial
+    execution (useful for debugging single-thread traces or
+    reproducing sequential memory behavior).
     """
     events_by_role: dict[InstrumentRole, list[NoteEvent]] = {}
     per_stem_preprocess_stats: dict[str, PreprocessStats] = {}
     per_stem_cleanup_stats: dict[str, CleanupStats] = {}
     per_stem_passes: dict[str, _BasicPitchPass] = {}
 
-    def _run_stem(label: str, stem_path: Path | None) -> _BasicPitchPass | None:
-        if stem_path is None:
-            return None
+    # Build the list of stems we actually need to run Basic Pitch on,
+    # honoring the per-consumer escape hatches. An absent stem (e.g.
+    # a 2-source bag that didn't emit vocals) naturally drops out
+    # here too.
+    stem_jobs: list[tuple[str, Path]] = []
+    if settings.demucs_use_vocals_for_melody and stems.vocals is not None:
+        stem_jobs.append(("vocals", stems.vocals))
+    if settings.demucs_use_bass_stem and stems.bass is not None:
+        stem_jobs.append(("bass", stems.bass))
+    if settings.demucs_use_other_for_chords and stems.other is not None:
+        stem_jobs.append(("other", stems.other))
+
+    def _run_stem(job: tuple[str, Path]) -> tuple[str, _BasicPitchPass | None]:
+        label, stem_path = job
         try:
-            bp = _basic_pitch_single_pass(stem_path)
+            # ``keep_model_output=False`` lets each pass drop its
+            # ``contour`` tensor as soon as note extraction finishes.
+            # On the parallel path this matters twice: the three
+            # passes overlap in time (peak memory would otherwise
+            # carry three live contour matrices), and the stems path
+            # never consults ``model_output`` downstream because the
+            # Viterbi fallbacks are disabled here.
+            bp = _basic_pitch_single_pass(stem_path, keep_model_output=False)
         except Exception as exc:  # noqa: BLE001 — one bad stem must not sink the job
             log.warning("Basic Pitch failed on %s stem (%s): %s", label, stem_path, exc)
-            return None
+            return label, None
+        return label, bp
+
+    if stem_jobs and settings.demucs_parallel_stems and len(stem_jobs) > 1:
+        # The cached Basic Pitch model is thread-safe to call
+        # concurrently (see docstring) and most of the work happens
+        # in GIL-releasing C extensions, so a ThreadPoolExecutor is
+        # the right tool here — no pickling, no process spawn cost,
+        # no duplicated model weights.
+        max_workers = min(settings.demucs_parallel_max_workers, len(stem_jobs))
+        with ThreadPoolExecutor(
+            max_workers=max_workers,
+            thread_name_prefix="bp-stem",
+        ) as ex:
+            results = list(ex.map(_run_stem, stem_jobs))
+    else:
+        results = [_run_stem(job) for job in stem_jobs]
+
+    for label, bp in results:
+        if bp is None:
+            continue
         per_stem_passes[label] = bp
         if bp.preprocess_stats is not None:
             per_stem_preprocess_stats[label] = bp.preprocess_stats
         per_stem_cleanup_stats[label] = bp.cleanup_stats
-        return bp
 
-    vocals_bp = (
-        _run_stem("vocals", stems.vocals)
-        if settings.demucs_use_vocals_for_melody
-        else None
-    )
-    bass_bp = (
-        _run_stem("bass", stems.bass)
-        if settings.demucs_use_bass_stem
-        else None
-    )
-    other_bp = (
-        _run_stem("other", stems.other)
-        if settings.demucs_use_other_for_chords
-        else None
-    )
+    vocals_bp = per_stem_passes.get("vocals")
+    bass_bp = per_stem_passes.get("bass")
+    other_bp = per_stem_passes.get("other")
 
     if vocals_bp is not None and vocals_bp.cleaned_events:
         events_by_role[InstrumentRole.MELODY] = vocals_bp.cleaned_events
@@ -742,20 +812,20 @@ def _run_with_stems(
     fallback_midi = representative_pass.midi_data if representative_pass else None
     combined_midi = _combined_midi_from_events(events_by_role, fallback_midi)
 
-    # Representative model_output for the existing note_grid confidence
-    # fallback in _pretty_midi_to_transcription_result. We pass the
-    # "other" stem's model_output when available because it mirrors
-    # the mix-wide harmonic density best; otherwise any available
-    # pass works — the fallback is only exercised when events_by_role
-    # is empty, which we already guarded against above.
-    representative_model_output: dict[str, Any] = (
-        representative_pass.model_output if representative_pass else {}
-    )
+    # ``model_output`` is intentionally empty on the stems path. The
+    # ``_pretty_midi_to_transcription_result`` consumer only reads it
+    # as a ``note_grid`` confidence fallback when ``all_amplitudes``
+    # is empty, and the ``if not events_by_role`` guard above
+    # guarantees at least one non-empty per-stem event list, so that
+    # branch is unreachable here. Carrying a live reference would
+    # just pin the (unused) contour tensors until the function
+    # returns, defeating the ``keep_model_output=False`` memory win.
+    stems_model_output: dict[str, Any] = {}
 
     result = _pretty_midi_to_transcription_result(
         combined_midi,
         events_by_role,
-        representative_model_output,
+        stems_model_output,
         tempo_map_override=audio_tempo_map,
         preprocess_stats=None,  # surfaced per-stem below
         cleanup_stats=None,     # surfaced per-stem below
