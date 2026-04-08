@@ -112,6 +112,9 @@ ignore = [
     "B905",    # zip strict — existing pattern
 ]
 
+[tool.ruff.lint.per-file-ignores]
+"backend/contracts.py" = ["F401"]  # names re-exported for `from backend.contracts import …`
+
 [tool.mypy]
 python_version = "3.11"
 packages = ["backend"]

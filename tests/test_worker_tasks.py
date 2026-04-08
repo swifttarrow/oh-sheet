@@ -3,21 +3,16 @@
 Each task follows the same pattern: read input from blob, run existing
 service, write output to blob, return output URI.
 """
-import json
-from pathlib import Path
 
 import pytest
-
-from backend.config import settings
 from shared.contracts import (
-    SCHEMA_VERSION,
-    HarmonicAnalysis,
     InputBundle,
     InputMetadata,
-    QualitySignal,
     TempoMapEntry,
 )
 from shared.storage.local import LocalBlobStore
+
+from backend.config import settings
 
 
 @pytest.fixture
@@ -46,12 +41,13 @@ class TestIngestTask:
 
 class TestHumanizeTask:
     def test_reads_blob_runs_service_writes_output(self, blob):
-        from backend.workers.humanize import run as humanize_run
         from shared.contracts import (
             PianoScore,
             ScoreMetadata,
             ScoreNote,
         )
+
+        from backend.workers.humanize import run as humanize_run
 
         score = PianoScore(
             right_hand=[
@@ -79,12 +75,13 @@ class TestHumanizeTask:
 
 class TestEngraveTask:
     def test_reads_blob_runs_service_writes_output(self, blob):
-        from backend.workers.engrave import run as engrave_run
         from shared.contracts import (
             PianoScore,
             ScoreMetadata,
             ScoreNote,
         )
+
+        from backend.workers.engrave import run as engrave_run
 
         score = PianoScore(
             right_hand=[

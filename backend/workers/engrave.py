@@ -6,11 +6,12 @@ as a JSON object with a `payload_type` discriminator.
 """
 import asyncio
 
+from shared.contracts import HumanizedPerformance, PianoScore
+from shared.storage.local import LocalBlobStore
+
 from backend.config import settings
 from backend.services.engrave import EngraveService
 from backend.workers.celery_app import celery_app
-from shared.contracts import HumanizedPerformance, PianoScore
-from shared.storage.local import LocalBlobStore
 
 
 @celery_app.task(name="engrave.run")

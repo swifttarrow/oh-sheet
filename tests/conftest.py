@@ -6,17 +6,16 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
+import backend.workers.engrave  # noqa: F401
+import backend.workers.humanize  # noqa: F401
+
+# Import monolith worker modules so their tasks are registered on the celery_app.
+import backend.workers.ingest  # noqa: F401
 from backend.api import deps
 from backend.config import settings
 from backend.main import create_app
 from backend.services import transcribe as transcribe_module
 from backend.workers.celery_app import celery_app as _celery_app
-
-# Import monolith worker modules so their tasks are registered on the celery_app.
-import backend.workers.ingest  # noqa: F401
-import backend.workers.humanize  # noqa: F401
-import backend.workers.engrave  # noqa: F401
-
 
 # Register decomposer and assembler tasks on the monolith celery_app.
 #
@@ -30,9 +29,10 @@ import backend.workers.engrave  # noqa: F401
 
 @_celery_app.task(name="decomposer.run")
 def _decomposer_run(job_id: str, payload_uri: str) -> str:
-    from backend.services.transcribe import TranscribeService
     from shared.contracts import InputBundle
     from shared.storage.local import LocalBlobStore
+
+    from backend.services.transcribe import TranscribeService
 
     blob = LocalBlobStore(settings.blob_root)
     raw = blob.get_json(payload_uri)
@@ -50,9 +50,10 @@ def _decomposer_run(job_id: str, payload_uri: str) -> str:
 
 @_celery_app.task(name="assembler.run")
 def _assembler_run(job_id: str, payload_uri: str) -> str:
-    from backend.services.arrange import ArrangeService
     from shared.contracts import TranscriptionResult
     from shared.storage.local import LocalBlobStore
+
+    from backend.services.arrange import ArrangeService
 
     blob = LocalBlobStore(settings.blob_root)
     raw = blob.get_json(payload_uri)

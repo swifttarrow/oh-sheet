@@ -1,11 +1,12 @@
 """Celery task for the ingest pipeline stage."""
 import asyncio
 
+from shared.contracts import InputBundle
+from shared.storage.local import LocalBlobStore
+
 from backend.config import settings
 from backend.services.ingest import IngestService
 from backend.workers.celery_app import celery_app
-from shared.contracts import InputBundle
-from shared.storage.local import LocalBlobStore
 
 
 @celery_app.task(name="ingest.run")

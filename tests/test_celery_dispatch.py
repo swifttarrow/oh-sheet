@@ -3,14 +3,8 @@
 Uses Celery's eager mode (task_always_eager=True) so tasks execute
 in-process synchronously — no Redis needed for unit tests.
 """
-from pathlib import Path
 
 import pytest
-
-from backend.config import settings
-from backend.jobs.events import JobEvent
-from backend.jobs.runner import PipelineRunner
-from backend.workers.celery_app import celery_app
 from shared.contracts import (
     InputBundle,
     InputMetadata,
@@ -18,6 +12,11 @@ from shared.contracts import (
     RemoteAudioFile,
 )
 from shared.storage.local import LocalBlobStore
+
+from backend.config import settings
+from backend.jobs.events import JobEvent
+from backend.jobs.runner import PipelineRunner
+from backend.workers.celery_app import celery_app
 
 
 @pytest.fixture

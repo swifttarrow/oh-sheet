@@ -11,7 +11,6 @@ import asyncio
 import logging
 from collections.abc import Callable
 from pathlib import Path
-from typing import Any
 from urllib.parse import urlparse
 
 from celery import Celery
@@ -20,12 +19,10 @@ from backend.contracts import (
     SCHEMA_VERSION,
     EngravedOutput,
     HarmonicAnalysis,
-    HumanizedPerformance,
     InputBundle,
     InstrumentRole,
     MidiTrack,
     Note,
-    PianoScore,
     PipelineConfig,
     QualitySignal,
     TempoMapEntry,

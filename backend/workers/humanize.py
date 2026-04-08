@@ -1,11 +1,12 @@
 """Celery task for the humanize pipeline stage."""
 import asyncio
 
+from shared.contracts import PianoScore
+from shared.storage.local import LocalBlobStore
+
 from backend.config import settings
 from backend.services.humanize import HumanizeService
 from backend.workers.celery_app import celery_app
-from shared.contracts import PianoScore
-from shared.storage.local import LocalBlobStore
 
 
 @celery_app.task(name="humanize.run")
