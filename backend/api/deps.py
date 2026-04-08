@@ -30,7 +30,7 @@ def get_runner() -> PipelineRunner:
     blob = get_blob_store()
     return PipelineRunner(
         ingest=IngestService(blob_store=blob),
-        transcribe=TranscribeService(),
+        transcribe=TranscribeService(blob_store=blob),
         arrange=ArrangeService(),
         humanize=HumanizeService(),
         engrave=EngraveService(blob_store=blob),

@@ -228,7 +228,7 @@ class PipelineRunner:
                 bundle = await self.ingest.run(bundle)
 
             elif step == "transcribe":
-                txr = await self.transcribe.run(bundle)
+                txr = await self.transcribe.run(bundle, job_id=job_id)
 
             elif step == "arrange":
                 if txr is None and bundle.midi is not None:
@@ -264,4 +264,12 @@ class PipelineRunner:
 
         if result is None:
             raise RuntimeError("pipeline finished without producing an EngravedOutput")
+
+        # Carry the raw transcription MIDI URI (if any) onto the final
+        # output so the artifacts route can serve it without needing a
+        # separate handle on TranscriptionResult.
+        if txr is not None and txr.transcription_midi_uri:
+            result = result.model_copy(
+                update={"transcription_midi_uri": txr.transcription_midi_uri},
+            )
         return result

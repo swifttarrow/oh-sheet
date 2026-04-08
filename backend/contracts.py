@@ -183,6 +183,11 @@ class TranscriptionResult(BaseModel):
     midi_tracks: list[MidiTrack]
     analysis: HarmonicAnalysis
     quality: QualitySignal
+    # URI of the raw MIDI bytes emitted by the transcription backend (e.g.
+    # Basic Pitch's pretty_midi output), saved to blob storage so callers can
+    # inspect the pre-arrangement pitch stream. Optional because stub/fallback
+    # results and non-audio inputs don't produce a meaningful MIDI file.
+    transcription_midi_uri: str | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -308,6 +313,10 @@ class EngravedOutput(BaseModel):
     musicxml_uri: str
     humanized_midi_uri: str
     audio_preview_uri: str | None = None
+    # Raw transcription MIDI (pre-arrangement) carried through from
+    # TranscriptionResult so the finished job exposes both the humanized
+    # output and the untouched transcribed pitch stream.
+    transcription_midi_uri: str | None = None
 
 
 # ---------------------------------------------------------------------------

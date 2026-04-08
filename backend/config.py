@@ -34,5 +34,167 @@ class Settings(BaseSettings):
     basic_pitch_frame_threshold: float = 0.3
     basic_pitch_minimum_note_length_ms: float = 127.7
 
+    # ---- Audio pre-processing (runs before Basic Pitch) --------------------
+    # HPSS + RMS normalization applied to the waveform before inference.
+    # See backend/services/audio_preprocess.py for semantics; the defaults
+    # here mirror the DEFAULT_* constants in that module.
+    #
+    # Enabled=False by default. The measurement run against
+    # assets/rising-sun-{1,2,3}.mp3 (scripts/bench_preprocess.py) showed:
+    #   * Note counts shift by at most ±10% with preprocessing on — the
+    #     cleanup_* and basic_pitch_*_threshold defaults above are robust
+    #     to preprocessing and do NOT need a preprocessing-aware profile.
+    #   * Cleanup's merge-fragmented-sustains pass drops ~25% of its
+    #     workload because HPSS heals most frame-level activation dips
+    #     at the source. A welcome side-effect, not a retune driver.
+    #   * Octave-ghost counts stay flat (2→1, 3→3, 1→0) — the
+    #     octave_amp_ratio threshold is ratio-based and self-corrects.
+    #   * Overall confidence improves by +0.00 to +0.04 on the three
+    #     fixtures. Real but marginal.
+    #   * Cost: ~1.3–1.5s of extra wall time per inference for HPSS +
+    #     normalize + tempfile write.
+    # The three fixtures are correlated (same piece, three takes) so the
+    # evidence is not strong enough to flip the default globally. Users
+    # with drum-heavy or dynamic-range-varied material can opt in via
+    # OHSHEET_AUDIO_PREPROCESS_ENABLED=1 without touching any other knob.
+    audio_preprocess_enabled: bool = False
+    audio_preprocess_hpss_enabled: bool = True
+    audio_preprocess_hpss_margin: float = 1.0        # librosa default — gentle
+    audio_preprocess_normalize_enabled: bool = True
+    audio_preprocess_target_rms_dbfs: float = -20.0
+    audio_preprocess_peak_ceiling_dbfs: float = -1.0
+
+    # ---- Transcription cleanup (Phase 1 post-processing) -------------------
+    # Heuristic thresholds applied to Basic Pitch's note_events before we
+    # rebuild pretty_midi. See backend/services/transcription_cleanup.py for
+    # the semantics; these pass through as keyword args to cleanup_note_events.
+    cleanup_merge_gap_sec: float = 0.03
+    cleanup_octave_amp_ratio: float = 0.6
+    cleanup_octave_onset_tol_sec: float = 0.05
+    cleanup_ghost_max_duration_sec: float = 0.06
+    cleanup_ghost_amp_median_scale: float = 0.5
+
+    # ---- Melody extraction (Phase 2 post-processing) -----------------------
+    # Viterbi-based melody / chord split driven by Basic Pitch's
+    # ``model_output["contour"]`` salience matrix. See
+    # backend/services/melody_extraction.py for semantics. Disable via
+    # ``OHSHEET_MELODY_EXTRACTION_ENABLED=false`` to keep the legacy
+    # single-PIANO output. Defaults mirror the DEFAULT_* constants in the
+    # extraction module so config and tests agree.
+    melody_extraction_enabled: bool = True
+    melody_low_midi: int = 55                    # G3
+    melody_high_midi: int = 90                   # F#6
+    melody_voicing_floor: float = 0.15
+    melody_transition_weight: float = 0.25
+    melody_max_transition_bins: int = 12         # ≈ 4 semitones / frame
+    melody_match_fraction: float = 0.6
+
+    # Back-fill of stable Viterbi runs with no matching Basic Pitch note.
+    # See _backfill_missed_melody_notes in melody_extraction.py.
+    melody_backfill_enabled: bool = True
+    melody_backfill_min_duration_sec: float = 0.12
+    melody_backfill_overlap_fraction: float = 0.5
+    melody_backfill_min_amp: float = 0.15
+    melody_backfill_max_amp: float = 0.60
+
+    # ---- Bass extraction (Phase 3 post-processing) ------------------------
+    # Same Viterbi trick as melody extraction, run over the low-register
+    # slice of the contour matrix. Accepts the non-melody events from
+    # Phase 2 and splits them into BASS / remaining buckets. Defaults
+    # mirror bass_extraction.DEFAULT_* so config and tests agree.
+    bass_extraction_enabled: bool = True
+    bass_low_midi: int = 28                      # E1
+    bass_high_midi: int = 55                     # G3
+    bass_voicing_floor: float = 0.12
+    bass_transition_weight: float = 0.40
+    bass_max_transition_bins: int = 9            # ≈ 3 semitones / frame
+    bass_match_fraction: float = 0.55
+
+    # ---- Chord recognition (Phase 3 post-processing) ----------------------
+    # librosa chroma_cqt + 24 triad templates, beat-synced via the same
+    # beat tracker that drives the tempo map. Labels attach to
+    # ``HarmonicAnalysis.chords``; notes are unaffected. Disable via
+    # ``OHSHEET_CHORD_RECOGNITION_ENABLED=false``.
+    chord_recognition_enabled: bool = True
+    chord_min_template_score: float = 0.55
+    chord_hpss_margin: float = 3.0               # librosa.effects.harmonic margin
+
+    # ---- Demucs source separation (pre-Basic Pitch) -----------------------
+    # When enabled, the transcribe stage runs Demucs over the source
+    # waveform to split it into {drums, bass, other, vocals} and routes
+    # each stem to a dedicated downstream consumer:
+    #   * vocals  → Basic Pitch → MELODY events
+    #   * bass    → Basic Pitch → BASS events
+    #   * other   → Basic Pitch → CHORDS events (+ chord recognition)
+    #   * drums   → tempo_map beat tracking
+    # See backend/services/stem_separation.py for the semantics; the
+    # defaults here mirror the DEFAULT_* constants in that module.
+    #
+    # Enabled by default — the stems path is the preferred pipeline
+    # whenever the demucs extra is installed. Any failure (missing
+    # dep, load crash, apply OOM, all-stems-empty, ...) falls back
+    # transparently to the original single-mix Basic Pitch path, so
+    # leaving this on is safe even on boxes where demucs/torch
+    # aren't installed.
+    #
+    # Latency budget operators should know about:
+    #   * Demucs separation itself is heavy: ~80 MB weights,
+    #     0.2–0.5x real-time on CPU, 2–3x real-time on Apple MPS,
+    #     5–10x on CUDA. Pay this once per job.
+    #   * After separation the stems path runs Basic Pitch three
+    #     times — once per stem (vocals/bass/other). The three
+    #     passes run **in parallel** by default (see
+    #     ``demucs_parallel_stems`` below), and since the bulk of
+    #     Basic Pitch's wall time happens in GIL-releasing C
+    #     extensions (ONNX Runtime, librosa, numpy) on a multi-core
+    #     host the three passes overlap down to roughly one Basic
+    #     Pitch pass of wall time. On a single-core host or with
+    #     parallelism disabled, expect ~3x Basic Pitch cost instead.
+    #
+    # Rough wall-clock with the defaults (multi-core + parallel):
+    #     stems path ≈ 1x Demucs + 1x Basic Pitch
+    #     single-mix path ≈ 1x Basic Pitch
+    # So flipping Demucs on costs you approximately one full Demucs
+    # pass in additional wall time — roughly 2–10x the Basic Pitch
+    # cost depending on CPU/GPU.
+    #
+    # The default htdemucs pretrained weights are CC BY-NC 4.0.
+    # Commercial deployments must either swap in a commercially
+    # licensed model, train their own, or set
+    # ``OHSHEET_DEMUCS_ENABLED=0`` to force the single-mix path.
+    demucs_enabled: bool = True
+    demucs_model: str = "htdemucs"
+    demucs_device: str | None = None             # None → auto: cuda → mps → cpu
+    demucs_segment_sec: float | None = None      # None → model's own default
+    demucs_shifts: int = 1                       # upstream default; >1 improves SDR
+    demucs_overlap: float = 0.25
+    demucs_split: bool = True
+
+    # Parallel Basic Pitch inference across stems. When enabled, the
+    # three per-stem passes run concurrently in a ThreadPoolExecutor
+    # sharing the cached ``basic_pitch.inference.Model`` — safe because
+    # the underlying ONNX / CoreML sessions are documented thread-safe
+    # and ``basic_pitch.inference`` has no module-level mutable state.
+    # Disable to reproduce the old serial behavior (useful for
+    # debugging single-thread traces or for hosts where the process
+    # is already CPU-saturated and parallelism would just thrash).
+    demucs_parallel_stems: bool = True
+    # Upper bound on concurrent stem workers. The effective worker
+    # count is ``min(this, active_stem_count)`` — usually 3
+    # (vocals/bass/other). Raising this above 3 has no effect today
+    # but leaves room for future per-stem fan-out (e.g. a secondary
+    # accompaniment pass on the ``other`` stem).
+    demucs_parallel_max_workers: int = 3
+
+    # Per-consumer routing. Each flag gates whether the corresponding
+    # stem is used; flipping individual switches off is the escape
+    # hatch when one stem turns out to be unreliable on a given corpus
+    # (e.g. Demucs drums on a cappella material is noisy — disable
+    # beats-from-drums and let audio_timing fall back to the mix).
+    demucs_use_vocals_for_melody: bool = True
+    demucs_use_bass_stem: bool = True
+    demucs_use_other_for_chords: bool = True     # both notes + chord labels
+    demucs_use_drums_for_beats: bool = True
+
 
 settings = Settings()
