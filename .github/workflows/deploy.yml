@@ -1,4 +1,4 @@
-name: Deploy to Cloud Run
+name: Deploy to VM
 
 on:
   push:
@@ -12,7 +12,6 @@ concurrency:
 env:
   PROJECT_ID: ${{ vars.GCP_PROJECT_ID }}
   REGION: ${{ vars.GCP_REGION || 'us-central1' }}
-  SERVICE: oh-sheet
   IMAGE: ${{ vars.GCP_REGION || 'us-central1' }}-docker.pkg.dev/${{ vars.GCP_PROJECT_ID }}/oh-sheet/app
 
 jobs:
@@ -21,7 +20,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      id-token: write  # Required for Workload Identity Federation
+      id-token: write
 
     steps:
       - uses: actions/checkout@v4
@@ -44,23 +43,34 @@ jobs:
           docker push ${{ env.IMAGE }}:${{ github.sha }}
           docker push ${{ env.IMAGE }}:latest
 
-      - name: Deploy to Cloud Run
+      - name: Deploy to VM
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.VM_SSH_PRIVATE_KEY }}
+          VM_HOST: ${{ vars.VM_HOST }}
+          VM_USER: ${{ vars.VM_USER }}
         run: |
-          gcloud run deploy ${{ env.SERVICE }} \
-            --image ${{ env.IMAGE }}:${{ github.sha }} \
-            --region ${{ env.REGION }} \
-            --platform managed \
-            --allow-unauthenticated \
-            --port 8080 \
-            --memory ${{ vars.CLOUD_RUN_MEMORY || '1Gi' }} \
-            --cpu ${{ vars.CLOUD_RUN_CPU || '1' }} \
-            --min-instances 0 \
-            --max-instances 3 \
-            --startup-probe=httpGet.path=/v1/health \
-            --set-env-vars 'OHSHEET_CORS_ORIGINS=["*"]'
+          # Set up SSH
+          mkdir -p ~/.ssh
+          echo "$SSH_PRIVATE_KEY" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh-keyscan -H "$VM_HOST" >> ~/.ssh/known_hosts 2>/dev/null
 
-      - name: Show deployment URL
+          SSH="ssh -i ~/.ssh/deploy_key ${VM_USER}@${VM_HOST}"
+          SCP="scp -i ~/.ssh/deploy_key"
+
+          # Write .env with the image tag for docker compose
+          echo "IMAGE=${{ env.IMAGE }}:${{ github.sha }}" > /tmp/.env
+
+          # Copy compose files to VM
+          $SCP docker-compose.yml Caddyfile /tmp/.env "${VM_USER}@${VM_HOST}:~/oh-sheet/"
+          $SSH "mv ~/oh-sheet/.env ~/oh-sheet/.env.deploy && mv ~/oh-sheet/.env.deploy ~/oh-sheet/.env"
+
+          # Pull and restart
+          $SSH "cd ~/oh-sheet && sudo docker compose pull && sudo docker compose up -d --remove-orphans && sudo docker image prune -f"
+
+      - name: Verify deployment
+        env:
+          VM_HOST: ${{ vars.VM_HOST }}
         run: |
-          gcloud run services describe ${{ env.SERVICE }} \
-            --region ${{ env.REGION }} \
-            --format 'value(status.url)'
+          sleep 10
+          curl -sf --retry 3 --retry-delay 5 "http://${VM_HOST}/v1/health" && echo "Health check passed" || echo "::warning::Health check did not pass yet"

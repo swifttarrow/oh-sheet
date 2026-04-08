@@ -1,0 +1,28 @@
+services:
+  app:
+    image: ${IMAGE:-us-central1-docker.pkg.dev/oh-she3t/oh-sheet/app:latest}
+    restart: unless-stopped
+    environment:
+      - PORT=8080
+      - OHSHEET_BLOB_ROOT=/data/blob
+      - OHSHEET_CORS_ORIGINS=["*"]
+    volumes:
+      - app-data:/data/blob
+    expose:
+      - "8080"
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+
+volumes:
+  app-data:
+  caddy-data:
+  caddy-config:

@@ -18,6 +18,8 @@ htmlcov/
 # Root-level marketing assets (not frontend/assets/ which is copied in Stage 1)
 assets/
 marketing-prototype.html
+docker-compose.yml
+Caddyfile
 frontend/.dart_tool
 frontend/build
 frontend/.packages
