@@ -14,16 +14,16 @@ PORT         ?= 8000
 
 DART_DEFINE := $(if $(API_BASE_URL),--dart-define=API_BASE_URL=$(API_BASE_URL),)
 
-.PHONY: help install install-backend install-mt3 install-frontend backend frontend test test-backend lint typecheck clean
+.PHONY: help install install-backend install-basic-pitch install-frontend backend frontend test test-backend lint typecheck clean
 
 help:
 	@echo "Oh Sheet — make targets"
 	@echo ""
-	@echo "  make install            full install: backend + MT3 deps + flutter pub get"
-	@echo "  make install-backend    pip install -e .[dev]  (API only — TranscribeService"
-	@echo "                          will fall back to a 4-note stub without MT3)"
-	@echo "  make install-mt3        pip install -e .[mt3]  (torch + note-seq, ~2 GB)"
-	@echo "  make install-frontend   flutter pub get inside frontend/"
+	@echo "  make install              full install: backend + Basic Pitch deps + flutter pub get"
+	@echo "  make install-backend      pip install -e .[dev]  (API only — TranscribeService"
+	@echo "                            will fall back to a 4-note stub without Basic Pitch)"
+	@echo "  make install-basic-pitch  pip install -e .[basic-pitch]  (basic-pitch[onnx] + pretty_midi)"
+	@echo "  make install-frontend     flutter pub get inside frontend/"
 	@echo ""
 	@echo "  make backend            run uvicorn dev server on $(HOST):$(PORT)"
 	@echo "  make frontend           flutter run -d $(DEVICE) (override DEVICE=ios|android|macos|...)"
@@ -35,13 +35,18 @@ help:
 
 # ---- install ----------------------------------------------------------------
 
-install: install-backend install-mt3 install-frontend
+install: install-backend install-basic-pitch install-frontend
 
 install-backend:
 	pip install -e ".[dev]"
 
-install-mt3:
-	pip install -e ".[mt3]"
+install-basic-pitch:
+	pip install -e ".[basic-pitch]"
+	# basic-pitch 0.4.0 hard-codes tensorflow-macos as a base dep on
+	# Darwin+Python>3.11 (no wheels for 3.13), so install it with
+	# --no-deps and rely on [basic-pitch] above for the actual runtime
+	# deps. See pyproject.toml comment for details.
+	pip install --no-deps "basic-pitch>=0.4"
 
 install-frontend:
 	cd $(FRONTEND) && flutter pub get

@@ -51,7 +51,7 @@ This reduces compute cost and creates compounding product value because every su
 
 - Pipeline:
   1. Normalize audio (sample rate/channels).
-  2. Transcribe to MIDI (Basic Pitch default for MVP; MT3 optional tier).
+  2. Transcribe to MIDI (Basic Pitch).
   3. Convert MIDI to score representation.
   4. Render to `MusicXML` and `PDF` (Music21 + LilyPond/MuseScore fallback).
 - Quality controls:
@@ -194,7 +194,7 @@ flowchart LR
   API -->|enqueue job| R[(Redis Broker)]
   R --> W[Celery Worker Pool]
   W --> Y[yt-dlp Fetcher]
-  W --> T[Transcription Model\nBasic Pitch / MT3]
+  W --> T[Transcription Model\nBasic Pitch]
   W --> A[Arrange + Difficulty Classifier]
   W --> E[MusicXML + PDF Renderer]
   E --> S3

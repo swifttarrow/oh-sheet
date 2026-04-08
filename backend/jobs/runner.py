@@ -1,7 +1,7 @@
 """PipelineRunner — walks the execution plan and invokes services in order.
 
 Mirrors temp1/orchestrator.py:run_pipeline but works on Pydantic contracts
-only — no file paths, no MT4 specifics. Each stage emits stage_started /
+only — no file paths, no model specifics. Each stage emits stage_started /
 stage_completed events through the supplied callback so the JobManager can
 forward them to WebSocket subscribers.
 """

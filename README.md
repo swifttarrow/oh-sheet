@@ -13,7 +13,7 @@ MP3 / MIDI / Song Link
 ┌─── INGEST ───┐    Validate input, normalize audio, extract metadata
 └───────┬───────┘
         ▼
-┌─ TRANSCRIBE ─┐    Full-mix audio → MIDI (MT3 / custom conformer)
+┌─ TRANSCRIBE ─┐    Full-mix audio → MIDI (Basic Pitch)
 │              │    Chord detection, beat tracking, key/tempo analysis
 └───────┬───────┘
         ▼
@@ -63,7 +63,7 @@ PianoScore           HumanizedPerformance     EngravedOutput
 
 | Stage           | Primary Tool           | Fallback      |
 | --------------- | ---------------------- | ------------- |
-| Transcription   | MT3 / Custom Conformer | Basic Pitch   |
+| Transcription   | Basic Pitch            | —             |
 | Chord/Structure | madmom                 | librosa       |
 | Arrangement     | music21                | LLM (GPT-4)   |
 | Humanization    | Rule-based + ML        | —             |
@@ -105,7 +105,7 @@ backend/
 │   └── local.py         # file:// backed local store; S3 stub goes here next
 ├── services/            # Stage workers — STUBS
 │   ├── ingest.py
-│   ├── transcribe.py    # → wraps MT4 v5
+│   ├── transcribe.py    # → wraps Basic Pitch (ONNX)
 │   ├── arrange.py       # → wraps temp1/arrange.py
 │   ├── humanize.py      # → wraps temp1/humanize.py
 │   └── engrave.py       # → wraps temp1/engrave.py (LilyPond)
@@ -147,7 +147,7 @@ frontend/lib/
 │  Frontend    │ ──────────────►│  Pipeline    │ ──────────────►│  (optional)  │
 │  (SPA)       │                │  (FastAPI)   │                │              │
 │              │◄─── progress ──│              │                │  Rooms       │
-│  Upload      │   via WS      │  MT3         │                │  Shared Piano│
+│  Upload      │   via WS      │  Basic Pitch │                │  Shared Piano│
 │  Progress    │                │  music21     │                │  AI Coach    │
 │  Download    │                │  LilyPond    │                │  Live Playback│
 └──────────────┘                └──────────────┘                └──────────────┘
@@ -252,5 +252,5 @@ what to replace. The plan:
 1. Move (or `pip install -e`) the existing pipeline modules so they're
    importable.
 2. Replace the stub bodies with calls into the real implementations.
-3. Use `asyncio.to_thread()` for CPU-bound stages (MT4 inference, LilyPond).
+3. Use `asyncio.to_thread()` for CPU-bound stages (Basic Pitch inference, LilyPond).
 4. Add an `S3BlobStore` alongside `LocalBlobStore`.
