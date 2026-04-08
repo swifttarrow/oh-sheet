@@ -43,14 +43,14 @@ import pytest
 # etc.
 pretty_midi = pytest.importorskip("pretty_midi")
 
-from backend.contracts import InstrumentRole
-from backend.services import transcribe as transcribe_mod
-from backend.services.stem_separation import SeparatedStems, StemSeparationStats
-from backend.services.transcribe import (
+from backend.contracts import InstrumentRole  # noqa: E402
+from backend.services import transcribe as transcribe_mod  # noqa: E402
+from backend.services.stem_separation import SeparatedStems, StemSeparationStats  # noqa: E402
+from backend.services.transcribe import (  # noqa: E402
     _BasicPitchPass,
     _run_with_stems,
 )
-from backend.services.transcription_cleanup import CleanupStats
+from backend.services.transcription_cleanup import CleanupStats  # noqa: E402
 
 # ---------------------------------------------------------------------------
 # helpers
