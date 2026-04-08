@@ -1,5 +1,5 @@
 name: ohsheet_app
-description: Oh Sheet — cross-platform Flutter client for the FastAPI pipeline.
+description: Oh Sheet! — cross-platform Flutter client for the FastAPI pipeline.
 publish_to: 'none'
 version: 0.1.0+1
 

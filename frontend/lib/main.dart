@@ -29,7 +29,7 @@ class _OhSheetAppState extends State<OhSheetApp> {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'Oh Sheet',
+      title: 'Oh Sheet!',
       theme: OhSheetTheme.light,
       home: _AppShell(api: _api),
     );
