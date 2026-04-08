@@ -15,6 +15,7 @@ htmlcov/
 .DS_Store
 .vscode
 .idea
+# Root-level marketing assets (not frontend/assets/ which is copied in Stage 1)
 assets/
 marketing-prototype.html
 frontend/.dart_tool

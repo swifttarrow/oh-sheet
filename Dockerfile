@@ -8,7 +8,9 @@ RUN flutter pub get
 RUN flutter build web --release --dart-define=API_BASE_URL=
 
 # ---- Stage 2: Python runtime ----
-FROM python:3.13-slim
+# Python 3.12 for forward-compatibility with torch (MT3 model) which
+# does not yet support 3.13.
+FROM python:3.12-slim
 
 WORKDIR /app
 
@@ -16,10 +18,10 @@ WORKDIR /app
 RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg \
     && rm -rf /var/lib/apt/lists/*
 
-# Install Python package (backend + youtube extra, no ML deps to keep image small)
+# Install Python package (no ML deps to keep image small)
 COPY pyproject.toml .
 COPY backend/ backend/
-RUN pip install --no-cache-dir ".[youtube]"
+RUN pip install --no-cache-dir .
 
 # Copy Flutter web build into a directory the backend will serve
 COPY --from=flutter-build /app/frontend/build/web /app/static

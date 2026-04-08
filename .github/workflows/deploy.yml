@@ -52,10 +52,11 @@ jobs:
             --platform managed \
             --allow-unauthenticated \
             --port 8080 \
-            --memory 512Mi \
-            --cpu 1 \
+            --memory ${{ vars.CLOUD_RUN_MEMORY || '1Gi' }} \
+            --cpu ${{ vars.CLOUD_RUN_CPU || '1' }} \
             --min-instances 0 \
             --max-instances 3 \
+            --health-check-path /v1/health \
             --set-env-vars "OHSHEET_CORS_ORIGINS=*"
 
       - name: Show deployment URL

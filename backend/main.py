@@ -45,7 +45,7 @@ def create_app() -> FastAPI:
     app.include_router(stages.router, prefix="/v1", tags=["stages"])
     app.include_router(ws.router, prefix="/v1", tags=["websocket"])
 
-    # Serve the Flutter web build if the static directory exists (production).
+    # IMPORTANT: mount AFTER API routers — StaticFiles at "/" is a catch-all.
     if _STATIC_DIR.is_dir():
         app.mount("/", StaticFiles(directory=_STATIC_DIR, html=True), name="static")
 
