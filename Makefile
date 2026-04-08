@@ -14,7 +14,7 @@ PORT         ?= 8000
 
 DART_DEFINE := $(if $(API_BASE_URL),--dart-define=API_BASE_URL=$(API_BASE_URL),)
 
-.PHONY: help install install-backend install-basic-pitch install-frontend backend frontend test test-backend lint typecheck clean
+.PHONY: help install install-backend install-basic-pitch install-demucs install-frontend backend frontend test test-backend lint typecheck clean
 
 help:
 	@echo "Oh Sheet — make targets"
@@ -23,6 +23,7 @@ help:
 	@echo "  make install-backend      pip install -e .[dev]  (API only — TranscribeService"
 	@echo "                            will fall back to a 4-note stub without Basic Pitch)"
 	@echo "  make install-basic-pitch  pip install -e .[basic-pitch]  (basic-pitch[onnx] + pretty_midi)"
+	@echo "  make install-demucs       pip install -e .[demucs]  (demucs + torch; opt-in stem split)"
 	@echo "  make install-frontend     flutter pub get inside frontend/"
 	@echo ""
 	@echo "  make backend            run uvicorn dev server on $(HOST):$(PORT)"
@@ -47,6 +48,13 @@ install-basic-pitch:
 	# --no-deps and rely on [basic-pitch] above for the actual runtime
 	# deps. See pyproject.toml comment for details.
 	pip install --no-deps "basic-pitch>=0.4"
+
+install-demucs:
+	# Optional stem-separation stack (demucs + torch). Off by default;
+	# flip on via OHSHEET_DEMUCS_ENABLED=1. The htdemucs pretrained
+	# weights are CC BY-NC 4.0 — see pyproject.toml for the commercial
+	# caveat before enabling in production.
+	pip install -e ".[demucs]"
 
 install-frontend:
 	cd $(FRONTEND) && flutter pub get
