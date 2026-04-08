@@ -23,6 +23,7 @@ LINEAR_TICKETS.md
 STUDY_GUIDE.md
 PRD.md
 coverage.xml
+svc-decomposer/coverage.xml
 node_modules/
 .openskills/skill-log-architectural-decisions/SKILL.md
 e2e/test-results/.last-run.json
