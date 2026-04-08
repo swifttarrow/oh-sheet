@@ -17,7 +17,7 @@ RUN pip install --no-cache-dir /app
 
 # Install decomposer package
 COPY svc-decomposer/ /app/svc-decomposer/
-RUN pip install --no-cache-dir /app/svc-decomposer
+RUN pip install --no-cache-dir --no-deps /app/svc-decomposer
 
 ENV OHSHEET_BLOB_ROOT=/app/blob
 

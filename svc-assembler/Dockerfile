@@ -13,7 +13,7 @@ RUN pip install --no-cache-dir /app
 
 # Install assembler package
 COPY svc-assembler/ /app/svc-assembler/
-RUN pip install --no-cache-dir /app/svc-assembler
+RUN pip install --no-cache-dir --no-deps /app/svc-assembler
 
 ENV OHSHEET_BLOB_ROOT=/app/blob
 

@@ -17,3 +17,6 @@ celery_app.conf.update(
     accept_content=["json"],
     task_track_started=True,
 )
+
+# Auto-discover tasks in the decomposer package.
+celery_app.autodiscover_tasks(["decomposer"])

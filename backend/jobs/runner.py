@@ -221,16 +221,24 @@ class PipelineRunner:
     ) -> str:
         """Send Celery task and wait for result URI without blocking event loop.
 
-        Uses ``tasks[name].apply_async`` rather than ``send_task`` so that
-        Celery's ``task_always_eager`` flag is honoured during testing.
+        Uses ``apply_async`` via the local task registry when the task is
+        registered (monolith workers + test stubs), and falls back to
+        ``send_task`` for tasks that only exist on remote workers.
+        ``send_task`` does NOT honour ``task_always_eager``, so the test
+        conftest registers decomposer/assembler stubs locally.
 
-        Both ``apply_async`` and ``result.get`` run inside ``to_thread`` so
-        that eager-mode tasks (which call ``asyncio.run`` internally) execute
-        in a thread without a running event loop.
+        Everything runs inside ``to_thread`` so eager-mode tasks (which call
+        ``asyncio.run`` internally) execute without an event-loop conflict.
         """
         def _run() -> str:
-            task = self.celery_app.tasks[task_name]
-            result = task.apply_async(args=[job_id, payload_uri])
+            if task_name in self.celery_app.tasks:
+                result = self.celery_app.tasks[task_name].apply_async(
+                    args=[job_id, payload_uri],
+                )
+            else:
+                result = self.celery_app.send_task(
+                    task_name, args=[job_id, payload_uri],
+                )
             return result.get(timeout=timeout)
 
         return await asyncio.to_thread(_run)

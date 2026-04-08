@@ -23,3 +23,6 @@ celery_app.conf.update(
         "assembler.run": {"queue": "assembler"},
     },
 )
+
+# Auto-discover tasks in the backend.workers package.
+celery_app.autodiscover_tasks(["backend.workers"])
