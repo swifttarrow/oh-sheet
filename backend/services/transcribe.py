@@ -35,6 +35,7 @@ from backend.contracts import (
     TempoMapEntry,
     TranscriptionResult,
 )
+from backend.services.audio_timing import tempo_map_from_audio_path
 
 log = logging.getLogger(__name__)
 
@@ -92,12 +93,20 @@ def _track_confidence(notes: list[Any], role: InstrumentRole) -> float:
     return round(min(max(conf, 0.1), 1.0), 2)
 
 
-def _ns_to_transcription_result(ns: Any, default_bpm: float = 120.0) -> TranscriptionResult:
+def _ns_to_transcription_result(
+    ns: Any,
+    default_bpm: float = 120.0,
+    *,
+    tempo_map_override: list[TempoMapEntry] | None = None,
+) -> TranscriptionResult:
     """Convert a note_seq.NoteSequence to our pydantic TranscriptionResult.
 
-    Self-contained — does *not* import temp1/contracts. Drops harmonic
-    analysis (we use a single-tempo fallback); a follow-up will plug in the
-    real harmonic_analysis module behind a feature flag.
+    Self-contained — does *not* import temp1/contracts. Harmonic key/chords
+    stay placeholder until a dedicated analysis stage exists.
+
+    If ``tempo_map_override`` is set (e.g. from waveform beat tracking), it
+    replaces the single-tempo map derived from the NoteSequence so arrange's
+    ``sec_to_beat`` aligns quantization to real beats.
     """
     # Group notes by (program, is_drum)
     groups: dict[tuple[int, bool], list[Any]] = {}
@@ -126,21 +135,26 @@ def _ns_to_transcription_result(ns: Any, default_bpm: float = 120.0) -> Transcri
             confidence=_track_confidence(notes, role),
         ))
 
-    # Tempo: use the NoteSequence's first tempo if present, else the default.
-    bpm = default_bpm
-    if ns.tempos:
-        bpm = float(ns.tempos[0].qpm)
+    if tempo_map_override:
+        tempo_map = tempo_map_override
+    else:
+        bpm = default_bpm
+        if ns.tempos:
+            bpm = float(ns.tempos[0].qpm)
+        tempo_map = [TempoMapEntry(time_sec=0.0, beat=0.0, bpm=bpm)]
 
     analysis = HarmonicAnalysis(
         key="C:major",
         time_signature=(4, 4),
-        tempo_map=[TempoMapEntry(time_sec=0.0, beat=0.0, bpm=bpm)],
+        tempo_map=tempo_map,
         chords=[],
         sections=[],
     )
 
     total_notes = sum(len(t.notes) for t in midi_tracks)
     warnings: list[str] = ["Pretrained MT3 baseline (no source separation)"]
+    if tempo_map_override:
+        warnings.append("tempo_map from audio beat tracking (librosa)")
     if total_notes < 20:
         warnings.append(f"Low note count ({total_notes}) — possible quality issue")
     avg_conf = (
@@ -252,7 +266,8 @@ def _run_mt3_sync(audio_path: Path) -> TranscriptionResult:
     # MT3 is trained with num_velocity_bins=1 → all velocities = 127. Reshape
     # them via onset RMS so dynamics survive into the score.
     ns = rescale_velocity_to_rms(ns, str(audio_path))
-    return _ns_to_transcription_result(ns)
+    audio_tempo_map = tempo_map_from_audio_path(audio_path)
+    return _ns_to_transcription_result(ns, tempo_map_override=audio_tempo_map)
 
 
 class TranscribeService:
