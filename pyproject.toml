@@ -6,6 +6,7 @@ requires-python = ">=3.10"
 license = { text = "Proprietary" }
 authors = [{ name = "Ross" }]
 dependencies = [
+    "ohsheet-shared @ file:shared",
     "fastapi>=0.110",
     "uvicorn[standard]>=0.27",
     "pydantic>=2.5",
@@ -59,6 +60,9 @@ ohsheet = "backend.main:run"
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
+
+[tool.hatch.metadata]
+allow-direct-references = true
 
 [tool.hatch.build.targets.wheel]
 packages = ["backend"]
