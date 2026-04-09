@@ -64,7 +64,7 @@ def extract_youtube_id(url: str) -> str | None:
     return None
 
 
-def _download_youtube_sync(url: str, blob_store) -> RemoteAudioFile:
+def _download_youtube_sync(url: str, blob_store) -> tuple[RemoteAudioFile, str | None, str | None]:
     """Download audio from a YouTube URL via yt-dlp, store in blob_store.
 
     Returns a RemoteAudioFile pointing to the stored WAV.
@@ -217,9 +217,10 @@ class IngestService:
             and payload.metadata.title is not None
             and is_youtube_url(payload.metadata.title)
         ):
-            audio, yt_title, yt_artist = await asyncio.to_thread(
+            dl_result = await asyncio.to_thread(
                 _download_youtube_sync, payload.metadata.title, self._blob_store,
             )
+            audio, yt_title, yt_artist = dl_result
             if yt_title:
                 metadata_update["title"] = yt_title
             if yt_artist and not payload.metadata.artist:
