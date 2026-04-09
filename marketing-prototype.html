@@ -1,694 +1,426 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Oh Sheet - Marketing Prototype</title>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Oh Sheet! — Turn any song into piano sheet music</title>
+  <meta name="description" content="Oh Sheet! uses AI to convert any song into playable piano sheet music. Paste a YouTube link or upload audio — get a PDF score in seconds.">
+  <meta property="og:title" content="Oh Sheet! — AI Piano Sheet Music">
+  <meta property="og:description" content="Turn any song into playable piano sheet music with AI. Free to try.">
+  <meta property="og:type" content="website">
+  <meta name="twitter:card" content="summary_large_image">
+
   <style>
     :root {
-      --bg: #070b14;
-      --panel: #0f172a;
-      --panel-soft: #111d3a;
-      --text: #e2e8f0;
-      --muted: #9aa8be;
-      --brand: #60a5fa;
-      --brand-2: #22d3ee;
-      --ok: #10b981;
-      --active: #f59e0b;
-      --border: rgba(148, 163, 184, 0.28);
-      --shadow: 0 20px 45px rgba(0, 0, 0, 0.5);
+      --teal: #4DB6AC;
+      --teal-bright: #6ECFC4;
+      --orange: #FFB300;
+      --cream: #FFF8F0;
+      --dark: #2D3436;
+      --ink: #2D3436;
+      --muted: #636E72;
+      --success: #00B894;
+      --pink: #FF80AB;
     }
 
-    * {
-      box-sizing: border-box;
-    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
 
     body {
-      margin: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background: var(--cream);
+      color: var(--dark);
+      line-height: 1.6;
       min-height: 100vh;
-      display: grid;
-      place-items: center;
-      font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
-      color: var(--text);
-      background:
-        radial-gradient(circle at 15% 20%, rgba(34, 211, 238, 0.13), transparent 45%),
-        radial-gradient(circle at 85% 10%, rgba(96, 165, 250, 0.12), transparent 50%),
-        var(--bg);
+    }
+
+    a { color: var(--teal); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+
+    .container { max-width: 880px; margin: 0 auto; padding: 0 20px; }
+
+    /* Sticker card style */
+    .sticker {
+      background: white;
+      border: 2.5px solid var(--ink);
+      border-radius: 22px;
       padding: 24px;
+      box-shadow: 4px 4px 0 rgba(45, 52, 54, 0.08);
     }
 
-    .shell {
-      width: min(900px, 100%);
-      background: linear-gradient(175deg, rgba(15, 23, 42, 0.9), rgba(7, 11, 20, 0.96));
-      border: 1px solid var(--border);
-      border-radius: 20px;
-      box-shadow: var(--shadow);
-      padding: 36px;
-    }
-
-    h1 {
-      margin: 0 0 10px;
-      font-size: clamp(1.6rem, 3.5vw, 2.3rem);
-      letter-spacing: 0.3px;
-    }
-
-    .lead {
-      margin: 0 0 28px;
-      color: var(--muted);
-      max-width: 58ch;
-      line-height: 1.5;
-    }
-
-    .input-row {
-      display: grid;
-      gap: 12px;
-      grid-template-columns: 1fr auto;
-      align-items: end;
-    }
-
-    .field {
-      display: grid;
-      gap: 8px;
-    }
-
-    .field label {
-      font-size: 0.95rem;
-      color: #c8d4e9;
-    }
-
-    input[type="text"] {
-      width: 100%;
-      padding: 14px 15px;
-      font-size: 1rem;
-      color: var(--text);
-      border: 1px solid var(--border);
-      border-radius: 12px;
-      background: rgba(15, 23, 42, 0.8);
-      outline: none;
-    }
-
-    input[type="text"]:focus {
-      border-color: var(--brand);
-      box-shadow: 0 0 0 3px rgba(96, 165, 250, 0.2);
-    }
-
-    button {
-      border: none;
-      border-radius: 12px;
-      padding: 14px 22px;
-      font-size: 1rem;
+    /* Pill button */
+    .btn {
+      display: inline-block;
+      padding: 14px 32px;
+      border-radius: 26px;
+      border: 2.5px solid var(--ink);
       font-weight: 700;
-      color: #041321;
-      background: linear-gradient(125deg, var(--brand), var(--brand-2));
+      font-size: 16px;
       cursor: pointer;
-      transition: transform 0.15s ease, filter 0.15s ease;
-      min-width: 130px;
+      transition: transform 0.1s, box-shadow 0.1s;
+      text-decoration: none;
+    }
+    .btn:hover {
+      transform: translateY(-2px);
+      box-shadow: 4px 6px 0 rgba(45, 52, 54, 0.12);
+      text-decoration: none;
+    }
+    .btn-primary { background: var(--teal); color: white; }
+    .btn-secondary { background: white; color: var(--dark); }
+    .btn-orange { background: var(--orange); color: var(--dark); }
+
+    /* Badge */
+    .badge {
+      display: inline-block;
+      padding: 4px 14px;
+      border-radius: 14px;
+      font-size: 13px;
+      font-weight: 700;
+      border: 2px solid var(--ink);
     }
 
-    button:hover {
-      transform: translateY(-1px);
-      filter: brightness(1.05);
-    }
-
-    button:disabled {
-      cursor: not-allowed;
-      transform: none;
-      filter: grayscale(0.15) brightness(0.75);
-    }
-
-    .hint {
-      margin-top: 12px;
-      color: var(--muted);
-      font-size: 0.92rem;
-    }
-
-    .modal[hidden] {
-      display: none;
-    }
-
-    .modal {
-      position: fixed;
-      inset: 0;
-      z-index: 50;
-      display: grid;
-      place-items: center;
-      background: rgba(2, 6, 23, 0.78);
-      backdrop-filter: blur(4px);
-      padding: 20px;
-    }
-
-    .modal-panel {
-      width: min(980px, 100%);
-      max-height: min(92vh, 860px);
-      overflow: auto;
-      border-radius: 18px;
-      border: 1px solid var(--border);
-      background: linear-gradient(180deg, #0e1732 0%, #070d1f 100%);
-      box-shadow: var(--shadow);
-      padding: 24px;
-    }
-
-    .modal-head {
+    /* Nav */
+    nav {
+      padding: 16px 0;
       display: flex;
       align-items: center;
       justify-content: space-between;
-      gap: 16px;
+    }
+    .logo { font-size: 26px; font-weight: 800; color: var(--dark); }
+    .logo span { color: var(--teal); }
+    .nav-links { display: flex; gap: 20px; align-items: center; }
+    .nav-links a { color: var(--muted); font-weight: 600; font-size: 15px; }
+    .nav-links a:hover { color: var(--dark); text-decoration: none; }
+
+    /* Hero */
+    .hero {
+      text-align: center;
+      padding: 48px 0 40px;
+    }
+    .hero-mascot { height: 200px; margin-bottom: 20px; }
+    .hero h1 {
+      font-size: clamp(1.8rem, 5vw, 3rem);
+      font-weight: 800;
+      line-height: 1.2;
       margin-bottom: 16px;
     }
-
-    .modal-head h2 {
-      margin: 0;
-      font-size: 1.25rem;
+    .hero h1 em {
+      color: var(--teal);
+      font-style: normal;
     }
-
-    .close-btn {
-      padding: 8px 12px;
-      min-width: 90px;
-      font-size: 0.9rem;
-      border: 1px solid var(--border);
-      color: var(--text);
-      background: rgba(15, 23, 42, 0.8);
+    .hero p {
+      font-size: 18px;
+      color: var(--muted);
+      max-width: 520px;
+      margin: 0 auto 32px;
     }
+    .hero-buttons { display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; }
 
-    .progress {
-      height: 8px;
-      background: rgba(148, 163, 184, 0.2);
-      border-radius: 99px;
-      overflow: hidden;
-      margin-bottom: 18px;
+    /* URL input demo */
+    .demo-input {
+      max-width: 560px;
+      margin: 32px auto 0;
     }
-
-    .progress > span {
-      display: block;
-      width: 0%;
-      height: 100%;
-      background: linear-gradient(90deg, var(--brand), var(--brand-2));
-      transition: width 0.06s linear;
+    .demo-input .input-row {
+      display: flex;
+      gap: 8px;
     }
+    .demo-input input {
+      flex: 1;
+      padding: 14px 18px;
+      border-radius: 18px;
+      border: 2.5px solid var(--ink);
+      font-size: 15px;
+      background: white;
+      outline: none;
+    }
+    .demo-input input:focus {
+      border-color: var(--teal);
+    }
+    .demo-input input::placeholder { color: #aab; }
 
+    /* How it works */
     .steps {
       display: grid;
-      grid-template-columns: repeat(3, 1fr);
-      gap: 14px;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 16px;
+      margin: 32px 0;
     }
-
     .step {
-      border: 1px solid var(--border);
-      border-radius: 14px;
-      background: rgba(15, 23, 42, 0.58);
-      padding: 14px;
+      text-align: center;
+      padding: 28px 16px;
     }
-
-    .step h3 {
-      margin: 0 0 8px;
-      font-size: 1rem;
+    .step-number {
+      width: 44px;
+      height: 44px;
+      border-radius: 50%;
+      background: var(--teal);
+      color: white;
+      font-weight: 800;
+      font-size: 20px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      margin-bottom: 12px;
+      border: 2.5px solid var(--ink);
     }
+    .step h3 { font-size: 16px; font-weight: 700; margin-bottom: 6px; }
+    .step p { font-size: 14px; color: var(--muted); }
 
-    .badge {
-      display: inline-block;
-      border-radius: 999px;
-      padding: 4px 10px;
-      font-size: 0.74rem;
-      font-weight: 700;
-      letter-spacing: 0.04em;
-      text-transform: uppercase;
-      margin-bottom: 10px;
-      border: 1px solid var(--border);
+    /* Features */
+    .features {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+      gap: 16px;
+      margin: 32px 0;
+    }
+    .feature { padding: 20px; }
+    .feature-icon {
+      font-size: 28px;
+      margin-bottom: 8px;
+    }
+    .feature h3 { font-size: 15px; font-weight: 700; margin-bottom: 4px; }
+    .feature p { font-size: 13px; color: var(--muted); }
+
+    /* Score cards */
+    .score-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+      gap: 16px;
+      margin: 24px 0;
+    }
+    .score-card {
+      display: block;
+      color: inherit;
+      padding: 18px;
+      transition: transform 0.1s;
+    }
+    .score-card:hover {
+      transform: translateY(-2px);
+      text-decoration: none;
+    }
+    .score-card h3 { font-size: 16px; font-weight: 700; margin-bottom: 2px; }
+    .score-card .artist { font-size: 13px; color: var(--muted); margin-bottom: 8px; }
+    .score-card .meta { display: flex; gap: 8px; flex-wrap: wrap; }
+
+    /* Mascot row */
+    .mascot-row {
+      display: flex;
+      justify-content: center;
+      gap: 12px;
+      flex-wrap: wrap;
+      margin: 24px 0;
+    }
+    .mascot-row img { height: 80px; }
+
+    /* Section titles */
+    .section-title {
+      text-align: center;
+      font-size: 24px;
+      font-weight: 800;
+      margin-bottom: 8px;
+    }
+    .section-subtitle {
+      text-align: center;
       color: var(--muted);
-      background: rgba(15, 23, 42, 0.72);
+      margin-bottom: 32px;
     }
 
-    .step.active {
-      border-color: rgba(245, 158, 11, 0.7);
-      background: rgba(245, 158, 11, 0.12);
+    /* CTA banner */
+    .cta-banner {
+      text-align: center;
+      padding: 48px 24px;
+      margin: 40px 0;
+      background: white;
+      border: 2.5px solid var(--ink);
+      border-radius: 28px;
+      box-shadow: 6px 6px 0 rgba(45, 52, 54, 0.08);
     }
 
-    .step.active .badge {
-      color: #ffddb0;
-      border-color: rgba(245, 158, 11, 0.7);
-      background: rgba(245, 158, 11, 0.18);
+    /* Footer */
+    footer {
+      padding: 32px 0;
+      text-align: center;
+      color: var(--muted);
+      font-size: 14px;
     }
+    footer a { color: var(--teal); font-weight: 600; }
 
-    .step.done {
-      border-color: rgba(16, 185, 129, 0.7);
-      background: rgba(16, 185, 129, 0.12);
-    }
-
-    .step.done .badge {
-      color: #b9f5d8;
-      border-color: rgba(16, 185, 129, 0.7);
-      background: rgba(16, 185, 129, 0.18);
-    }
-
-    .asset {
-      width: 100%;
-      margin-top: 6px;
-      border-radius: 10px;
-      background: rgba(2, 6, 23, 0.55);
-      border: 1px solid rgba(148, 163, 184, 0.25);
-    }
-
-    .asset-note {
-      margin-top: 7px;
-      color: #c7d2e6;
-      font-size: 0.82rem;
-      line-height: 1.45;
-    }
-
-    .status-line {
-      margin: 14px 2px 0;
-      color: #d2def1;
-      font-size: 0.95rem;
-    }
-
-    @media (max-width: 880px) {
-      .steps {
-        grid-template-columns: 1fr;
-      }
+    /* Responsive */
+    @media (max-width: 600px) {
+      .hero-mascot { height: 140px; }
+      .hero-buttons { flex-direction: column; align-items: center; }
+      .btn { width: 100%; text-align: center; max-width: 280px; }
+      .demo-input .input-row { flex-direction: column; }
     }
   </style>
 </head>
 <body>
-  <main class="shell">
-    <h1>Turn any song into polished piano sheet music</h1>
-    <p class="lead">
-      Search a song title, trigger one click, and show the full transcription
-      pipeline in action from source audio to a finished engraved result.
-    </p>
 
-    <div class="input-row">
-      <div class="field">
-        <label for="songInput">Song name</label>
-        <input
-          id="songInput"
-          type="text"
-          placeholder="Type a song name..."
-          autocomplete="off"
-          spellcheck="false"
-        />
+  <div class="container">
+    <nav>
+      <a href="/" class="logo">Oh <span>Sheet!</span></a>
+      <div class="nav-links">
+        <a href="/library">Library</a>
+        <a href="https://github.com/swifttarrow/oh-sheet">GitHub</a>
+        <a href="/app" class="btn btn-primary" style="padding:10px 24px; font-size:14px;">Open App</a>
       </div>
-      <button id="transcribeBtn" disabled>Transcribe</button>
-    </div>
-  </main>
+    </nav>
+  </div>
 
-  <section class="modal" id="pipelineModal" hidden>
-    <div class="modal-panel" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
-      <div class="modal-head">
-        <h2 id="modalTitle">Transcription Pipeline</h2>
-        <button class="close-btn" id="closeModalBtn" type="button">Close</button>
+  <!-- Hero -->
+  <section class="hero">
+    <div class="container">
+      <img src="frontend/assets/mascots/mascot-home-happy.svg" alt="Oh Sheet! mascot" class="hero-mascot">
+      <h1>Turn any song into<br><em>piano sheet music</em></h1>
+      <p>Paste a YouTube link or upload audio — our AI transcribes, arranges, and engraves playable piano scores in seconds.</p>
+      <div class="demo-input">
+        <div class="input-row">
+          <input type="text" placeholder="Paste a YouTube URL..." disabled>
+          <a href="/app" class="btn btn-primary" style="white-space:nowrap;">Let's go!</a>
+        </div>
       </div>
-
-      <div class="progress" aria-label="Pipeline progress">
-        <span id="progressFill"></span>
-      </div>
-
-      <div class="steps">
-        <article class="step" id="step1">
-          <div class="badge" id="badge1">Pending</div>
-          <h3>1. Uploading original</h3>
-          <p class="asset-note">In demo mode, background audio starts with this step.</p>
-        </article>
-
-        <article class="step" id="step2">
-          <div class="badge" id="badge2">Pending</div>
-          <h3>2. Transcribing to MIDI</h3>
-          <p class="asset-note">Background track switches to transcription preview audio.</p>
-        </article>
-
-        <article class="step" id="step3">
-          <div class="badge" id="badge3">Pending</div>
-          <h3>3. Engraving final output</h3>
-          <p class="asset-note">Sheet music preview appears as engraving completes.</p>
-          <img
-            id="asset3Image"
-            class="asset"
-            alt="Final engraved sheet music preview"
-            data-src="./assets/rising-sun-sheet-screenshot.png"
-            hidden
-          />
-        </article>
-      </div>
-
-      <p class="status-line" id="statusLine">Waiting for transcription to start...</p>
+      <p style="margin-top:16px; font-size:14px; color:var(--muted);">Free to try &bull; No account required &bull; <a href="https://github.com/swifttarrow/oh-sheet">Open source</a></p>
     </div>
   </section>
 
-  <!-- Hidden audio tracks for demo recording -->
-  <audio id="bgTrack1" preload="auto" src="./assets/rising-sun-1.mp3" hidden></audio>
-  <audio id="bgTrack2" preload="auto" src="./assets/rising-sun-2.mp3" hidden></audio>
-  <audio id="bgTrack3" preload="auto" src="./assets/rising-sun-3.mp3" hidden></audio>
+  <!-- How it works -->
+  <section>
+    <div class="container">
+      <h2 class="section-title">How it works</h2>
+      <p class="section-subtitle">Three steps from song to sheet music</p>
+      <div class="steps">
+        <div class="sticker step">
+          <div class="step-number">1</div>
+          <h3>Upload or paste</h3>
+          <p>YouTube URL, MP3, WAV, or MIDI file — we handle them all</p>
+        </div>
+        <div class="sticker step">
+          <div class="step-number">2</div>
+          <h3>AI transcribes</h3>
+          <p>Separates instruments, detects notes, arranges for two-hand piano</p>
+        </div>
+        <div class="sticker step">
+          <div class="step-number">3</div>
+          <h3>Download &amp; play</h3>
+          <p>Get PDF sheet music, MIDI, and MusicXML — instantly</p>
+        </div>
+      </div>
 
-  <script>
-    const songInput = document.getElementById("songInput");
-    const transcribeBtn = document.getElementById("transcribeBtn");
-    const pipelineModal = document.getElementById("pipelineModal");
-    const closeModalBtn = document.getElementById("closeModalBtn");
-    const progressFill = document.getElementById("progressFill");
-    const statusLine = document.getElementById("statusLine");
-    const asset3Image = document.getElementById("asset3Image");
+      <div class="mascot-row">
+        <img src="frontend/assets/mascots/mascot-progress-ingest.svg" alt="Listening">
+        <img src="frontend/assets/mascots/mascot-progress-transcribe.svg" alt="Transcribing">
+        <img src="frontend/assets/mascots/mascot-progress-arrange.svg" alt="Arranging">
+        <img src="frontend/assets/mascots/mascot-progress-engrave.svg" alt="Engraving">
+        <img src="frontend/assets/mascots/mascot-success.svg" alt="Done!">
+      </div>
+    </div>
+  </section>
 
-    const stepEls = [
-      document.getElementById("step1"),
-      document.getElementById("step2"),
-      document.getElementById("step3")
-    ];
-    const badgeEls = [
-      document.getElementById("badge1"),
-      document.getElementById("badge2"),
-      document.getElementById("badge3")
-    ];
+  <!-- Features -->
+  <section style="padding:40px 0;">
+    <div class="container">
+      <h2 class="section-title">Features</h2>
+      <p class="section-subtitle">Everything you need to turn audio into sheet music</p>
+      <div class="features">
+        <div class="sticker feature">
+          <div class="feature-icon">🎵</div>
+          <h3>YouTube URL support</h3>
+          <p>Paste any YouTube link — we download the audio and transcribe it automatically</p>
+        </div>
+        <div class="sticker feature">
+          <div class="feature-icon">🧠</div>
+          <h3>AI stem separation</h3>
+          <p>Demucs isolates instruments before transcription for cleaner results</p>
+        </div>
+        <div class="sticker feature">
+          <div class="feature-icon">🎹</div>
+          <h3>Two-hand piano arrangement</h3>
+          <p>Melody to right hand, bass + harmony to left hand, with intelligent voice assignment</p>
+        </div>
+        <div class="sticker feature">
+          <div class="feature-icon">🎼</div>
+          <h3>Interactive sheet music</h3>
+          <p>OSMD renders notation in the browser with playback cursor and Tone.js audio</p>
+        </div>
+        <div class="sticker feature">
+          <div class="feature-icon">📄</div>
+          <h3>Publication-quality PDF</h3>
+          <p>LilyPond engraves clean, printable sheet music you can put on a music stand</p>
+        </div>
+        <div class="sticker feature">
+          <div class="feature-icon">🎯</div>
+          <h3>Custom piano roll</h3>
+          <p>Color-coded visualization with note labels, beat grid, and tempo-synced playback</p>
+        </div>
+      </div>
+    </div>
+  </section>
 
-    const backgroundTracks = [
-      document.getElementById("bgTrack1"),
-      document.getElementById("bgTrack2"),
-      document.getElementById("bgTrack3")
-    ];
+  <!-- Sample scores -->
+  <section style="padding:40px 0;">
+    <div class="container">
+      <h2 class="section-title">Community Library</h2>
+      <p class="section-subtitle">Browse piano scores generated by our AI</p>
+      <div class="score-grid">
+        <div class="sticker score-card">
+          <h3>Bohemian Rhapsody</h3>
+          <div class="artist">Queen</div>
+          <div class="meta">
+            <span class="badge" style="background:var(--teal);color:white;">Level 7</span>
+            <span class="badge" style="background:var(--cream);">5:55</span>
+          </div>
+        </div>
+        <div class="sticker score-card">
+          <h3>River Flows in You</h3>
+          <div class="artist">Yiruma</div>
+          <div class="meta">
+            <span class="badge" style="background:var(--success);color:white;">Level 3</span>
+            <span class="badge" style="background:var(--cream);">3:42</span>
+          </div>
+        </div>
+        <div class="sticker score-card">
+          <h3>Clocks</h3>
+          <div class="artist">Coldplay</div>
+          <div class="meta">
+            <span class="badge" style="background:var(--teal);color:white;">Level 4</span>
+            <span class="badge" style="background:var(--cream);">5:07</span>
+          </div>
+        </div>
+        <div class="sticker score-card">
+          <h3>Fur Elise</h3>
+          <div class="artist">Beethoven</div>
+          <div class="meta">
+            <span class="badge" style="background:var(--orange);color:var(--dark);">Level 5</span>
+            <span class="badge" style="background:var(--cream);">3:05</span>
+          </div>
+        </div>
+      </div>
+      <p style="text-align:center; margin-top:16px;">
+        <a href="/library" style="font-weight:700;">Browse all scores &rarr;</a>
+      </p>
+    </div>
+  </section>
 
-    const songOptions = [
-      "House of the Rising Sun",
-      "The Sound of Silence",
-      "Hallelujah",
-      "Yesterday",
-      "Imagine"
-    ];
+  <!-- CTA -->
+  <section>
+    <div class="container">
+      <div class="cta-banner">
+        <img src="frontend/assets/mascots/mascot-success.svg" alt="Your sheet music is ready!" style="height:120px; margin-bottom:16px;">
+        <h2 style="font-size:28px; font-weight:800; margin-bottom:8px;">Ready to try?</h2>
+        <p style="color:var(--muted); max-width:400px; margin:0 auto 24px;">Paste a YouTube link and get piano sheet music in under a minute. Free, no account required.</p>
+        <div style="display:flex; gap:12px; justify-content:center; flex-wrap:wrap;">
+          <a href="/app" class="btn btn-primary">Open the app</a>
+          <a href="https://github.com/swifttarrow/oh-sheet" class="btn btn-secondary">Star on GitHub</a>
+        </div>
+      </div>
+    </div>
+  </section>
 
-    const stageText = [
-      "Uploading original recording...",
-      "Running audio-to-MIDI transcription...",
-      "Engraving the final score and performance preview..."
-    ];
+  <footer>
+    <div class="container">
+      <p>Oh Sheet! — AI-powered piano sheet music &bull; <a href="https://github.com/swifttarrow/oh-sheet">Open source on GitHub</a></p>
+    </div>
+  </footer>
 
-    let stageIndex = -1;
-    let runToken = 0;
-    let progressTicker = null;
-    let progressValue = 0;
-
-    const progressRanges = [
-      { start: 0, end: 33.3333 },
-      { start: 33.3333, end: 66.6666 },
-      { start: 66.6666, end: 99.5 }
-    ];
-    const fallbackStepDurationsMs = [12600, 14800, 17900];
-
-    function stopBackgroundTracks() {
-      backgroundTracks.forEach((track) => {
-        track.pause();
-        track.currentTime = 0;
-      });
-    }
-
-    function stopProgressTicker() {
-      if (progressTicker !== null) {
-        window.cancelAnimationFrame(progressTicker);
-        progressTicker = null;
-      }
-    }
-
-    function setProgress(nextValue) {
-      progressValue = Math.max(progressValue, Math.min(nextValue, 100));
-      progressFill.style.width = `${progressValue}%`;
-    }
-
-    function startProgressTicker(index, durationMs) {
-      stopProgressTicker();
-      const { start, end } = progressRanges[index];
-      setProgress(start);
-      const startTime = window.performance.now();
-
-      function tick() {
-        const elapsed = window.performance.now() - startTime;
-        const ratio = Math.min(Math.max(elapsed / durationMs, 0), 1);
-        const next = start + ((end - start) * ratio);
-        setProgress(next);
-        if (ratio < 1) {
-          progressTicker = window.requestAnimationFrame(tick);
-        } else {
-          progressTicker = null;
-        }
-      }
-
-      progressTicker = window.requestAnimationFrame(tick);
-    }
-
-    function resetState() {
-      runToken += 1;
-      stageIndex = -1;
-      progressValue = 0;
-      stopProgressTicker();
-      stopBackgroundTracks();
-      delete asset3Image.dataset.retried;
-      asset3Image.hidden = true;
-      stepEls.forEach((el) => el.className = "step");
-      badgeEls.forEach((el) => el.textContent = "Pending");
-      progressFill.style.width = "0%";
-      statusLine.textContent = "Waiting for transcription to start...";
-    }
-
-    function updateButtonState() {
-      const valid = songOptions.includes(songInput.value.trim());
-      transcribeBtn.disabled = !valid;
-    }
-
-    async function tryPlay(mediaEl) {
-      try {
-        await mediaEl.play();
-        return { ok: true };
-      } catch {
-        return { ok: false };
-      }
-    }
-
-    function setStepUi(index) {
-      stageIndex = index;
-
-      stepEls.forEach((el, i) => {
-        el.classList.remove("active", "done");
-        if (i < index) {
-          el.classList.add("done");
-        } else if (i === index) {
-          el.classList.add("active");
-        }
-      });
-
-      badgeEls.forEach((badge, i) => {
-        if (i < index) {
-          badge.textContent = "Complete";
-        } else if (i === index) {
-          badge.textContent = "In progress";
-        } else {
-          badge.textContent = "Pending";
-        }
-      });
-
-      if (index < 2) {
-        asset3Image.hidden = true;
-      } else {
-        loadStep3Image();
-        asset3Image.hidden = false;
-      }
-      statusLine.textContent = stageText[index];
-    }
-
-    function wait(ms) {
-      return new Promise((resolve) => {
-        window.setTimeout(resolve, ms);
-      });
-    }
-
-    function loadStep3Image() {
-      const configuredSrc = asset3Image.dataset.src || "./assets/rising-sun-sheet-screenshot.png";
-      const resolvedSrc = new URL(configuredSrc, window.location.href).href;
-      if (asset3Image.src !== resolvedSrc) {
-        asset3Image.src = resolvedSrc;
-      }
-    }
-
-    function waitForAudioMetadata(track, timeoutMs = 2500) {
-      if (!track) {
-        return Promise.resolve();
-      }
-
-      const hasDuration = Number.isFinite(track.duration) && track.duration > 0;
-      if (hasDuration) {
-        return Promise.resolve();
-      }
-
-      return new Promise((resolve) => {
-        let done = false;
-        const timeoutId = window.setTimeout(() => {
-          if (done) {
-            return;
-          }
-          done = true;
-          track.removeEventListener("loadedmetadata", onReady);
-          track.removeEventListener("durationchange", onReady);
-          resolve();
-        }, timeoutMs);
-
-        function onReady() {
-          const ready = Number.isFinite(track.duration) && track.duration > 0;
-          if (!ready || done) {
-            return;
-          }
-          done = true;
-          window.clearTimeout(timeoutId);
-          track.removeEventListener("loadedmetadata", onReady);
-          track.removeEventListener("durationchange", onReady);
-          resolve();
-        }
-
-        track.addEventListener("loadedmetadata", onReady);
-        track.addEventListener("durationchange", onReady);
-      });
-    }
-
-    function getStepDurationMs(index) {
-      const fallbackMs = fallbackStepDurationsMs[index] || 8000;
-      const track = backgroundTracks[index];
-      if (!track) {
-        return fallbackMs;
-      }
-
-      const seconds = track.duration;
-      if (!Number.isFinite(seconds) || seconds <= 0) {
-        return fallbackMs;
-      }
-
-      return seconds * 1000;
-    }
-
-    function waitForTrackCompletion(track, durationMs, token) {
-      if (!track) {
-        return wait(durationMs);
-      }
-
-      return new Promise((resolve) => {
-        let finished = false;
-
-        function cleanup() {
-          track.removeEventListener("ended", onEnded);
-          window.clearTimeout(timeoutId);
-          window.clearInterval(cancelCheckId);
-        }
-
-        function finish() {
-          if (finished) {
-            return;
-          }
-          finished = true;
-          cleanup();
-          resolve();
-        }
-
-        function onEnded() {
-          finish();
-        }
-
-        const timeoutId = window.setTimeout(finish, durationMs + 150);
-        const cancelCheckId = window.setInterval(() => {
-          if (token !== runToken) {
-            finish();
-          }
-        }, 100);
-
-        track.addEventListener("ended", onEnded);
-      });
-    }
-
-    async function playBackgroundTrack(index) {
-      stopBackgroundTracks();
-      const track = backgroundTracks[index];
-      if (!track) {
-        return;
-      }
-      track.muted = false;
-      track.volume = 1;
-      track.currentTime = 0;
-      await tryPlay(track);
-    }
-
-    async function playStep(index, token) {
-      setStepUi(index);
-      await playBackgroundTrack(index);
-      await waitForAudioMetadata(backgroundTracks[index]);
-      const durationMs = getStepDurationMs(index);
-      startProgressTicker(index, durationMs);
-
-      await waitForTrackCompletion(backgroundTracks[index], durationMs, token);
-      if (token !== runToken) {
-        return false;
-      }
-
-      stopProgressTicker();
-      setProgress(progressRanges[index].end);
-      return true;
-    }
-
-    function completePipeline() {
-      stopProgressTicker();
-      progressValue = 100;
-      progressFill.style.width = "100%";
-      badgeEls[2].textContent = "Complete";
-      stepEls[2].classList.remove("active");
-      stepEls[2].classList.add("done");
-      statusLine.textContent = "Done. Your score package is ready.";
-    }
-
-    async function runPipeline() {
-      const token = runToken;
-      for (let i = 0; i < stepEls.length; i += 1) {
-        if (token !== runToken) {
-          return;
-        }
-        const completed = await playStep(i, token);
-        if (!completed) {
-          return;
-        }
-        if (token !== runToken) {
-          return;
-        }
-      }
-
-      if (token === runToken) {
-        completePipeline();
-      }
-    }
-
-    songInput.addEventListener("input", updateButtonState);
-    songInput.addEventListener("change", updateButtonState);
-
-    transcribeBtn.addEventListener("click", () => {
-      resetState();
-      pipelineModal.hidden = false;
-      runPipeline();
-    });
-
-    closeModalBtn.addEventListener("click", () => {
-      resetState();
-      pipelineModal.hidden = true;
-    });
-
-    pipelineModal.addEventListener("click", (event) => {
-      if (event.target === pipelineModal) {
-        resetState();
-        pipelineModal.hidden = true;
-      }
-    });
-
-    asset3Image.addEventListener("error", () => {
-      if (asset3Image.dataset.retried === "1") {
-        return;
-      }
-      asset3Image.dataset.retried = "1";
-      asset3Image.src = "./assets/rising-sun-sheet-screenshot.png";
-    });
-
-    document.addEventListener("keydown", (event) => {
-      if (event.key === "Escape" && !pipelineModal.hidden) {
-        resetState();
-        pipelineModal.hidden = true;
-      }
-    });
-  </script>
 </body>
 </html>
