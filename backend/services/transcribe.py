@@ -532,22 +532,49 @@ def _rebuild_blob_midi(
     intent and keeps any future pretty_midi behavior change from
     silently dropping the event.
 
-    Returns ``None`` on any failure (missing optional deps, empty
-    events, ``note_events_to_midi`` blowup) so callers can fall back
-    to a pre-existing pretty_midi without sinking blob persistence.
+    We build the pretty_midi directly (no basic-pitch dependency) —
+    ``PrettyMIDI(initial_tempo=...)`` wires the seconds-per-tick map
+    through the MIDI ``set_tempo`` meta event, and the notes are a
+    straight translation of the ``NoteEvent`` tuple. Per-note pitch
+    bends are intentionally dropped: the blob MIDI is a debugging
+    artifact (not authoritative — the contract carries the tracks),
+    and basic-pitch's own encoding bloats the file with one
+    instrument per pitch-bend group. Keeping everything in a single
+    piano instrument makes the blob easier to inspect in MuseScore /
+    Logic without hiding the real transcription data.
+
+    Avoiding ``basic_pitch.note_creation.note_events_to_midi`` here
+    also means this code path works on the CI dev install (which
+    only pulls in ``.[dev]``, not ``.[basic-pitch]``) — the stems
+    tests monkeypatch ``_basic_pitch_single_pass`` but still reach
+    the blob rebuild, so a missing basic_pitch import would silently
+    fall back to a blank PrettyMIDI and drop the audio-derived tempo
+    on the floor.
+
+    Returns ``None`` on any failure (missing pretty_midi, empty
+    events) so callers can fall back to a pre-existing pretty_midi
+    without sinking blob persistence.
     """
     if not events:
         return None
     try:
         import pretty_midi  # noqa: PLC0415 — optional dep
-        from basic_pitch.note_creation import note_events_to_midi  # noqa: PLC0415
     except ImportError:
         return None
-    try:
-        pm = note_events_to_midi(events, midi_tempo=initial_bpm)
-    except Exception as exc:  # noqa: BLE001 — best-effort
-        log.warning("note_events_to_midi rebuild failed: %s", exc)
-        return None
+    pm = pretty_midi.PrettyMIDI(initial_tempo=float(initial_bpm))
+    instrument = pretty_midi.Instrument(program=0)
+    for start, end, pitch, amplitude, _pitch_bend in events:
+        velocity = int(round(127 * float(amplitude)))
+        velocity = max(1, min(127, velocity))
+        instrument.notes.append(
+            pretty_midi.Note(
+                velocity=velocity,
+                pitch=int(pitch),
+                start=float(start),
+                end=float(end),
+            )
+        )
+    pm.instruments.append(instrument)
     pm.time_signature_changes = [
         pretty_midi.TimeSignature(numerator=4, denominator=4, time=0.0)
     ]

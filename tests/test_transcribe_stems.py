@@ -423,6 +423,7 @@ def test_run_with_stems_runs_viterbi_on_vocals_contour(
     are still routed raw — only vocals gets the rescoring.
     """
     import numpy as np
+
     from backend.services import melody_extraction as melody_mod
 
     stems = _make_stems(tmp_path)
@@ -505,6 +506,7 @@ def test_run_with_stems_falls_back_when_viterbi_returns_empty(
     errors so the caller never has to reason about them.
     """
     import numpy as np
+
     from backend.services import melody_extraction as melody_mod
 
     stems = _make_stems(tmp_path)
@@ -648,6 +650,7 @@ def test_run_with_stems_calls_extract_melody_in_additive_only_mode(
     extend past the end of the song.
     """
     import numpy as np
+
     from backend.services import melody_extraction as melody_mod
 
     stems = _make_stems(tmp_path)
