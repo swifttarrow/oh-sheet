@@ -1,11 +1,8 @@
 """Tests for /v1/stages/* worker endpoints (OrchestratorCommand envelope)."""
 from __future__ import annotations
 
-import json
-
 from backend.api.deps import get_blob_store
 from backend.contracts import SCHEMA_VERSION
-
 
 # ---------------------------------------------------------------------------
 # Helpers
