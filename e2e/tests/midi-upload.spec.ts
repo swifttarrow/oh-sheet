@@ -50,7 +50,9 @@ test.describe("MIDI upload → playable audio", () => {
     // ---------------------------------------------------------------
     // 3. Wait for the pipeline to complete via WebSocket
     // ---------------------------------------------------------------
-    const wsUrl = `ws://localhost:8000/v1/jobs/${jobId}/ws`;
+    const httpBase = (test.info().project.use as { baseURL?: string }).baseURL ?? "http://localhost:8000";
+    const wsBase = httpBase.replace(/^http/, "ws");
+    const wsUrl = `${wsBase}/v1/jobs/${jobId}/ws`;
 
     const succeeded = await new Promise<boolean>((resolve, reject) => {
       const timeout = setTimeout(

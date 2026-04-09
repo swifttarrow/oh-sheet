@@ -234,7 +234,7 @@ class PipelineRunner:
                     args=[job_id, payload_uri],
                 )
             else:
-                if self.celery_app.conf.get("task_always_eager"):
+                if self.celery_app.conf.task_always_eager:
                     raise RuntimeError(
                         f"Task {task_name!r} is not registered on the Celery app "
                         f"but task_always_eager is True. Register a stub in "
@@ -297,12 +297,12 @@ class PipelineRunner:
             try:
                 if step == "ingest":
                     payload_uri = self._serialize_stage_input(job_id, step, current_payload)
-                    output_uri = await self._dispatch_task(task_name, job_id, payload_uri, config.max_duration_sec)
+                    output_uri = await self._dispatch_task(task_name, job_id, payload_uri, config.stage_timeout_sec)
                     current_payload = self.blob_store.get_json(output_uri)
 
                 elif step == "transcribe":
                     payload_uri = self._serialize_stage_input(job_id, step, current_payload)
-                    output_uri = await self._dispatch_task(task_name, job_id, payload_uri, config.max_duration_sec)
+                    output_uri = await self._dispatch_task(task_name, job_id, payload_uri, config.stage_timeout_sec)
                     txr_dict = self.blob_store.get_json(output_uri)
 
                 elif step == "arrange":
@@ -316,14 +316,14 @@ class PipelineRunner:
                         txr_obj = _bundle_to_transcription(bundle_obj)
                         txr_dict = txr_obj.model_dump(mode="json")
                     payload_uri = self._serialize_stage_input(job_id, step, txr_dict)
-                    output_uri = await self._dispatch_task(task_name, job_id, payload_uri, config.max_duration_sec)
+                    output_uri = await self._dispatch_task(task_name, job_id, payload_uri, config.stage_timeout_sec)
                     score_dict = self.blob_store.get_json(output_uri)
 
                 elif step == "humanize":
                     if score_dict is None:
                         raise RuntimeError("humanize stage requires a PianoScore — none was produced")
                     payload_uri = self._serialize_stage_input(job_id, step, score_dict)
-                    output_uri = await self._dispatch_task(task_name, job_id, payload_uri, config.max_duration_sec)
+                    output_uri = await self._dispatch_task(task_name, job_id, payload_uri, config.stage_timeout_sec)
                     perf_dict = self.blob_store.get_json(output_uri)
 
                 elif step == "engrave":
@@ -346,7 +346,7 @@ class PipelineRunner:
                     else:
                         raise RuntimeError("engrave stage requires a score or performance — none was produced")
                     payload_uri = self._serialize_stage_input(job_id, step, engrave_envelope)
-                    output_uri = await self._dispatch_task(task_name, job_id, payload_uri, config.max_duration_sec)
+                    output_uri = await self._dispatch_task(task_name, job_id, payload_uri, config.stage_timeout_sec)
                     result_dict = self.blob_store.get_json(output_uri)
 
                 else:

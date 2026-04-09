@@ -26,8 +26,10 @@ def run(job_id: str, payload_uri: str) -> str:
 
     if payload_type == "HumanizedPerformance":
         payload = HumanizedPerformance.model_validate(payload_data)
-    else:
+    elif payload_type == "PianoScore":
         payload = PianoScore.model_validate(payload_data)
+    else:
+        raise ValueError(f"Unknown payload_type: {payload_type!r}. Expected 'HumanizedPerformance' or 'PianoScore'.")
 
     service = EngraveService(blob_store=blob)
     # asyncio.run() is safe with Celery's default prefork pool; breaks with gevent/eventlet.

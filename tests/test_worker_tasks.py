@@ -16,11 +16,9 @@ from backend.config import settings
 
 
 @pytest.fixture
-def blob(tmp_path):
-    root = tmp_path / "blob"
-    root.mkdir(exist_ok=True)
-    settings.blob_root = root
-    return LocalBlobStore(root)
+def blob():
+    """Return a LocalBlobStore rooted at the isolated_blob_root path."""
+    return LocalBlobStore(settings.blob_root)
 
 
 class TestIngestTask:

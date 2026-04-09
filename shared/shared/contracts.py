@@ -322,7 +322,7 @@ PipelineVariant = Literal["full", "audio_upload", "midi_upload", "sheet_only"]
 class PipelineConfig(BaseModel):
     variant: PipelineVariant
     skip_humanizer: bool = False
-    max_duration_sec: int = 600
+    stage_timeout_sec: int = 600
 
     def get_execution_plan(self) -> list[str]:
         """Return the list of stages to invoke in order, per the variant."""

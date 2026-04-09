@@ -38,6 +38,32 @@ services:
       redis:
         condition: service_healthy
 
+  worker-transcribe:
+    build: .
+    command: celery -A backend.workers.celery_app worker -Q transcribe -c 1 --loglevel=warning
+    restart: unless-stopped
+    environment:
+      OHSHEET_BLOB_ROOT: /app/blob
+      OHSHEET_REDIS_URL: redis://redis:6379/0
+    volumes:
+      - blob-data:/app/blob
+    depends_on:
+      redis:
+        condition: service_healthy
+
+  worker-arrange:
+    build: .
+    command: celery -A backend.workers.celery_app worker -Q arrange -c 1 --loglevel=warning
+    restart: unless-stopped
+    environment:
+      OHSHEET_BLOB_ROOT: /app/blob
+      OHSHEET_REDIS_URL: redis://redis:6379/0
+    volumes:
+      - blob-data:/app/blob
+    depends_on:
+      redis:
+        condition: service_healthy
+
   worker-decomposer:
     build:
       context: .
