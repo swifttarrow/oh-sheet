@@ -43,11 +43,19 @@ youtube = [
 # coremltools + onnxruntime installed and tensorflow absent it falls
 # back to a CoreML or ONNX session without complaint.
 #
+# ``mir_eval`` is listed here because basic-pitch 0.4.0 imports it
+# unconditionally at module load (``basic_pitch/note_creation.py`` —
+# which TranscribeService imports for ``note_events_to_midi``). Without
+# it the ``from basic_pitch.note_creation import …`` in transcribe.py
+# raises ImportError and the service silently falls back to the 4-note
+# stub ("Basic Pitch deps unavailable (No module named 'mir_eval')").
+#
 # Without this extra the TranscribeService falls back to a stub
 # TranscriptionResult.
 basic-pitch = [
     "coremltools; platform_system == 'Darwin'",
     "librosa>=0.8.0",
+    "mir_eval>=0.6.0",
     "numpy>=1.26",
     "onnxruntime>=1.19",
     "pretty_midi>=0.2.10",
@@ -58,8 +66,11 @@ basic-pitch = [
 ]
 # Offline eval harness (scripts/eval_transcription.py) — scores
 # TranscribeService output against clean_midi ground truth via
-# mir_eval. Eval-only, not imported by the backend runtime, so it
-# stays out of the production-facing [basic-pitch] extra.
+# mir_eval. mir_eval is also pulled in by [basic-pitch] (basic-pitch
+# 0.4.0 imports it at module load), so this extra is effectively a
+# subset of [basic-pitch]; kept as a named extra so ``make
+# install-eval`` / the README docs still resolve to something
+# meaningful for reviewers who only want the scoring library.
 eval = [
     "mir_eval>=0.6.0",
 ]
