@@ -11,8 +11,8 @@ import '../api/client.dart';
 import '../api/models.dart';
 import '../responsive.dart';
 import '../theme.dart';
-import '../widgets/midi_player.dart';
-import '../widgets/pdf_preview.dart';
+import '../widgets/piano_roll.dart';
+import '../widgets/sheet_music_viewer.dart';
 import '../widgets/sticker_widgets.dart';
 
 class ResultScreen extends StatelessWidget {
@@ -28,8 +28,7 @@ class ResultScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final size = MediaQuery.sizeOf(context);
-    final pdfH = math.min(560.0, math.max(280.0, size.height * 0.5));
-    final midiH = math.min(320.0, math.max(180.0, size.height * 0.28));
+    final sheetH = math.min(700.0, math.max(400.0, size.height * 0.7));
     final twoCol = context.ohSheetResultTwoColumn;
 
     final header = Column(
@@ -70,8 +69,11 @@ class ResultScreen extends StatelessWidget {
         const OhSheetStickerSectionTitle(text: 'Sheet Music'),
         const SizedBox(height: 10),
         OhSheetStickerClip(
-          height: pdfH,
-          child: PdfPreviewWidget(pdfUrl: api.artifactUrl(job.jobId, 'pdf')),
+          height: sheetH,
+          child: SheetMusicViewer(
+            musicxmlUrl: api.artifactUrl(job.jobId, 'musicxml'),
+            midiUrl: api.artifactUrl(job.jobId, 'midi'),
+          ),
         ),
       ],
     );
@@ -85,8 +87,8 @@ class ResultScreen extends StatelessWidget {
         ),
         const SizedBox(height: 10),
         OhSheetStickerClip(
-          height: midiH,
-          child: MidiPlayerWidget(midiUrl: api.artifactUrl(job.jobId, 'midi')),
+          height: math.min(280.0, math.max(160.0, size.height * 0.25)),
+          child: PianoRollWidget(midiUrl: api.artifactUrl(job.jobId, 'midi')),
         ),
       ],
     );
@@ -176,29 +178,13 @@ class ResultScreen extends StatelessWidget {
                     children: [
                       header,
                       const SizedBox(height: 24),
-                      Row(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Expanded(
-                            flex: 3,
-                            child: sheetSection,
-                          ),
-                          const SizedBox(width: 24),
-                          Expanded(
-                            flex: 2,
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.stretch,
-                              children: [
-                                listenSection,
-                                const SizedBox(height: 20),
-                                downloads,
-                                const SizedBox(height: 24),
-                                againButton,
-                              ],
-                            ),
-                          ),
-                        ],
-                      ),
+                      sheetSection,
+                      const SizedBox(height: 24),
+                      listenSection,
+                      const SizedBox(height: 20),
+                      downloads,
+                      const SizedBox(height: 24),
+                      againButton,
                     ],
                   )
                 : Column(

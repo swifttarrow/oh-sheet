@@ -35,6 +35,7 @@ def download_artifact(
     kind: str,
     manager: Annotated[JobManager, Depends(get_job_manager)],
     blob: Annotated[LocalBlobStore, Depends(get_blob_store)],
+    inline: bool = False,
 ) -> Response:
     if kind not in _KIND_INFO:
         raise HTTPException(
@@ -73,8 +74,9 @@ def download_artifact(
         ) from exc
 
     filename = f"{job_id}-{suffix}"
+    disposition = "inline" if inline else f'attachment; filename="{filename}"'
     return Response(
         content=data,
         media_type=media_type,
-        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+        headers={"Content-Disposition": disposition},
     )

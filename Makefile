@@ -14,7 +14,7 @@ PORT         ?= 8000
 
 DART_DEFINE := $(if $(API_BASE_URL),--dart-define=API_BASE_URL=$(API_BASE_URL),)
 
-.PHONY: help install install-backend install-basic-pitch install-demucs install-eval install-frontend backend frontend test test-backend eval lint typecheck clean
+.PHONY: help install install-backend install-basic-pitch install-demucs install-eval install-frontend backend frontend test test-backend test-e2e eval lint typecheck clean
 
 help:
 	@echo "Oh Sheet — make targets"
@@ -27,7 +27,7 @@ help:
 	@echo "  make install-eval         pip install -e .[eval]  (mir_eval for the offline eval harness)"
 	@echo "  make install-frontend     flutter pub get inside frontend/"
 	@echo ""
-	@echo "  make backend            run uvicorn dev server on $(HOST):$(PORT)"
+	@echo "  make backend            docker-compose up (Redis + Celery workers + API on :8000)"
 	@echo "  make frontend           flutter run -d $(DEVICE) (override DEVICE=ios|android|macos|...)"
 	@echo "                          set API_BASE_URL=http://host:port to point at a non-default backend"
 	@echo ""
@@ -71,7 +71,7 @@ install-frontend:
 # ---- run --------------------------------------------------------------------
 
 backend:
-	uvicorn backend.main:app --reload --host $(HOST) --port $(PORT)
+	docker compose up --build
 
 frontend:
 	cd $(FRONTEND) && flutter run -d $(DEVICE) $(DART_DEFINE)
@@ -82,6 +82,9 @@ test: test-backend
 
 test-backend:
 	pytest
+
+test-e2e:
+	cd e2e && npx playwright test
 
 # Score TranscribeService end-to-end against the tracked clean_midi
 # subset at ``eval/fixtures/clean_midi/`` and write the full report

@@ -6,6 +6,7 @@ requires-python = ">=3.10"
 license = { text = "Proprietary" }
 authors = [{ name = "Ross" }]
 dependencies = [
+    "ohsheet-shared @ file:shared",
     "fastapi>=0.110",
     "uvicorn[standard]>=0.27",
     "pydantic>=2.5",
@@ -13,11 +14,15 @@ dependencies = [
     "python-multipart>=0.0.9",
     "websockets>=12.0",
     "yt-dlp>=2024.1",
+    "celery[redis]>=5.3",
+    "pretty_midi>=0.2.10",
+    "music21>=9.1",
 ]
 
 [project.optional-dependencies]
 dev = [
     "pytest>=8.0",
+    "pytest-asyncio>=0.24",
     "pytest-cov>=5.0",
     "httpx>=0.26",
     "ruff>=0.4",
@@ -94,6 +99,9 @@ ohsheet = "backend.main:run"
 requires = ["hatchling"]
 build-backend = "hatchling.build"
 
+[tool.hatch.metadata]
+allow-direct-references = true
+
 [tool.hatch.build.targets.wheel]
 packages = ["backend"]
 
@@ -101,6 +109,7 @@ packages = ["backend"]
 testpaths = ["tests"]
 filterwarnings = ["ignore::DeprecationWarning"]
 addopts = "--cov=backend --cov-report=term-missing --cov-report=xml"
+asyncio_mode = "auto"
 
 [tool.ruff]
 target-version = "py311"
@@ -117,6 +126,9 @@ ignore = [
     "B007",    # unused loop var — existing pattern
     "B905",    # zip strict — existing pattern
 ]
+
+[tool.ruff.lint.per-file-ignores]
+"backend/contracts.py" = ["F401"]  # names re-exported for `from backend.contracts import …`
 
 [tool.mypy]
 python_version = "3.11"

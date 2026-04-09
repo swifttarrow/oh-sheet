@@ -1,43 +1,49 @@
-"""PipelineRunner — walks the execution plan and invokes services in order.
+"""PipelineRunner — dispatches pipeline stages as Celery tasks.
 
-Mirrors temp1/orchestrator.py:run_pipeline but works on Pydantic contracts
-only — no file paths, no model specifics. Each stage emits stage_started /
-stage_completed events through the supplied callback so the JobManager can
-forward them to WebSocket subscribers.
+The runner owns the execution plan (which stages run in what order)
+and uses the claim-check pattern: serialize each stage's input to
+blob storage, dispatch a Celery task with the payload URI, wait for
+the result URI, and deserialize the output for the next stage.
 """
 from __future__ import annotations
 
+import asyncio
 import logging
 import time
 from collections.abc import Callable
 from pathlib import Path
 from urllib.parse import urlparse
 
+from celery import Celery
+
 from backend.contracts import (
     SCHEMA_VERSION,
     EngravedOutput,
     HarmonicAnalysis,
-    HumanizedPerformance,
     InputBundle,
     InstrumentRole,
     MidiTrack,
     Note,
-    PianoScore,
     PipelineConfig,
     QualitySignal,
     TempoMapEntry,
     TranscriptionResult,
 )
 from backend.jobs.events import JobEvent
-from backend.services.arrange import ArrangeService
-from backend.services.engrave import EngraveService
-from backend.services.humanize import HumanizeService
-from backend.services.ingest import IngestService
-from backend.services.transcribe import TranscribeService
+from backend.storage.base import BlobStore
 
 log = logging.getLogger(__name__)
 
 EventCallback = Callable[[JobEvent], None]
+
+# Maps execution plan step names to Celery task names.
+STEP_TO_TASK: dict[str, str] = {
+    "ingest": "ingest.run",
+    "transcribe": "transcribe.run",
+    "arrange": "arrange.run",
+    "humanize": "humanize.run",
+    "engrave": "engrave.run",
+}
 
 
 def _gm_program_to_role(program: int, is_drum: bool) -> InstrumentRole:
@@ -186,17 +192,60 @@ def _bundle_to_transcription(bundle: InputBundle) -> TranscriptionResult:
 class PipelineRunner:
     def __init__(
         self,
-        ingest: IngestService,
-        transcribe: TranscribeService,
-        arrange: ArrangeService,
-        humanize: HumanizeService,
-        engrave: EngraveService,
+        blob_store: BlobStore,
+        celery_app: Celery,
     ) -> None:
-        self.ingest = ingest
-        self.transcribe = transcribe
-        self.arrange = arrange
-        self.humanize = humanize
-        self.engrave = engrave
+        self.blob_store = blob_store
+        self.celery_app = celery_app
+
+    def _serialize_stage_input(
+        self,
+        job_id: str,
+        step: str,
+        payload: dict,
+    ) -> str:
+        """Write stage input to blob store, return URI."""
+        return self.blob_store.put_json(
+            f"jobs/{job_id}/{step}/input.json",
+            payload,
+        )
+
+    async def _dispatch_task(
+        self,
+        task_name: str,
+        job_id: str,
+        payload_uri: str,
+        timeout: int,
+    ) -> str:
+        """Send Celery task and wait for result URI without blocking event loop.
+
+        Uses ``apply_async`` via the local task registry when the task is
+        registered (monolith workers + test stubs), and falls back to
+        ``send_task`` for tasks that only exist on remote workers.
+        ``send_task`` does NOT honour ``task_always_eager``, so the test
+        conftest registers decomposer/assembler stubs locally.
+
+        Everything runs inside ``to_thread`` so eager-mode tasks (which call
+        ``asyncio.run`` internally) execute without an event-loop conflict.
+        """
+        def _run() -> str:
+            if task_name in self.celery_app.tasks:
+                result = self.celery_app.tasks[task_name].apply_async(
+                    args=[job_id, payload_uri],
+                )
+            else:
+                if self.celery_app.conf.task_always_eager:
+                    raise RuntimeError(
+                        f"Task {task_name!r} is not registered on the Celery app "
+                        f"but task_always_eager is True. Register a stub in "
+                        f"conftest.py to avoid hitting a real broker in tests."
+                    )
+                result = self.celery_app.send_task(
+                    task_name, args=[job_id, payload_uri],
+                )
+            return result.get(timeout=timeout)
+
+        return await asyncio.to_thread(_run)
 
     async def run(
         self,
@@ -214,13 +263,15 @@ class PipelineRunner:
                 return
             on_event(JobEvent(job_id=job_id, type=event_type, stage=stage, **kw))
 
-        txr: TranscriptionResult | None = None
-        score: PianoScore | None = None
-        perf: HumanizedPerformance | None = None
-        result: EngravedOutput | None = None
-
         title = bundle.metadata.title or "Untitled"
         composer = bundle.metadata.artist or "Unknown"
+
+        # Current state as we walk the pipeline -- always a dict for JSON serialization.
+        current_payload: dict = bundle.model_dump(mode="json")
+        txr_dict: dict | None = None
+        score_dict: dict | None = None
+        perf_dict: dict | None = None
+        result_dict: dict | None = None
 
         log.info(
             "pipeline start job_id=%s variant=%s plan=%s skip_humanizer=%s source=%s "
@@ -241,43 +292,62 @@ class PipelineRunner:
                 job_id, step, i + 1, n,
             )
             t0 = time.perf_counter()
+            task_name = STEP_TO_TASK[step]
+
             try:
                 if step == "ingest":
-                    bundle = await self.ingest.run(bundle)
+                    payload_uri = self._serialize_stage_input(job_id, step, current_payload)
+                    output_uri = await self._dispatch_task(task_name, job_id, payload_uri, config.stage_timeout_sec)
+                    current_payload = self.blob_store.get_json(output_uri)
 
                 elif step == "transcribe":
-                    txr = await self.transcribe.run(bundle, job_id=job_id)
+                    payload_uri = self._serialize_stage_input(job_id, step, current_payload)
+                    output_uri = await self._dispatch_task(task_name, job_id, payload_uri, config.stage_timeout_sec)
+                    txr_dict = self.blob_store.get_json(output_uri)
 
                 elif step == "arrange":
-                    if txr is None and bundle.midi is not None:
-                        # midi_upload variant skips transcription; build a passthrough.
+                    if txr_dict is None:
+                        # midi_upload variant: build transcription from bundle
+                        bundle_obj = InputBundle.model_validate(current_payload)
                         log.info(
                             "pipeline job_id=%s arrange: using MIDI→TranscriptionResult passthrough",
                             job_id,
                         )
-                        txr = _bundle_to_transcription(bundle)
-                    if txr is None:
-                        raise RuntimeError(
-                            "arrange stage requires a TranscriptionResult — none was produced"
-                        )
-                    score = await self.arrange.run(txr)
+                        txr_obj = _bundle_to_transcription(bundle_obj)
+                        txr_dict = txr_obj.model_dump(mode="json")
+                    payload_uri = self._serialize_stage_input(job_id, step, txr_dict)
+                    output_uri = await self._dispatch_task(task_name, job_id, payload_uri, config.stage_timeout_sec)
+                    score_dict = self.blob_store.get_json(output_uri)
 
                 elif step == "humanize":
-                    if score is None:
-                        raise RuntimeError(
-                            "humanize stage requires a PianoScore — none was produced"
-                        )
-                    perf = await self.humanize.run(score)
+                    if score_dict is None:
+                        raise RuntimeError("humanize stage requires a PianoScore — none was produced")
+                    payload_uri = self._serialize_stage_input(job_id, step, score_dict)
+                    output_uri = await self._dispatch_task(task_name, job_id, payload_uri, config.stage_timeout_sec)
+                    perf_dict = self.blob_store.get_json(output_uri)
 
                 elif step == "engrave":
-                    target: HumanizedPerformance | PianoScore | None = perf or score
-                    if target is None:
-                        raise RuntimeError(
-                            "engrave stage requires a score or performance — none was produced"
-                        )
-                    result = await self.engrave.run(
-                        target, job_id=job_id, title=title, composer=composer,
-                    )
+                    if perf_dict is not None:
+                        engrave_envelope = {
+                            "payload": perf_dict,
+                            "payload_type": "HumanizedPerformance",
+                            "job_id": job_id,
+                            "title": title,
+                            "composer": composer,
+                        }
+                    elif score_dict is not None:
+                        engrave_envelope = {
+                            "payload": score_dict,
+                            "payload_type": "PianoScore",
+                            "job_id": job_id,
+                            "title": title,
+                            "composer": composer,
+                        }
+                    else:
+                        raise RuntimeError("engrave stage requires a score or performance — none was produced")
+                    payload_uri = self._serialize_stage_input(job_id, step, engrave_envelope)
+                    output_uri = await self._dispatch_task(task_name, job_id, payload_uri, config.stage_timeout_sec)
+                    result_dict = self.blob_store.get_json(output_uri)
 
                 else:
                     raise RuntimeError(f"unknown stage in execution plan: {step!r}")
@@ -295,15 +365,16 @@ class PipelineRunner:
             )
             emit(step, "stage_completed", progress=(i + 1) / n)
 
-        if result is None:
+        if result_dict is None:
             raise RuntimeError("pipeline finished without producing an EngravedOutput")
 
+        result = EngravedOutput.model_validate(result_dict)
         # Carry the raw transcription MIDI URI (if any) onto the final
         # output so the artifacts route can serve it without needing a
         # separate handle on TranscriptionResult.
-        if txr is not None and txr.transcription_midi_uri:
+        if txr_dict is not None and txr_dict.get("transcription_midi_uri"):
             result = result.model_copy(
-                update={"transcription_midi_uri": txr.transcription_midi_uri},
+                update={"transcription_midi_uri": txr_dict["transcription_midi_uri"]},
             )
         log.info("pipeline finished job_id=%s", job_id)
         return result

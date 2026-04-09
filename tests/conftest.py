@@ -5,10 +5,18 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
+import backend.workers.arrange  # noqa: F401
+import backend.workers.engrave  # noqa: F401
+import backend.workers.humanize  # noqa: F401
+
+# Import monolith worker modules so their tasks are registered on the celery_app.
+import backend.workers.ingest  # noqa: F401
+import backend.workers.transcribe  # noqa: F401
 from backend.api import deps
 from backend.config import settings
 from backend.main import create_app
 from backend.services import transcribe as transcribe_module
+from backend.workers.celery_app import celery_app as _celery_app
 
 
 @pytest.fixture(autouse=True)
@@ -36,13 +44,30 @@ def skip_real_transcription(monkeypatch):
     bytes is both slow (cold-start CoreML/ONNX compilation) and flaky
     (librosa silently decodes garbage into zero-length audio). Raising an
     exception from the sync inference helper routes TranscribeService.run
-    through its `except Exception → _stub_result` branch, which is exactly
+    through its `except Exception -> _stub_result` branch, which is exactly
     what the pipeline tests need.
     """
-    def _fail_fast(*_args, **_kwargs):
-        raise RuntimeError("real transcription disabled in tests")
+    async def _fake_run(self, payload, *, job_id=None):
+        stub = transcribe_module._stub_result("real transcription disabled in tests")
+        if self.blob_store is not None and job_id is not None:
+            fake_midi = b"MThd\x00\x00\x00\x06\x00\x00\x00\x00\x00\x00"
+            uri = self.blob_store.put_bytes(
+                f"jobs/{job_id}/transcription/basic-pitch.mid", fake_midi,
+            )
+            stub = stub.model_copy(update={"transcription_midi_uri": uri})
+        return stub
 
-    monkeypatch.setattr(transcribe_module, "_run_basic_pitch_sync", _fail_fast)
+    monkeypatch.setattr(transcribe_module.TranscribeService, "run", _fake_run)
+
+
+@pytest.fixture(autouse=True)
+def celery_eager_mode():
+    """Run Celery tasks in-process for all tests."""
+    _celery_app.conf.task_always_eager = True
+    _celery_app.conf.task_eager_propagates = True
+    yield
+    _celery_app.conf.task_always_eager = False
+    _celery_app.conf.task_eager_propagates = False
 
 
 @pytest.fixture
