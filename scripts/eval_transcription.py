@@ -284,15 +284,21 @@ def _synthesize(
     exception — it's usually self-explanatory (missing soundfont, bad
     MIDI, etc.).
 
-    The rendered WAV is staged to ``<out_wav>.partial`` and only
-    promoted to ``out_wav`` via :func:`os.replace` after both
-    fluidsynth and the post-hoc clip succeed. If the process is
-    killed mid-render (SIGKILL, OOM, ^C) the partial file stays on
-    disk but ``out_wav`` does not, so the next run re-synthesizes
-    rather than silently reusing a truncated cache entry.
+    The rendered WAV is staged next to ``out_wav`` as
+    ``<stem>.partial.wav`` and only promoted to ``out_wav`` via
+    :func:`os.replace` after both fluidsynth and the post-hoc clip
+    succeed. If the process is killed mid-render (SIGKILL, OOM, ^C)
+    the partial file stays on disk but ``out_wav`` does not, so the
+    next run re-synthesizes rather than silently reusing a truncated
+    cache entry. The staging name keeps a ``.wav`` suffix on purpose:
+    both fluidsynth's ``-F`` writer and libsndfile (via
+    ``soundfile``) pick the file format from the extension, and
+    anything other than a recognized audio suffix causes fluidsynth
+    to emit headerless raw PCM and ``sf.read`` to raise "No format
+    specified and unable to get format from file extension".
     """
     out_wav.parent.mkdir(parents=True, exist_ok=True)
-    staging_wav = out_wav.with_suffix(out_wav.suffix + ".partial")
+    staging_wav = out_wav.with_name(f"{out_wav.stem}.partial{out_wav.suffix}")
     staging_wav.unlink(missing_ok=True)
     with tempfile.NamedTemporaryFile(suffix=".mid", delete=False) as tmp:
         tmp_path = Path(tmp.name)
