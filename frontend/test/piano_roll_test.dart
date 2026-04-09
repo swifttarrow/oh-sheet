@@ -1,4 +1,4 @@
-/// TDD: Tests for the piano roll widget.
+// TDD: Tests for the piano roll widget.
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/testing.dart' as http_testing;
