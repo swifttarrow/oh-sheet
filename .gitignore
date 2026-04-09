@@ -10,6 +10,8 @@ htmlcov/
 dist/
 build/
 blob/
+.cache/
+clean_midi/
 .DS_Store
 .vscode/
 .idea/
