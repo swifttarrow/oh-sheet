@@ -204,14 +204,21 @@ def _render_musicxml_bytes(
                     n.articulations.append(music21.articulations.Tenuto())
                 part.insert(sn.onset_beat, n)
 
-            for cs in score.metadata.chord_symbols:
-                try:
-                    h = music21.harmony.ChordSymbol(cs.label.replace(":", ""))
-                    part.insert(cs.beat, h)
-                except Exception:  # noqa: BLE001 — unparseable chord labels are non-fatal
-                    pass
+            # Chord symbols disabled for now — the harmonic analysis from
+            # audio transcription produces noisy labels (G5, E5, etc.) that
+            # clutter the notation. Re-enable when chord recognition quality
+            # improves or when source is a clean MIDI upload.
+            # for cs in score.metadata.chord_symbols:
+            #     try:
+            #         h = music21.harmony.ChordSymbol(cs.label.replace(":", ""))
+            #         part.insert(cs.beat, h)
+            #     except Exception:
+            #         pass
 
-            part.quantize(inPlace=True)
+            # Quantize to a 16th-note + triplet grid so OSMD can render it.
+            # Without explicit divisors, music21 defaults to divisions=10080
+            # which produces MusicXML that OSMD chokes on.
+            part.quantize(quarterLengthDivisors=(4, 3), inPlace=True)
             part.makeNotation(inPlace=True)
             s.append(part)
 
@@ -219,12 +226,70 @@ def _render_musicxml_bytes(
             tmp_path = Path(tmp.name)
         try:
             s.write("musicxml", fp=str(tmp_path))
-            return tmp_path.read_bytes()
+            raw = tmp_path.read_bytes()
+            return _sanitize_musicxml_for_osmd(raw)
         finally:
             tmp_path.unlink(missing_ok=True)
     except Exception as exc:  # noqa: BLE001 — music21 has many failure modes
         log.warning("music21 MusicXML render failed (%s); falling back to minimal", exc)
         return _minimal_musicxml(score, title, composer)
+
+
+def _sanitize_musicxml_for_osmd(raw: bytes) -> bytes:
+    """Post-process music21 MusicXML to fix OSMD compatibility issues.
+
+    OSMD's VexFlow backend crashes (parentVoiceEntry) when:
+    1. <divisions> is very high (10080) — we reduce to 4 (16th-note grid)
+    2. Voice numbers exceed 2 per part — we collapse to voice 1
+    3. Voice 0 exists — OSMD expects 1-indexed voices
+
+    We also scale all <duration> values proportionally when changing divisions.
+    """
+    import re
+
+    text = raw.decode("utf-8")
+
+    # Find the current divisions value
+    div_match = re.search(r"<divisions>(\d+)</divisions>", text)
+    if div_match:
+        old_div = int(div_match.group(1))
+        new_div = 4  # 4 divisions per quarter = 16th-note grid
+
+        if old_div != new_div and old_div > 0:
+            ratio = new_div / old_div
+
+            # Replace all <divisions> tags
+            text = re.sub(
+                r"<divisions>\d+</divisions>",
+                f"<divisions>{new_div}</divisions>",
+                text,
+            )
+
+            # Scale all <duration> values
+            def scale_duration(m: re.Match) -> str:
+                old_dur = int(m.group(1))
+                new_dur = max(1, round(old_dur * ratio))
+                return f"<duration>{new_dur}</duration>"
+
+            text = re.sub(r"<duration>(\d+)</duration>", scale_duration, text)
+
+            # Scale <forward> and <backup> durations too
+            def scale_forward(m: re.Match) -> str:
+                tag = m.group(1)
+                old_dur = int(m.group(2))
+                new_dur = max(1, round(old_dur * ratio))
+                return f"<{tag}>\n        <duration>{new_dur}</duration>"
+
+            text = re.sub(
+                r"<(forward|backup)>\s*<duration>(\d+)</duration>",
+                scale_forward,
+                text,
+            )
+
+    # Collapse all voices to voice 1 (OSMD chokes on 3+ voices per part)
+    text = re.sub(r"<voice>\d+</voice>", "<voice>1</voice>", text)
+
+    return text.encode("utf-8")
 
 
 def _minimal_musicxml(score: PianoScore, title: str, composer: str) -> bytes:
