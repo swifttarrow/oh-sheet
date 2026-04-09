@@ -459,7 +459,9 @@ def _backfill_missed_melody_notes(
                 continue
             if end_sec > max_time_sec:
                 end_sec = max_time_sec
-                end_f = min(end_f, int(round(max_time_sec * frame_rate_hz)))
+                # floor not round — avoid leaking a zero-padded frame into the
+                # mean-salience calc below when max_time_sec lands mid-frame.
+                end_f = min(end_f, int(max_time_sec * frame_rate_hz))
 
         run_duration = end_sec - start_sec
         if run_duration <= 0 or run_duration < min_duration_sec:
@@ -672,3 +674,59 @@ def extract_melody(
         voiced_frac * 100.0,
     )
     return melody, chords, stats
+
+
+def backfill_melody_notes(
+    contour: Any,  # np.ndarray (frames, 264) or None
+    note_events: list[NoteEvent],
+    *,
+    melody_low_midi: int = DEFAULT_MELODY_LOW_MIDI,
+    melody_high_midi: int = DEFAULT_MELODY_HIGH_MIDI,
+    voicing_floor: float = DEFAULT_VOICING_FLOOR,
+    transition_weight: float = DEFAULT_TRANSITION_WEIGHT,
+    max_transition_bins: int = DEFAULT_MAX_TRANSITION_BINS,
+    voiced_enter_cost: float = DEFAULT_VOICED_ENTER_COST,
+    unvoiced_enter_cost: float = DEFAULT_UNVOICED_ENTER_COST,
+    match_tolerance_semitones: float = DEFAULT_MATCH_TOL_SEMITONES,
+    match_fraction: float = DEFAULT_MATCH_FRACTION,
+    frame_rate_hz: float = FRAME_RATE_HZ,
+    backfill_min_duration_sec: float = DEFAULT_BACKFILL_MIN_DURATION_SEC,
+    backfill_overlap_fraction: float = DEFAULT_BACKFILL_OVERLAP_FRACTION,
+    backfill_min_amp: float = DEFAULT_BACKFILL_MIN_AMP,
+    backfill_max_amp: float = DEFAULT_BACKFILL_MAX_AMP,
+    max_time_sec: float | None = None,
+) -> tuple[list[NoteEvent], MelodyExtractionStats]:
+    """Additive-only melody extraction — run back-fill on top of existing events.
+
+    Thin wrapper around :func:`extract_melody` with ``split_enabled=False``
+    that returns only ``(events, stats)``, dropping the always-empty chord
+    list the split-disabled path produces. This is the contract the Demucs
+    stems path actually wants: "given a contour and a set of BP events,
+    add any Viterbi-discovered stable runs BP missed; don't re-filter".
+
+    Called from :func:`backend.services.transcribe._run_with_stems` on the
+    vocals stem. The single-mix path still uses :func:`extract_melody`
+    directly since it needs the path-agreement split.
+    """
+    events, _chords, stats = extract_melody(
+        contour,
+        note_events,
+        melody_low_midi=melody_low_midi,
+        melody_high_midi=melody_high_midi,
+        voicing_floor=voicing_floor,
+        transition_weight=transition_weight,
+        max_transition_bins=max_transition_bins,
+        voiced_enter_cost=voiced_enter_cost,
+        unvoiced_enter_cost=unvoiced_enter_cost,
+        match_tolerance_semitones=match_tolerance_semitones,
+        match_fraction=match_fraction,
+        frame_rate_hz=frame_rate_hz,
+        backfill_enabled=True,
+        backfill_min_duration_sec=backfill_min_duration_sec,
+        backfill_overlap_fraction=backfill_overlap_fraction,
+        backfill_min_amp=backfill_min_amp,
+        backfill_max_amp=backfill_max_amp,
+        max_time_sec=max_time_sec,
+        split_enabled=False,
+    )
+    return events, stats

@@ -52,6 +52,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from backend.services._torch_utils import pick_device
 from backend.services.transcription_cleanup import NoteEvent
 
 log = logging.getLogger(__name__)
@@ -143,28 +144,6 @@ class CrepeMelodyStats:
             )
         out.extend(self.warnings)
         return out
-
-
-def _pick_device(preferred: str | None) -> str:
-    """Pick a torch device string. Auto-selects cuda → mps → cpu.
-
-    Mirrors :func:`backend.services.stem_separation._pick_device` — we
-    can't import from there directly because it's a private helper, and
-    duplicating the four-line function is cheaper than promoting it to
-    a shared utility for a single extra caller.
-    """
-    if preferred:
-        return preferred
-    try:
-        import torch  # noqa: PLC0415
-    except ImportError:
-        return "cpu"
-    if torch.cuda.is_available():
-        return "cuda"
-    mps = getattr(torch.backends, "mps", None)
-    if mps is not None and mps.is_available():
-        return "mps"
-    return "cpu"
 
 
 def _load_mono_16k(audio_path: Path) -> tuple[Any, int]:
@@ -336,7 +315,7 @@ def extract_vocal_melody_crepe(
         stats.warnings.append(f"crepe-melody: load failed: {exc}")
         return [], stats
 
-    device_str = _pick_device(device)
+    device_str = pick_device(device)
     stats.device = device_str
 
     try:

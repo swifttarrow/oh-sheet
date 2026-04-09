@@ -552,6 +552,84 @@ def test_run_with_stems_falls_back_when_viterbi_returns_empty(
 # _run_with_stems — Viterbi runs in additive-only mode on the vocals stem
 # ---------------------------------------------------------------------------
 
+def test_crepe_owns_melody_skips_basic_pitch_vocals_pass(
+    monkeypatch, tmp_path, stub_audio_helpers,
+):
+    """When CREPE returns events, the vocals stem skips Basic Pitch.
+
+    This is the "crepe_owns_melody" wiring: if
+    ``crepe_vocal_melody_enabled`` is on and
+    ``extract_vocal_melody_crepe`` returns a non-empty note list, the
+    stems path drops the vocals job from ``stem_jobs`` entirely and
+    routes the CREPE events straight to MELODY. Basic Pitch still
+    runs on the bass/other stems. This test pins all three guarantees
+    so a future refactor can't silently re-enable the duplicate pass.
+    """
+    from backend.services.crepe_melody import CrepeMelodyStats
+
+    stems = _make_stems(tmp_path)
+    stem_stats = StemSeparationStats(stems_written=["vocals", "bass", "other", "drums"])
+
+    call_log: list[str] = []
+
+    def fake_pass(stem_path: Path, *, keep_model_output: bool = True):
+        call_log.append(stem_path.stem)
+        return _make_pass(stem_path.stem)
+
+    # CREPE returns a single note at pitch 74 — distinct from
+    # ``_make_pass("vocals")``'s 72 so the assertion can prove
+    # the MELODY track carries the CREPE output, not the BP output.
+    crepe_note = (0.0, 1.0, 74, 0.6, None)
+    crepe_stats = CrepeMelodyStats(
+        skipped=False,
+        model="full",
+        device="cpu",
+        n_frames=100,
+        n_voiced_frames=60,
+        n_notes=1,
+        wall_sec=0.1,
+        warnings=["crepe test warn"],
+    )
+
+    monkeypatch.setattr(
+        transcribe_mod,
+        "extract_vocal_melody_crepe",
+        lambda *_args, **_kwargs: ([crepe_note], crepe_stats),
+    )
+    monkeypatch.setattr(transcribe_mod, "_basic_pitch_single_pass", fake_pass)
+
+    from backend.config import settings
+    monkeypatch.setattr(settings, "crepe_vocal_melody_enabled", True)
+    monkeypatch.setattr(settings, "demucs_parallel_stems", True)
+    monkeypatch.setattr(settings, "chord_recognition_enabled", False)
+
+    audio_path = tmp_path / "mix.wav"
+    audio_path.write_bytes(b"\x00")
+
+    result, _ = _run_with_stems(audio_path, stems, stem_stats)
+
+    # (a) crepe_owns_melody must skip the BP vocals pass entirely.
+    assert "vocals" not in call_log, (
+        "crepe_owns_melody must skip the BP vocals pass"
+    )
+    # The other two stems still ran through Basic Pitch.
+    assert "bass" in call_log
+    assert "other" in call_log
+
+    # (b) The MELODY track carries the CREPE pitch (74), not the
+    # pitch (72) that ``_make_pass("vocals")`` would have emitted.
+    melody_tracks = [
+        t for t in result.midi_tracks if t.instrument == InstrumentRole.MELODY
+    ]
+    assert len(melody_tracks) == 1
+    assert {n.pitch for n in melody_tracks[0].notes} == {74}
+
+    # (c) The CREPE-side warning surfaces on the QualitySignal, so
+    # operators can tell which melody path ran.
+    warnings_joined = " ".join(result.quality.warnings)
+    assert "crepe test warn" in warnings_joined
+
+
 def test_run_with_stems_calls_extract_melody_in_additive_only_mode(
     monkeypatch, tmp_path, stub_audio_helpers,
 ):
@@ -735,3 +813,72 @@ def test_run_with_stems_blob_midi_falls_back_to_120_without_tempo_map(
     assert len(blob.time_signature_changes) == 1
     assert (blob.time_signature_changes[0].numerator,
             blob.time_signature_changes[0].denominator) == (4, 4)
+
+
+# ---------------------------------------------------------------------------
+# _rebuild_blob_midi — empty-events fallback
+# ---------------------------------------------------------------------------
+
+def test_rebuild_blob_midi_empty_events_returns_none():
+    """``_rebuild_blob_midi([])`` must return ``None`` so the caller's
+    fallback branch (``if blob_midi is None: blob_midi = midi_data``)
+    picks up the pre-existing pretty_midi instead of serializing an
+    empty pretty_midi (which MuseScore treats as a broken file).
+    """
+    assert transcribe_mod._rebuild_blob_midi([], initial_bpm=120.0) is None
+
+
+def test_run_without_stems_falls_back_to_midi_data_when_cleaned_events_empty(
+    monkeypatch, tmp_path,
+):
+    """Empty cleaned_events → ``blob_midi`` falls back to ``midi_data``.
+
+    Pins the fallback wiring at ``transcribe.py:_run_without_stems``:
+    when the Basic Pitch cleanup drops every note, ``_rebuild_blob_midi``
+    returns ``None`` and the pre-existing ``midi_data`` (Basic Pitch's
+    own pretty_midi) is used to build ``midi_bytes`` — otherwise the
+    blob serializer would crash on a ``None`` pretty_midi.
+    """
+    import io
+
+    # Stub audio helpers — we're not exercising Viterbi / chords /
+    # tempo here, so shut them all off to keep the test focused on the
+    # blob-MIDI fallback path.
+    monkeypatch.setattr(
+        transcribe_mod, "tempo_map_from_audio_path", lambda _path: None
+    )
+    monkeypatch.setattr(
+        transcribe_mod, "_audio_duration_sec", lambda _path: None
+    )
+    from backend.config import settings
+    monkeypatch.setattr(settings, "melody_extraction_enabled", False)
+    monkeypatch.setattr(settings, "bass_extraction_enabled", False)
+    monkeypatch.setattr(settings, "chord_recognition_enabled", False)
+
+    # Fake ``_basic_pitch_single_pass`` that returns an empty event
+    # list with a valid ``midi_data`` pretty_midi. This is the
+    # "cleanup dropped everything" shape.
+    empty_pm = pretty_midi.PrettyMIDI()
+
+    def fake_pass(audio_path: Path, *, keep_model_output: bool = True):
+        return _BasicPitchPass(
+            cleaned_events=[],
+            model_output={},
+            midi_data=empty_pm,
+            preprocess_stats=None,
+            cleanup_stats=CleanupStats(input_count=0, output_count=0),
+        )
+
+    monkeypatch.setattr(transcribe_mod, "_basic_pitch_single_pass", fake_pass)
+
+    audio_path = tmp_path / "mix.wav"
+    audio_path.write_bytes(b"\x00")
+
+    result, midi_bytes = transcribe_mod._run_without_stems(audio_path, None)
+
+    # ``midi_bytes`` is non-None — the fallback branch picked up
+    # ``midi_data`` rather than crashing on a None pretty_midi.
+    assert midi_bytes is not None and len(midi_bytes) > 0
+    # And the bytes round-trip through pretty_midi cleanly.
+    _roundtrip = pretty_midi.PrettyMIDI(io.BytesIO(midi_bytes))
+    assert result is not None

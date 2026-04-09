@@ -1,8 +1,5 @@
 {
   "meta": {
-    "dataset_root": "/Users/ross/temp1/oh-sheet/clean_midi",
-    "cache_dir": "/Users/ross/temp1/oh-sheet/.cache/eval_transcription",
-    "soundfont": "/Users/ross/.pyenv/versions/3.13.11/lib/python3.13/site-packages/pretty_midi/TimGM6mb.sf2",
     "max_duration_sec": 30.0,
     "sample_rate": 44100,
     "n_files": 25

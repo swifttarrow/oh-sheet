@@ -113,7 +113,7 @@ def test_trace_enters_unvoiced_on_silence():
 def test_trace_masks_out_of_band_peaks():
     # A strong peak below the melody band must be ignored.
     c = _blank_contour(100)
-    _paint(c, 0, 100, 40)  # MIDI 40 < G3 (55)
+    _paint(c, 0, 100, 40)  # MIDI 40 < C3 (48)
     path = _run(c)
     assert (path < 0).all()
 
@@ -191,15 +191,15 @@ def test_extract_melody_tags_melody_and_chord_notes():
         _ne(0.0, 1.0, 60),
         _ne(1.0, 2.0, 64),
         _ne(2.0, 3.0, 67),
-        _ne(0.0, 1.0, 48),  # C3 — below band → chord
-        _ne(0.0, 1.0, 52),
+        _ne(0.0, 1.0, 47),  # B2 — below band → chord
+        _ne(0.0, 1.0, 46),  # A#2 — below band → chord
         _ne(1.0, 2.0, 45),
         _ne(2.0, 3.0, 43),
     ]
     melody, chords, stats = extract_melody(c, events)
     assert not stats.skipped
     assert sorted(e[2] for e in melody) == [60, 64, 67]
-    assert sorted(e[2] for e in chords) == [43, 45, 48, 52]
+    assert sorted(e[2] for e in chords) == [43, 45, 46, 47]
     assert stats.melody_note_count == 3
     assert stats.chord_note_count == 4
     assert stats.voiced_frame_fraction > 0.9
@@ -233,6 +233,29 @@ def test_extract_melody_sends_out_of_band_notes_to_chords():
     melody, chords, stats = extract_melody(c, events)
     assert [e[2] for e in melody] == [60]
     assert sorted(e[2] for e in chords) == [30, 100]
+
+
+def test_extract_melody_band_filter_low_boundary():
+    # The melody band is inclusive at the low edge (``DEFAULT_MELODY_LOW_MIDI``
+    # = 48), so MIDI 48 must *not* be rejected by the band filter while MIDI
+    # 47 must be. This test isolates the band check — the painted contour
+    # happens to match the event pitches so path-agreement (a separate
+    # guard) isn't what's being exercised here.
+    c = _blank_contour(int(1.1 * FRAME_RATE_HZ))
+    # Paint the contour at MIDI 48 so the in-band event has a matching run.
+    _paint(c, 0, int(FRAME_RATE_HZ), DEFAULT_MELODY_LOW_MIDI)
+    events = [
+        _ne(0.0, 1.0, DEFAULT_MELODY_LOW_MIDI),       # 48 — boundary, in band
+        _ne(0.0, 1.0, DEFAULT_MELODY_LOW_MIDI - 1),   # 47 — below band
+    ]
+    melody, chords, stats = extract_melody(c, events, backfill_enabled=False)
+    assert not stats.skipped
+    # Boundary pitch 48 survives the band filter — it reaches the
+    # path-agreement stage rather than being punted into chords by the
+    # strict ``< low_midi`` comparison.
+    assert DEFAULT_MELODY_LOW_MIDI not in {e[2] for e in chords}
+    # MIDI 47 is unambiguously below the band and must land in chords.
+    assert DEFAULT_MELODY_LOW_MIDI - 1 in {e[2] for e in chords}
 
 
 def test_extract_melody_note_disagreeing_with_path_goes_to_chords():

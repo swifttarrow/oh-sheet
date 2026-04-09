@@ -164,3 +164,20 @@ def test_empty_input_returns_empty_list():
                         merge_gap_sec=0.06,
                         amp_min=0.1,
                         amp_max=1.0) == []
+
+
+# ---------------------------------------------------------------------------
+# Config defaults sync
+# ---------------------------------------------------------------------------
+
+def test_config_defaults_match_crepe_module_defaults():
+    """``Settings.crepe_model`` must stay in lockstep with the module's
+    ``DEFAULT_MODEL`` constant — otherwise a future rename on one side
+    would silently drift from the other and the stems pipeline would
+    run a different weights bag than the config docstring claims.
+    """
+    from backend.config import Settings
+    from backend.services.crepe_melody import DEFAULT_MODEL
+
+    s = Settings()
+    assert s.crepe_model == DEFAULT_MODEL

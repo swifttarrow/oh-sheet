@@ -714,9 +714,6 @@ def _write_json(
     """
     payload = {
         "meta": {
-            "dataset_root": str(cfg.dataset_root),
-            "cache_dir": str(cfg.cache_dir),
-            "soundfont": str(cfg.soundfont),
             "max_duration_sec": cfg.max_duration,
             "sample_rate": cfg.sample_rate,
             "n_files": len(cfg.paths),
@@ -726,7 +723,7 @@ def _write_json(
         "per_role": role_scores,
     }
     out_path.parent.mkdir(parents=True, exist_ok=True)
-    out_path.write_text(json.dumps(payload, indent=2))
+    out_path.write_text(json.dumps(payload, indent=2) + "\n")
     print(f"\nWrote {out_path}")
 
 

@@ -234,15 +234,6 @@ class Settings(BaseSettings):
     crepe_vocal_melody_enabled: bool = False
     crepe_model: str = "full"                    # "tiny" (2 MB) or "full" (22 MB)
     crepe_device: str | None = None              # None → auto: cuda → mps → cpu
-    crepe_hop_length_samples: int = 160          # 10 ms at 16 kHz → 100 Hz frame rate
-    crepe_fmin_hz: float = 65.0                  # ~C2
-    crepe_fmax_hz: float = 1100.0                # ~C#6
-    crepe_voicing_threshold: float = 0.5
-    crepe_median_filter_frames: int = 5          # 50 ms smoothing window
-    crepe_min_note_duration_sec: float = 0.06
-    crepe_merge_gap_sec: float = 0.06
-    crepe_amp_min: float = 0.25
-    crepe_amp_max: float = 0.85
 
 
 settings = Settings()

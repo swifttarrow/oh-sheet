@@ -26,6 +26,7 @@ from types import SimpleNamespace
 
 import pytest
 
+from backend.services._torch_utils import pick_device
 from backend.services.stem_separation import (
     _MODEL_CACHE,
     DEFAULT_MODEL_NAME,
@@ -33,7 +34,6 @@ from backend.services.stem_separation import (
     DEFAULT_SHIFTS,
     SeparatedStems,
     StemSeparationStats,
-    _pick_device,
     separate_stems,
 )
 
@@ -130,20 +130,20 @@ def test_cleanup_noop_when_tempdir_never_set():
 
 
 # ---------------------------------------------------------------------------
-# _pick_device
+# pick_device
 # ---------------------------------------------------------------------------
 
 def test_pick_device_honors_explicit_preference():
     # Explicit "cpu" short-circuits all probing — safe on any host.
-    assert _pick_device("cpu") == "cpu"
-    assert _pick_device("cuda") == "cuda"
-    assert _pick_device("mps") == "mps"
+    assert pick_device("cpu") == "cpu"
+    assert pick_device("cuda") == "cuda"
+    assert pick_device("mps") == "mps"
 
 
 def test_pick_device_falls_back_to_cpu_when_torch_missing(monkeypatch):
-    # Hide torch so the import fails inside _pick_device.
+    # Hide torch so the import fails inside pick_device.
     monkeypatch.setitem(sys.modules, "torch", None)
-    assert _pick_device(None) == "cpu"
+    assert pick_device(None) == "cpu"
 
 
 # ---------------------------------------------------------------------------

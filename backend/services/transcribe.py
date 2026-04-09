@@ -353,10 +353,10 @@ def _audio_duration_sec(path: Path) -> float | None:
     try:
         import soundfile as sf  # noqa: PLC0415 — optional
         info = sf.info(str(path))
-        if info.samplerate > 0:
+        if info.samplerate > 0 and info.frames > 0:
             return float(info.frames) / float(info.samplerate)
     except Exception:  # noqa: BLE001 — fall through to librosa
-        pass
+        log.debug("soundfile header read failed for %s", path, exc_info=True)
     try:
         import librosa  # noqa: PLC0415 — ships with the basic-pitch extra
         return float(librosa.get_duration(path=str(path)))
@@ -715,6 +715,12 @@ def _run_without_stems(
     if blob_midi is None:
         blob_midi = midi_data
 
+    # NOTE: ``midi_data`` below is Basic Pitch's original pretty_midi
+    # (fixed 120 BPM) and feeds ``TranscriptionResult.midi_data`` /
+    # note-grid construction, which only cares about pitches + times.
+    # The serialized ``midi_bytes`` further down comes from ``blob_midi``
+    # — the tempo-aware rebuild — so the on-disk .mid carries the
+    # librosa-derived tempo. See ``_rebuild_blob_midi`` docstring.
     result = _pretty_midi_to_transcription_result(
         midi_data,
         events_by_role,
@@ -805,15 +811,6 @@ def _run_with_stems(
             crepe_events, crepe_stats = extract_vocal_melody_crepe(
                 stems.vocals,
                 model=settings.crepe_model,
-                hop_length_samples=settings.crepe_hop_length_samples,
-                fmin_hz=settings.crepe_fmin_hz,
-                fmax_hz=settings.crepe_fmax_hz,
-                voicing_threshold=settings.crepe_voicing_threshold,
-                median_filter_frames=settings.crepe_median_filter_frames,
-                min_note_duration_sec=settings.crepe_min_note_duration_sec,
-                merge_gap_sec=settings.crepe_merge_gap_sec,
-                amp_min=settings.crepe_amp_min,
-                amp_max=settings.crepe_amp_max,
                 device=settings.crepe_device,
             )
         except Exception as exc:  # noqa: BLE001 — CREPE must not sink transcribe
@@ -958,11 +955,14 @@ def _run_with_stems(
                 del _chords
                 if not melody_stats.skipped and extracted:
                     vocals_melody_events = extracted
-        # Release the contour reference now that the Viterbi is done
-        # with it — mirrors the ``keep_model_output=False`` memory
-        # optimization for the bass/other stems so the vocals
-        # contour tensor can be GC'd before the result is built.
-        vocals_bp.model_output.clear()
+            # Release the contour reference now that the Viterbi is done
+            # with it — mirrors the ``keep_model_output=False`` memory
+            # optimization for the bass/other stems so the vocals
+            # contour tensor can be GC'd before the result is built.
+            # Kept inside the ``melody_extraction_enabled`` guard so a
+            # future downstream consumer that reads ``model_output``
+            # past this point isn't silently handed an empty dict.
+            vocals_bp.model_output.clear()
         events_by_role[InstrumentRole.MELODY] = vocals_melody_events
     if bass_bp is not None and bass_bp.cleaned_events:
         events_by_role[InstrumentRole.BASS] = bass_bp.cleaned_events
