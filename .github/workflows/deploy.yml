@@ -87,7 +87,7 @@ jobs:
           VM_HOST: ${{ vars.VM_HOST }}
         run: |
           sleep 15
-          curl -sf --retry 5 --retry-delay 5 "http://${VM_HOST}/v1/health" && echo "Health check passed" || echo "::warning::Health check did not pass yet"
+          curl -sf --retry 5 --retry-delay 5 "https://oh-sheet.duckdns.org/v1/health" && echo "Health check passed" || echo "::warning::Health check did not pass yet"
 
       - name: Notify Slack on success
         if: success()
@@ -97,7 +97,7 @@ jobs:
           curl -sf -X POST "${{ secrets.SLACK_WEBHOOK_URL }}" \
             -H 'Content-type: application/json' \
             -d "{
-              \"text\": \":white_check_mark: *oh-sheet deployed* \`${COMMIT_SHORT}\` to \`${{ vars.VM_HOST }}\` — <${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|View run>\"
+              \"text\": \":white_check_mark: *oh-sheet deployed* \`${COMMIT_SHORT}\` to <https://oh-sheet.duckdns.org> — <${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|View run>\"
             }"
 
       - name: Notify Slack on failure
