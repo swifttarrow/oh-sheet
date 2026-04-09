@@ -23,7 +23,8 @@ class _WebPdfPreviewState extends State<WebPdfPreview> {
     _viewType = 'pdf-preview-${widget.pdfUrl.hashCode}';
     ui_web.platformViewRegistry.registerViewFactory(_viewType, (int viewId) {
       final iframe = web.document.createElement('iframe') as web.HTMLIFrameElement;
-      iframe.src = widget.pdfUrl;
+      final separator = widget.pdfUrl.contains('?') ? '&' : '?';
+      iframe.src = '${widget.pdfUrl}${separator}inline=true';
       iframe.style.width = '100%';
       iframe.style.height = '100%';
       iframe.style.border = 'none';

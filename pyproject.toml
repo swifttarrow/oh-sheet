@@ -16,6 +16,7 @@ dependencies = [
     "yt-dlp>=2024.1",
     "celery[redis]>=5.3",
     "pretty_midi>=0.2.10",
+    "music21>=9.1",
 ]
 
 [project.optional-dependencies]

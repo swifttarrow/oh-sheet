@@ -32,8 +32,14 @@
   <title>Oh Sheet!</title>
   <link rel="manifest" href="manifest.json">
 
-  <!-- MIDI playback web component (Google Magenta) -->
-  <script src="https://cdn.jsdelivr.net/combine/npm/tone@14.7.77,npm/@magenta/music@1.23.1/es6/core.js,npm/html-midi-player@1.5.0"></script>
+  <!-- MIDI playback web component (Google Magenta) — loaded async to avoid blocking first paint -->
+  <script defer src="https://cdn.jsdelivr.net/combine/npm/tone@14.7.77,npm/@magenta/music@1.23.1/es6/core.js,npm/html-midi-player@1.5.0"></script>
+
+  <!-- OpenSheetMusicDisplay — renders MusicXML as interactive SVG with cursor -->
+  <script defer src="https://cdn.jsdelivr.net/npm/opensheetmusicdisplay@1.8.9/build/opensheetmusicdisplay.min.js"></script>
+
+  <!-- Tone.js MIDI parser — parses MIDI into note data for Tone.js scheduling -->
+  <script defer src="https://cdn.jsdelivr.net/npm/@tonejs/midi@2.0.28/build/Midi.js"></script>
 </head>
 <body>
   <!--

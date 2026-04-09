@@ -71,9 +71,9 @@ void main() {
       expect(find.textContaining('another'), findsOneWidget);
     });
 
-    testWidgets('shows MIDI player section header', (tester) async {
+    testWidgets('shows sheet music section header', (tester) async {
       await tester.pumpWidget(_app());
-      expect(find.text('Listen'), findsOneWidget);
+      expect(find.text('Sheet Music'), findsOneWidget);
     });
   });
 }
