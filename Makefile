@@ -14,7 +14,7 @@ PORT         ?= 8000
 
 DART_DEFINE := $(if $(API_BASE_URL),--dart-define=API_BASE_URL=$(API_BASE_URL),)
 
-.PHONY: help install install-backend install-basic-pitch install-demucs install-frontend backend frontend test test-backend test-e2e lint typecheck clean
+.PHONY: help install install-backend install-basic-pitch install-demucs install-eval install-frontend backend frontend test test-backend test-e2e eval lint typecheck clean
 
 help:
 	@echo "Oh Sheet — make targets"
@@ -24,6 +24,7 @@ help:
 	@echo "                            will fall back to a 4-note stub without Basic Pitch)"
 	@echo "  make install-basic-pitch  pip install -e .[basic-pitch]  (basic-pitch[onnx] + pretty_midi)"
 	@echo "  make install-demucs       pip install -e .[demucs]  (demucs + torch; opt-in stem split)"
+	@echo "  make install-eval         pip install -e .[eval]  (mir_eval for the offline eval harness)"
 	@echo "  make install-frontend     flutter pub get inside frontend/"
 	@echo ""
 	@echo "  make backend            docker-compose up (Redis + Celery workers + API on :8000)"
@@ -31,6 +32,8 @@ help:
 	@echo "                          set API_BASE_URL=http://host:port to point at a non-default backend"
 	@echo ""
 	@echo "  make test               run backend pytest suite"
+	@echo "  make eval               score TranscribeService on the eval/fixtures/clean_midi subset"
+	@echo "                          (requires .[basic-pitch] + .[eval] + fluidsynth on PATH)"
 	@echo "  make lint               flutter analyze"
 	@echo "  make clean              remove build artifacts and the local blob store"
 
@@ -56,6 +59,12 @@ install-demucs:
 	# caveat before enabling in production.
 	pip install -e ".[demucs]"
 
+install-eval:
+	# Offline eval harness — mir_eval only. Assumes ``.[basic-pitch]``
+	# is already installed (the harness drives the real TranscribeService
+	# to score). Does not install fluidsynth; that's a system binary.
+	pip install -e ".[eval]"
+
 install-frontend:
 	cd $(FRONTEND) && flutter pub get
 
@@ -76,6 +85,15 @@ test-backend:
 
 test-e2e:
 	cd e2e && npx playwright test
+
+# Score TranscribeService end-to-end against the tracked clean_midi
+# subset at ``eval/fixtures/clean_midi/`` and write the full report
+# to ``eval-baseline.json``. Requires the ``.[basic-pitch]`` and
+# ``.[eval]`` extras plus ``fluidsynth`` on PATH (used to render the
+# ground-truth MIDIs to WAV for the audio-in transcriber).
+# See the script's module docstring for tuning / sampling options.
+eval:
+	python scripts/eval_transcription.py --out eval-baseline.json
 
 lint:
 	ruff check backend tests

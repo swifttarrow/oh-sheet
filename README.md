@@ -205,6 +205,26 @@ make lint          # ruff check + flutter analyze
 make typecheck     # mypy
 ```
 
+### Offline transcription eval
+
+`make eval` scores the end-to-end `TranscribeService` against the
+25-file `eval/fixtures/clean_midi/` subset and writes a full P/R/F1
+report (plus per-role breakdown) to `eval-baseline.json`. Each fixture
+is synthesized to WAV via `fluidsynth` + the TimGM6mb soundfont
+(bundled inside the `pretty_midi` wheel), the resulting audio is run
+through the real transcription pipeline, and the predicted notes are
+scored against the ground-truth MIDI with
+`mir_eval.transcription.precision_recall_f1_overlap`. Re-running with
+no code changes produces a byte-identical baseline — reviewers can
+diff the JSON to see exactly how a tuning change moved each row.
+
+Requires `make install-basic-pitch` + `make install-eval` plus a
+`fluidsynth` binary on `$PATH` (the harness shells out to it rather
+than linking against libfluidsynth). The synthesized WAVs are cached
+under `.cache/eval_transcription/` so re-runs skip straight to
+inference; see `scripts/eval_transcription.py --help` for sampling,
+timeout, and output-path overrides.
+
 ## Contributing
 
 1. Fork the repo

@@ -48,7 +48,6 @@ youtube = [
 basic-pitch = [
     "coremltools; platform_system == 'Darwin'",
     "librosa>=0.8.0",
-    "mir_eval>=0.6.0",
     "numpy>=1.26",
     "onnxruntime>=1.19",
     "pretty_midi>=0.2.10",
@@ -56,6 +55,13 @@ basic-pitch = [
     "scikit-learn",
     "scipy>=1.4.1",
     "typing_extensions",
+]
+# Offline eval harness (scripts/eval_transcription.py) — scores
+# TranscribeService output against clean_midi ground truth via
+# mir_eval. Eval-only, not imported by the backend runtime, so it
+# stays out of the production-facing [basic-pitch] extra.
+eval = [
+    "mir_eval>=0.6.0",
 ]
 # Demucs source separation, used by TranscribeService when
 # OHSHEET_DEMUCS_ENABLED=1. Splits the input mix into
@@ -72,10 +78,18 @@ basic-pitch = [
 #
 # Without this extra the TranscribeService falls back to the
 # single-mix Basic Pitch path regardless of ``demucs_enabled``.
+#
+# ``torchcrepe`` rides along here because it's gated on the same
+# torch install and its only consumer is ``crepe_melody`` running on
+# the Demucs vocals stem — shipping it in the ``demucs`` extra keeps
+# the two features installable as a single unit, which matches how
+# they're used at runtime. Model weights (~22 MB for ``full``) are
+# bundled inside the torchcrepe wheel so there's nothing to fetch.
 demucs = [
     "demucs>=4.0",
     "torch>=2.0",
     "torchaudio>=2.0",
+    "torchcrepe>=0.0.22",
 ]
 
 [project.scripts]

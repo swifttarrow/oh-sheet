@@ -71,8 +71,8 @@ def bin_to_midi(bin_idx: int) -> int:
 # audio will want iteration; see the docstring on ``extract_melody``.
 # ---------------------------------------------------------------------------
 
-DEFAULT_MELODY_LOW_MIDI = 55         # G3
-DEFAULT_MELODY_HIGH_MIDI = 90        # F#6
+DEFAULT_MELODY_LOW_MIDI = 48         # C3 — head voice / contralto floor
+DEFAULT_MELODY_HIGH_MIDI = 96        # C7 — riffing-soprano ceiling
 DEFAULT_VOICING_FLOOR = 0.15
 DEFAULT_TRANSITION_WEIGHT = 0.25     # cost per bin of pitch change
 DEFAULT_MAX_TRANSITION_BINS = 12     # ≈ 4 semitones per 11.6 ms frame
@@ -399,6 +399,7 @@ def _backfill_missed_melody_notes(
     min_amp: float,
     max_amp: float,
     match_tolerance_semitones: float,
+    max_time_sec: float | None = None,
 ) -> tuple[list[NoteEvent], int]:
     """Synthesize melody note events for stable Viterbi runs with no match.
 
@@ -416,6 +417,16 @@ def _backfill_missed_melody_notes(
     upper clip matters: these are recovery notes, not hero notes, and
     uncapped they'd arrive at the downstream velocity formula with
     values that rival real detections.
+
+    ``max_time_sec`` clamps synthesized notes to the actual audio
+    duration. Basic Pitch's ``contour`` is zero-padded past the end of
+    the input audio (the preprocessed mel spectrogram is padded to the
+    model's block size), and a voicing heuristic over that tail can
+    still pick up low-salience "runs" in silence. Without the clamp
+    the backfill produces notes that extend past the real audio end.
+    Runs that start entirely inside the padding are dropped; runs that
+    straddle the boundary get their ``end_sec`` truncated to
+    ``max_time_sec``.
 
     **Do not re-run** :func:`cleanup_note_events` over a back-filled
     list — the low clipped amplitude makes synthesized notes look like
@@ -438,8 +449,22 @@ def _backfill_missed_melody_notes(
 
         start_sec = start_f / frame_rate_hz
         end_sec = end_f / frame_rate_hz
+
+        # Drop runs that fall entirely past the end of the real audio,
+        # and truncate runs that straddle the boundary. After clamping
+        # we re-enforce ``min_duration_sec`` so a run that only barely
+        # pokes into the valid region doesn't get promoted to a note.
+        if max_time_sec is not None:
+            if start_sec >= max_time_sec:
+                continue
+            if end_sec > max_time_sec:
+                end_sec = max_time_sec
+                # floor not round — avoid leaking a zero-padded frame into the
+                # mean-salience calc below when max_time_sec lands mid-frame.
+                end_f = min(end_f, int(max_time_sec * frame_rate_hz))
+
         run_duration = end_sec - start_sec
-        if run_duration <= 0:
+        if run_duration <= 0 or run_duration < min_duration_sec:
             continue
 
         # Skip the run if any existing melody event already covers it.
@@ -501,6 +526,8 @@ def extract_melody(
     backfill_overlap_fraction: float = DEFAULT_BACKFILL_OVERLAP_FRACTION,
     backfill_min_amp: float = DEFAULT_BACKFILL_MIN_AMP,
     backfill_max_amp: float = DEFAULT_BACKFILL_MAX_AMP,
+    max_time_sec: float | None = None,
+    split_enabled: bool = True,
 ) -> tuple[list[NoteEvent], list[NoteEvent], MelodyExtractionStats]:
     """Run Phase 2 melody extraction over Basic Pitch output.
 
@@ -514,6 +541,19 @@ def extract_melody(
     return. See :func:`_backfill_missed_melody_notes` for the semantics
     — in short, this recovers soft sustained lead notes the polyphonic
     tracker lost under accompaniment.
+
+    ``max_time_sec`` is the true audio duration; passing it enables
+    backfill clamping so synthesized notes never extend past the end
+    of the real audio (see :func:`_backfill_missed_melody_notes`).
+
+    ``split_enabled`` controls whether the path-agreement split is
+    applied. The default ``True`` runs the full pipeline (split +
+    backfill). When ``False`` the caller opts out of the split step
+    — all input events pass through to the melody list unchanged and
+    the returned ``chords`` list is empty. This is the "additive only"
+    mode used on the Demucs stems path: the upstream per-stem cleanup
+    has already dropped BP octave ghosts, so the Viterbi pass exists
+    only to *add* soft sustained notes BP missed, not to re-filter.
 
     Tuning: the defaults are conservative. For songs with a strong
     vocal lead, raising ``match_fraction`` to ~0.75 and narrowing
@@ -573,15 +613,23 @@ def extract_melody(
     voiced_frac = float((path >= 0).mean()) if len(path) else 0.0
     stats.voiced_frame_fraction = voiced_frac
 
-    melody, chords = _split_notes_by_path_agreement(
-        note_events,
-        path,
-        low_midi=melody_low_midi,
-        high_midi=melody_high_midi,
-        frame_rate_hz=frame_rate_hz,
-        match_tolerance_semitones=match_tolerance_semitones,
-        match_fraction=match_fraction,
-    )
+    if split_enabled:
+        melody, chords = _split_notes_by_path_agreement(
+            note_events,
+            path,
+            low_midi=melody_low_midi,
+            high_midi=melody_high_midi,
+            frame_rate_hz=frame_rate_hz,
+            match_tolerance_semitones=match_tolerance_semitones,
+            match_fraction=match_fraction,
+        )
+    else:
+        # Additive-only mode: every input event is passed through, and
+        # backfill runs against the *full* event list (so synthesized
+        # notes can't accidentally duplicate an existing event that the
+        # split would have filed under "chords").
+        melody = list(note_events)
+        chords = []
 
     # Back-fill stable Viterbi runs that no Basic Pitch event covers.
     # Runs whose rounded-integer MIDI falls outside the melody band are
@@ -599,6 +647,7 @@ def extract_melody(
                 min_amp=backfill_min_amp,
                 max_amp=backfill_max_amp,
                 match_tolerance_semitones=match_tolerance_semitones,
+                max_time_sec=max_time_sec,
             )
             # Restrict added notes to the melody band — the Viterbi path
             # is already band-masked, but be defensive in case a future
@@ -625,3 +674,59 @@ def extract_melody(
         voiced_frac * 100.0,
     )
     return melody, chords, stats
+
+
+def backfill_melody_notes(
+    contour: Any,  # np.ndarray (frames, 264) or None
+    note_events: list[NoteEvent],
+    *,
+    melody_low_midi: int = DEFAULT_MELODY_LOW_MIDI,
+    melody_high_midi: int = DEFAULT_MELODY_HIGH_MIDI,
+    voicing_floor: float = DEFAULT_VOICING_FLOOR,
+    transition_weight: float = DEFAULT_TRANSITION_WEIGHT,
+    max_transition_bins: int = DEFAULT_MAX_TRANSITION_BINS,
+    voiced_enter_cost: float = DEFAULT_VOICED_ENTER_COST,
+    unvoiced_enter_cost: float = DEFAULT_UNVOICED_ENTER_COST,
+    match_tolerance_semitones: float = DEFAULT_MATCH_TOL_SEMITONES,
+    match_fraction: float = DEFAULT_MATCH_FRACTION,
+    frame_rate_hz: float = FRAME_RATE_HZ,
+    backfill_min_duration_sec: float = DEFAULT_BACKFILL_MIN_DURATION_SEC,
+    backfill_overlap_fraction: float = DEFAULT_BACKFILL_OVERLAP_FRACTION,
+    backfill_min_amp: float = DEFAULT_BACKFILL_MIN_AMP,
+    backfill_max_amp: float = DEFAULT_BACKFILL_MAX_AMP,
+    max_time_sec: float | None = None,
+) -> tuple[list[NoteEvent], MelodyExtractionStats]:
+    """Additive-only melody extraction — run back-fill on top of existing events.
+
+    Thin wrapper around :func:`extract_melody` with ``split_enabled=False``
+    that returns only ``(events, stats)``, dropping the always-empty chord
+    list the split-disabled path produces. This is the contract the Demucs
+    stems path actually wants: "given a contour and a set of BP events,
+    add any Viterbi-discovered stable runs BP missed; don't re-filter".
+
+    Called from :func:`backend.services.transcribe._run_with_stems` on the
+    vocals stem. The single-mix path still uses :func:`extract_melody`
+    directly since it needs the path-agreement split.
+    """
+    events, _chords, stats = extract_melody(
+        contour,
+        note_events,
+        melody_low_midi=melody_low_midi,
+        melody_high_midi=melody_high_midi,
+        voicing_floor=voicing_floor,
+        transition_weight=transition_weight,
+        max_transition_bins=max_transition_bins,
+        voiced_enter_cost=voiced_enter_cost,
+        unvoiced_enter_cost=unvoiced_enter_cost,
+        match_tolerance_semitones=match_tolerance_semitones,
+        match_fraction=match_fraction,
+        frame_rate_hz=frame_rate_hz,
+        backfill_enabled=True,
+        backfill_min_duration_sec=backfill_min_duration_sec,
+        backfill_overlap_fraction=backfill_overlap_fraction,
+        backfill_min_amp=backfill_min_amp,
+        backfill_max_amp=backfill_max_amp,
+        max_time_sec=max_time_sec,
+        split_enabled=False,
+    )
+    return events, stats

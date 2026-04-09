@@ -299,8 +299,10 @@ def test_config_defaults_match_module_defaults():
     from backend.config import Settings
 
     s = Settings()
-    # Off by default — opt-in until post-processing is retuned against
-    # preprocessed signal distribution.
+    # Off by default — the 25-file clean_midi eval showed preprocessing
+    # hurts percussion-heavy tracks (Hound Dog -0.088, Beat It -0.125)
+    # even though the confidence headline ticks up slightly. HPSS is
+    # stripping onset transients Basic Pitch relies on.
     assert s.audio_preprocess_enabled is False
     assert s.audio_preprocess_target_rms_dbfs == DEFAULT_TARGET_RMS_DBFS
     assert s.audio_preprocess_peak_ceiling_dbfs == DEFAULT_PEAK_CEILING_DBFS

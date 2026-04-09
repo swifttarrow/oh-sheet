@@ -79,7 +79,7 @@ class Settings(BaseSettings):
     cleanup_merge_gap_sec: float = 0.03
     cleanup_octave_amp_ratio: float = 0.6
     cleanup_octave_onset_tol_sec: float = 0.05
-    cleanup_ghost_max_duration_sec: float = 0.06
+    cleanup_ghost_max_duration_sec: float = 0.05
     cleanup_ghost_amp_median_scale: float = 0.5
 
     # ---- Melody extraction (Phase 2 post-processing) -----------------------
@@ -90,8 +90,8 @@ class Settings(BaseSettings):
     # single-PIANO output. Defaults mirror the DEFAULT_* constants in the
     # extraction module so config and tests agree.
     melody_extraction_enabled: bool = True
-    melody_low_midi: int = 55                    # G3
-    melody_high_midi: int = 90                   # F#6
+    melody_low_midi: int = 48                    # C3 — head voice / contralto floor
+    melody_high_midi: int = 96                   # C7 — riffing-soprano ceiling
     melody_voicing_floor: float = 0.15
     melody_transition_weight: float = 0.25
     melody_max_transition_bins: int = 12         # ≈ 4 semitones / frame
@@ -203,6 +203,40 @@ class Settings(BaseSettings):
     demucs_use_bass_stem: bool = True
     demucs_use_other_for_chords: bool = True     # both notes + chord labels
     demucs_use_drums_for_beats: bool = True
+
+    # ---- CREPE vocal melody (replaces Basic Pitch on vocals stem) ---------
+    # Basic Pitch is a polyphonic tracker and has known weaknesses on
+    # monophonic singing — ghost notes on legato phrases, poor vibrato
+    # tracking, consonant-driven onset jitter. CREPE (Kim et al. 2018)
+    # is a trained-on-singing F0 estimator and is SOTA for this exact
+    # task. When enabled, ``extract_vocal_melody_crepe`` runs on the
+    # vocals stem and its output is routed directly to MELODY, skipping
+    # the Basic Pitch vocals pass entirely. Missing torchcrepe or any
+    # runtime failure falls back to the Basic Pitch vocals pass so
+    # flipping this on is always safe.
+    #
+    # Default: **off**. The first A/B against the 25-file clean_midi
+    # baseline (seed=42, max_duration=30) came in net-neutral:
+    #
+    #                          no-crepe   with-crepe     delta
+    #   mean F1 (no-offset)      0.375       0.377      +0.002
+    #   median F1 (no-offset)    0.382       0.368      -0.014
+    #   mean precision           0.424       0.445      +0.021
+    #   mean wall sec/file        4.2         9.4        2.2x
+    #   melody role F1           0.089       0.057      -0.032
+    #
+    # Per-file: 14 improvements, 10 regressions, similar magnitudes
+    # on both sides. CREPE is more precise but emits fewer notes, and
+    # the role-breakdown metric (lower bound against full ground
+    # truth) regresses because CREPE's selectivity hurts the mis-match
+    # accounting. The infrastructure is here and tested for future
+    # iteration — candidate tuning knobs include a higher
+    # ``voicing_threshold`` (0.6+), a longer ``median_filter_frames``
+    # window, and the ``tiny`` model for a 3x speed-up on par quality
+    # per the CREPE paper's singing benchmarks.
+    crepe_vocal_melody_enabled: bool = False
+    crepe_model: str = "full"                    # "tiny" (2 MB) or "full" (22 MB)
+    crepe_device: str | None = None              # None → auto: cuda → mps → cpu
 
 
 settings = Settings()
