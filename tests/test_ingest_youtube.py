@@ -111,14 +111,18 @@ class TestIngestServiceYoutube:
         bundle = self._make_youtube_bundle()
 
         with patch("backend.services.ingest._download_youtube_sync") as mock_dl:
-            # Simulate yt-dlp returning a small WAV file
-            mock_dl.return_value = RemoteAudioFile(
-                uri="file:///tmp/blob/yt_dQw4w9WgXcQ.wav",
-                format="wav",
-                sample_rate=44100,
-                duration_sec=180.0,
-                channels=2,
-                content_hash="abc123",
+            # Simulate yt-dlp returning a WAV file + metadata tuple
+            mock_dl.return_value = (
+                RemoteAudioFile(
+                    uri="file:///tmp/blob/yt_dQw4w9WgXcQ.wav",
+                    format="wav",
+                    sample_rate=44100,
+                    duration_sec=180.0,
+                    channels=2,
+                    content_hash="abc123",
+                ),
+                "Never Gonna Give You Up",
+                "Rick Astley",
             )
 
             result = asyncio.run(service.run(bundle))
@@ -128,23 +132,28 @@ class TestIngestServiceYoutube:
         assert result.audio.duration_sec == 180.0
         mock_dl.assert_called_once()
 
-    def test_youtube_url_preserves_metadata(self, service):
-        """The original title (YouTube URL) and artist should be preserved
-        in metadata after ingestion."""
+    def test_youtube_url_extracts_video_title(self, service):
+        """After ingesting a YouTube URL, metadata.title should be the
+        video title from yt-dlp, not the raw URL."""
         url = "https://youtube.com/watch?v=dQw4w9WgXcQ"
         bundle = self._make_youtube_bundle(url)
 
         with patch("backend.services.ingest._download_youtube_sync") as mock_dl:
-            mock_dl.return_value = RemoteAudioFile(
-                uri="file:///tmp/fake.wav",
-                format="wav",
-                sample_rate=44100,
-                duration_sec=60.0,
-                channels=2,
+            mock_dl.return_value = (
+                RemoteAudioFile(
+                    uri="file:///tmp/fake.wav",
+                    format="wav",
+                    sample_rate=44100,
+                    duration_sec=60.0,
+                    channels=2,
+                ),
+                "Never Gonna Give You Up",
+                "Rick Astley",
             )
             result = asyncio.run(service.run(bundle))
 
-        assert result.metadata.title == url
+        assert result.metadata.title == "Never Gonna Give You Up"
+        assert result.metadata.artist == "Rick Astley"
         assert result.metadata.source == "title_lookup"
 
     def test_non_youtube_title_passes_through_unchanged(self, service):
@@ -200,12 +209,16 @@ def test_youtube_url_job_runs_full_variant(client):
     """Submitting a YouTube URL as the title should trigger the 'full'
     pipeline variant and run to completion (with mocked yt-dlp)."""
     with patch("backend.services.ingest._download_youtube_sync") as mock_dl:
-        mock_dl.return_value = RemoteAudioFile(
-            uri="file:///tmp/fake.wav",
-            format="wav",
-            sample_rate=44100,
-            duration_sec=60.0,
-            channels=2,
+        mock_dl.return_value = (
+            RemoteAudioFile(
+                uri="file:///tmp/fake.wav",
+                format="wav",
+                sample_rate=44100,
+                duration_sec=60.0,
+                channels=2,
+            ),
+            "Rick Astley - Never Gonna Give You Up",
+            "Rick Astley",
         )
 
         resp = client.post("/v1/jobs", json={
