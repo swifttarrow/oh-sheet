@@ -38,6 +38,12 @@ class AppConfig {
     final base = apiBaseUrl;
     if (base.startsWith('https://')) return 'wss://${base.substring(8)}';
     if (base.startsWith('http://')) return 'ws://${base.substring(7)}';
+    // When apiBaseUrl is empty (same-origin production), construct absolute
+    // WebSocket URL from the page origin — relative URLs don't work for WS.
+    if (base.isEmpty && kIsWeb) {
+      final scheme = Uri.base.scheme == 'https' ? 'wss' : 'ws';
+      return '$scheme://${Uri.base.host}:${Uri.base.port}';
+    }
     return base;
   }
 }

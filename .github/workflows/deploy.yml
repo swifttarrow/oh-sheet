@@ -62,9 +62,9 @@ jobs:
           echo "IMAGE=${{ env.IMAGE }}:${{ github.sha }}" > /tmp/.env
 
           # Copy compose files to VM (SCP .env to temp name, then atomic mv)
-          $SCP docker-compose.yml Caddyfile "${VM_USER}@${VM_HOST}:~/oh-sheet/"
+          $SCP docker-compose.prod.yml Caddyfile "${VM_USER}@${VM_HOST}:~/oh-sheet/"
           $SCP /tmp/.env "${VM_USER}@${VM_HOST}:~/oh-sheet/.env.tmp"
-          $SSH "mv ~/oh-sheet/.env.tmp ~/oh-sheet/.env"
+          $SSH "mv ~/oh-sheet/.env.tmp ~/oh-sheet/.env && mv ~/oh-sheet/docker-compose.prod.yml ~/oh-sheet/docker-compose.yml"
 
           # Pull and restart
           $SSH "cd ~/oh-sheet && sudo docker compose pull && sudo docker compose up -d --remove-orphans && sudo docker image prune -f"

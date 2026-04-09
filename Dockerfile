@@ -18,6 +18,10 @@ WORKDIR /app
 RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg curl \
     && rm -rf /var/lib/apt/lists/*
 
+# Install shared package first (changes less often)
+COPY shared/ shared/
+RUN pip install --no-cache-dir ./shared
+
 # Install Python package (no ML deps to keep image small)
 COPY pyproject.toml .
 COPY backend/ backend/
