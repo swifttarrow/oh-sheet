@@ -1,3 +1,4 @@
 :80 {
-    reverse_proxy app:8080
+    reverse_proxy orchestrator:8000
 }
+
