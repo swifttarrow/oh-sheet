@@ -11,7 +11,7 @@ import '../api/client.dart';
 import '../api/models.dart';
 import '../responsive.dart';
 import '../theme.dart';
-import '../widgets/midi_player.dart';
+import '../widgets/piano_roll.dart';
 import '../widgets/sheet_music_viewer.dart';
 import '../widgets/sticker_widgets.dart';
 
@@ -88,7 +88,7 @@ class ResultScreen extends StatelessWidget {
         const SizedBox(height: 10),
         OhSheetStickerClip(
           height: math.min(280.0, math.max(160.0, size.height * 0.25)),
-          child: MidiPlayerWidget(midiUrl: api.artifactUrl(job.jobId, 'midi')),
+          child: PianoRollWidget(midiUrl: api.artifactUrl(job.jobId, 'midi')),
         ),
       ],
     );
