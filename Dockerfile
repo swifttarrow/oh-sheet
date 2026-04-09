@@ -15,7 +15,7 @@ FROM python:3.12-slim
 WORKDIR /app
 
 # System deps for yt-dlp (ffmpeg) and general health
-RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg \
+RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg curl \
     && rm -rf /var/lib/apt/lists/*
 
 # Install Python package (no ML deps to keep image small)

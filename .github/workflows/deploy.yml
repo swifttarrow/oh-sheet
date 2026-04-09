@@ -53,7 +53,7 @@ jobs:
           mkdir -p ~/.ssh
           echo "$SSH_PRIVATE_KEY" > ~/.ssh/deploy_key
           chmod 600 ~/.ssh/deploy_key
-          ssh-keyscan -H "$VM_HOST" >> ~/.ssh/known_hosts 2>/dev/null
+          ssh-keyscan -H "$VM_HOST" >> ~/.ssh/known_hosts
 
           SSH="ssh -i ~/.ssh/deploy_key ${VM_USER}@${VM_HOST}"
           SCP="scp -i ~/.ssh/deploy_key"
@@ -61,9 +61,10 @@ jobs:
           # Write .env with the image tag for docker compose
           echo "IMAGE=${{ env.IMAGE }}:${{ github.sha }}" > /tmp/.env
 
-          # Copy compose files to VM
-          $SCP docker-compose.yml Caddyfile /tmp/.env "${VM_USER}@${VM_HOST}:~/oh-sheet/"
-          $SSH "mv ~/oh-sheet/.env ~/oh-sheet/.env.deploy && mv ~/oh-sheet/.env.deploy ~/oh-sheet/.env"
+          # Copy compose files to VM (SCP .env to temp name, then atomic mv)
+          $SCP docker-compose.yml Caddyfile "${VM_USER}@${VM_HOST}:~/oh-sheet/"
+          $SCP /tmp/.env "${VM_USER}@${VM_HOST}:~/oh-sheet/.env.tmp"
+          $SSH "mv ~/oh-sheet/.env.tmp ~/oh-sheet/.env"
 
           # Pull and restart
           $SSH "cd ~/oh-sheet && sudo docker compose pull && sudo docker compose up -d --remove-orphans && sudo docker image prune -f"
@@ -72,5 +73,5 @@ jobs:
         env:
           VM_HOST: ${{ vars.VM_HOST }}
         run: |
-          sleep 10
-          curl -sf --retry 3 --retry-delay 5 "http://${VM_HOST}/v1/health" && echo "Health check passed" || echo "::warning::Health check did not pass yet"
+          sleep 15
+          curl -sf --retry 5 --retry-delay 5 "http://${VM_HOST}/v1/health" && echo "Health check passed" || echo "::warning::Health check did not pass yet"
