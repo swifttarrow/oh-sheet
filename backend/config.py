@@ -20,6 +20,9 @@ class Settings(BaseSettings):
     # Where the LocalBlobStore writes its files. Returned URIs are file:// based.
     blob_root: Path = Path("./blob")
 
+    # Redis URL for Celery broker + result backend.
+    redis_url: str = "redis://localhost:6379/0"
+
     # CORS — wide open for dev; tighten in deployment.
     cors_origins: list[str] = ["*"]
 

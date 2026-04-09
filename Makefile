@@ -14,7 +14,7 @@ PORT         ?= 8000
 
 DART_DEFINE := $(if $(API_BASE_URL),--dart-define=API_BASE_URL=$(API_BASE_URL),)
 
-.PHONY: help install install-backend install-basic-pitch install-demucs install-frontend backend frontend test test-backend lint typecheck clean
+.PHONY: help install install-backend install-basic-pitch install-demucs install-frontend backend frontend test test-backend test-e2e lint typecheck clean
 
 help:
 	@echo "Oh Sheet — make targets"
@@ -26,7 +26,7 @@ help:
 	@echo "  make install-demucs       pip install -e .[demucs]  (demucs + torch; opt-in stem split)"
 	@echo "  make install-frontend     flutter pub get inside frontend/"
 	@echo ""
-	@echo "  make backend            run uvicorn dev server on $(HOST):$(PORT)"
+	@echo "  make backend            docker-compose up (Redis + Celery workers + API on :8000)"
 	@echo "  make frontend           flutter run -d $(DEVICE) (override DEVICE=ios|android|macos|...)"
 	@echo "                          set API_BASE_URL=http://host:port to point at a non-default backend"
 	@echo ""
@@ -62,7 +62,7 @@ install-frontend:
 # ---- run --------------------------------------------------------------------
 
 backend:
-	uvicorn backend.main:app --reload --host $(HOST) --port $(PORT)
+	docker compose up --build
 
 frontend:
 	cd $(FRONTEND) && flutter run -d $(DEVICE) $(DART_DEFINE)
@@ -73,6 +73,9 @@ test: test-backend
 
 test-backend:
 	pytest
+
+test-e2e:
+	cd e2e && npx playwright test
 
 lint:
 	ruff check backend tests

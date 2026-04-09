@@ -4,10 +4,11 @@ These follow contracts §1: an external orchestrator (Temporal, Step Functions,
 etc.) calls each stage as a stateless worker. Input/output payloads live in
 blob storage; only URIs cross the wire.
 
-The local /v1/jobs flow does **not** go through these endpoints — it calls
-the services directly via the in-process PipelineRunner. These endpoints exist
-so the same service code can be invoked by an out-of-process orchestrator.
+The local /v1/jobs flow does **not** go through these endpoints — it uses
+``PipelineRunner`` (Celery-backed). These routes call the same stage services
+in-process for external orchestrators.
 """
+
 from __future__ import annotations
 
 import logging
@@ -17,7 +18,7 @@ from typing import Annotated, Any
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
-from backend.api.deps import get_blob_store, get_runner
+from backend.api.deps import get_blob_store
 from backend.contracts import (
     SCHEMA_VERSION,
     EngravedOutput,
@@ -28,7 +29,11 @@ from backend.contracts import (
     TranscriptionResult,
     WorkerResponse,
 )
-from backend.jobs.runner import PipelineRunner
+from backend.services.arrange import ArrangeService
+from backend.services.engrave import EngraveService
+from backend.services.humanize import HumanizeService
+from backend.services.ingest import IngestService
+from backend.services.transcribe import TranscribeService
 from backend.storage.local import LocalBlobStore
 
 log = logging.getLogger(__name__)
@@ -40,10 +45,7 @@ def _check_envelope(cmd: OrchestratorCommand) -> None:
     if cmd.schema_version != SCHEMA_VERSION:
         raise HTTPException(
             status_code=409,
-            detail=(
-                f"schema_version mismatch: worker={SCHEMA_VERSION}, "
-                f"command={cmd.schema_version}"
-            ),
+            detail=(f"schema_version mismatch: worker={SCHEMA_VERSION}, command={cmd.schema_version}"),
         )
 
 
@@ -104,12 +106,17 @@ async def _run_stage(
 async def stage_ingest(
     cmd: OrchestratorCommand,
     blob: Annotated[LocalBlobStore, Depends(get_blob_store)],
-    runner: Annotated[PipelineRunner, Depends(get_runner)],
 ) -> WorkerResponse:
+    ingest = IngestService(blob_store=blob)
+
+    async def coro(payload: InputBundle) -> InputBundle:
+        return await ingest.run(payload)
+
     return await _run_stage(
-        cmd, blob,
+        cmd,
+        blob,
         input_model=InputBundle,
-        coro=runner.ingest.run,
+        coro=coro,
         output_key="input_bundle.json",
     )
 
@@ -118,12 +125,17 @@ async def stage_ingest(
 async def stage_transcribe(
     cmd: OrchestratorCommand,
     blob: Annotated[LocalBlobStore, Depends(get_blob_store)],
-    runner: Annotated[PipelineRunner, Depends(get_runner)],
 ) -> WorkerResponse:
+    transcribe = TranscribeService(blob_store=blob)
+
+    async def coro(payload: InputBundle) -> TranscriptionResult:
+        return await transcribe.run(payload, job_id=cmd.job_id)
+
     return await _run_stage(
-        cmd, blob,
+        cmd,
+        blob,
         input_model=InputBundle,
-        coro=runner.transcribe.run,
+        coro=coro,
         output_key="transcription.json",
     )
 
@@ -132,12 +144,17 @@ async def stage_transcribe(
 async def stage_arrange(
     cmd: OrchestratorCommand,
     blob: Annotated[LocalBlobStore, Depends(get_blob_store)],
-    runner: Annotated[PipelineRunner, Depends(get_runner)],
 ) -> WorkerResponse:
+    arrange = ArrangeService()
+
+    async def coro(payload: TranscriptionResult) -> PianoScore:
+        return await arrange.run(payload)
+
     return await _run_stage(
-        cmd, blob,
+        cmd,
+        blob,
         input_model=TranscriptionResult,
-        coro=runner.arrange.run,
+        coro=coro,
         output_key="score.json",
     )
 
@@ -146,12 +163,17 @@ async def stage_arrange(
 async def stage_humanize(
     cmd: OrchestratorCommand,
     blob: Annotated[LocalBlobStore, Depends(get_blob_store)],
-    runner: Annotated[PipelineRunner, Depends(get_runner)],
 ) -> WorkerResponse:
+    humanize = HumanizeService()
+
+    async def coro(payload: PianoScore) -> HumanizedPerformance:
+        return await humanize.run(payload)
+
     return await _run_stage(
-        cmd, blob,
+        cmd,
+        blob,
         input_model=PianoScore,
-        coro=runner.humanize.run,
+        coro=coro,
         output_key="performance.json",
     )
 
@@ -160,17 +182,22 @@ async def stage_humanize(
 async def stage_engrave(
     cmd: OrchestratorCommand,
     blob: Annotated[LocalBlobStore, Depends(get_blob_store)],
-    runner: Annotated[PipelineRunner, Depends(get_runner)],
 ) -> WorkerResponse:
+    engrave = EngraveService(blob_store=blob)
+
     # Engrave needs the job_id (for blob keying) and title/composer; we
     # forward what's available from the envelope here.
     async def coro(payload: HumanizedPerformance) -> EngravedOutput:
-        return await runner.engrave.run(
-            payload, job_id=cmd.job_id, title="Untitled", composer="Unknown",
+        return await engrave.run(
+            payload,
+            job_id=cmd.job_id,
+            title="Untitled",
+            composer="Unknown",
         )
 
     return await _run_stage(
-        cmd, blob,
+        cmd,
+        blob,
         input_model=HumanizedPerformance,
         coro=coro,
         output_key="engraved.json",

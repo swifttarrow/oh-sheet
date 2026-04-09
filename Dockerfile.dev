@@ -1,0 +1,15 @@
+# Lightweight dev image — backend only, no Flutter web build.
+FROM python:3.12-slim
+
+WORKDIR /app
+
+RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY shared/ shared/
+RUN pip install --no-cache-dir ./shared
+
+COPY pyproject.toml .
+COPY backend/ backend/
+RUN pip install --no-cache-dir "setuptools<78" ".[basic-pitch]" \
+    && pip install --no-cache-dir --no-deps "basic-pitch>=0.4"
