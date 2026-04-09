@@ -16,6 +16,7 @@ def run(job_id: str, payload_uri: str) -> str:
     bundle = InputBundle.model_validate(raw)
 
     service = IngestService(blob_store=blob)
+    # asyncio.run() is safe with Celery's default prefork pool; breaks with gevent/eventlet.
     result = asyncio.run(service.run(bundle))
 
     output_uri = blob.put_json(

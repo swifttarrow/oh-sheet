@@ -30,6 +30,7 @@ def run(job_id: str, payload_uri: str) -> str:
         payload = PianoScore.model_validate(payload_data)
 
     service = EngraveService(blob_store=blob)
+    # asyncio.run() is safe with Celery's default prefork pool; breaks with gevent/eventlet.
     result = asyncio.run(service.run(payload, job_id=job_id, title=title, composer=composer))
 
     output_uri = blob.put_json(

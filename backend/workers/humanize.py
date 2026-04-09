@@ -16,6 +16,7 @@ def run(job_id: str, payload_uri: str) -> str:
     score = PianoScore.model_validate(raw)
 
     service = HumanizeService()
+    # asyncio.run() is safe with Celery's default prefork pool; breaks with gevent/eventlet.
     result = asyncio.run(service.run(score))
 
     output_uri = blob.put_json(

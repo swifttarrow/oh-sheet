@@ -16,6 +16,7 @@ def run(job_id: str, payload_uri: str) -> str:
     txr = TranscriptionResult.model_validate(raw)
 
     service = ArrangeService()
+    # asyncio.run() is safe with Celery's default prefork pool; breaks with gevent/eventlet.
     result = asyncio.run(service.run(txr))
 
     output_uri = blob.put_json(
