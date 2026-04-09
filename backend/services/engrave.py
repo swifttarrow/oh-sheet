@@ -478,6 +478,12 @@ class EngraveService:
         title: str = "Untitled",
         composer: str = "Unknown",
     ) -> EngravedOutput:
+        log.info(
+            "engrave: start job_id=%s title=%r humanized_input=%s",
+            job_id,
+            title,
+            isinstance(payload, HumanizedPerformance),
+        )
         pdf_bytes, musicxml_bytes, midi_bytes, is_humanized = await asyncio.to_thread(
             _engrave_sync, payload, title, composer,
         )
@@ -489,6 +495,15 @@ class EngraveService:
 
         score = payload.score if isinstance(payload, HumanizedPerformance) else payload
         chord_count = len(score.metadata.chord_symbols)
+
+        log.info(
+            "engrave: done job_id=%s bytes pdf=%d musicxml=%d midi=%d chord_symbols=%d",
+            job_id,
+            len(pdf_bytes),
+            len(musicxml_bytes),
+            len(midi_bytes),
+            chord_count,
+        )
 
         return EngravedOutput(
             schema_version=SCHEMA_VERSION,

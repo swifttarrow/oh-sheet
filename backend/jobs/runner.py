@@ -8,6 +8,7 @@ forward them to WebSocket subscribers.
 from __future__ import annotations
 
 import logging
+import time
 from collections.abc import Callable
 from pathlib import Path
 from urllib.parse import urlparse
@@ -221,45 +222,77 @@ class PipelineRunner:
         title = bundle.metadata.title or "Untitled"
         composer = bundle.metadata.artist or "Unknown"
 
+        log.info(
+            "pipeline start job_id=%s variant=%s plan=%s skip_humanizer=%s source=%s "
+            "has_audio=%s has_midi=%s",
+            job_id,
+            config.variant,
+            plan,
+            config.skip_humanizer,
+            bundle.metadata.source,
+            bundle.audio is not None,
+            bundle.midi is not None,
+        )
+
         for i, step in enumerate(plan):
             emit(step, "stage_started", progress=i / n)
+            log.info(
+                "pipeline stage begin job_id=%s stage=%s index=%d/%d",
+                job_id, step, i + 1, n,
+            )
+            t0 = time.perf_counter()
+            try:
+                if step == "ingest":
+                    bundle = await self.ingest.run(bundle)
 
-            if step == "ingest":
-                bundle = await self.ingest.run(bundle)
+                elif step == "transcribe":
+                    txr = await self.transcribe.run(bundle, job_id=job_id)
 
-            elif step == "transcribe":
-                txr = await self.transcribe.run(bundle, job_id=job_id)
+                elif step == "arrange":
+                    if txr is None and bundle.midi is not None:
+                        # midi_upload variant skips transcription; build a passthrough.
+                        log.info(
+                            "pipeline job_id=%s arrange: using MIDI→TranscriptionResult passthrough",
+                            job_id,
+                        )
+                        txr = _bundle_to_transcription(bundle)
+                    if txr is None:
+                        raise RuntimeError(
+                            "arrange stage requires a TranscriptionResult — none was produced"
+                        )
+                    score = await self.arrange.run(txr)
 
-            elif step == "arrange":
-                if txr is None and bundle.midi is not None:
-                    # midi_upload variant skips transcription; build a passthrough.
-                    txr = _bundle_to_transcription(bundle)
-                if txr is None:
-                    raise RuntimeError(
-                        "arrange stage requires a TranscriptionResult — none was produced"
+                elif step == "humanize":
+                    if score is None:
+                        raise RuntimeError(
+                            "humanize stage requires a PianoScore — none was produced"
+                        )
+                    perf = await self.humanize.run(score)
+
+                elif step == "engrave":
+                    target: HumanizedPerformance | PianoScore | None = perf or score
+                    if target is None:
+                        raise RuntimeError(
+                            "engrave stage requires a score or performance — none was produced"
+                        )
+                    result = await self.engrave.run(
+                        target, job_id=job_id, title=title, composer=composer,
                     )
-                score = await self.arrange.run(txr)
 
-            elif step == "humanize":
-                if score is None:
-                    raise RuntimeError(
-                        "humanize stage requires a PianoScore — none was produced"
-                    )
-                perf = await self.humanize.run(score)
-
-            elif step == "engrave":
-                target: HumanizedPerformance | PianoScore | None = perf or score
-                if target is None:
-                    raise RuntimeError(
-                        "engrave stage requires a score or performance — none was produced"
-                    )
-                result = await self.engrave.run(
-                    target, job_id=job_id, title=title, composer=composer,
+                else:
+                    raise RuntimeError(f"unknown stage in execution plan: {step!r}")
+            except Exception:
+                log.exception(
+                    "pipeline stage failed job_id=%s stage=%s index=%d/%d",
+                    job_id, step, i + 1, n,
                 )
+                raise
 
-            else:
-                raise RuntimeError(f"unknown stage in execution plan: {step!r}")
-
+            elapsed_ms = (time.perf_counter() - t0) * 1000
+            log.info(
+                "pipeline stage done job_id=%s stage=%s duration_ms=%.0f",
+                job_id, step, elapsed_ms,
+            )
             emit(step, "stage_completed", progress=(i + 1) / n)
 
         if result is None:
@@ -272,4 +305,5 @@ class PipelineRunner:
             result = result.model_copy(
                 update={"transcription_midi_uri": txr.transcription_midi_uri},
             )
+        log.info("pipeline finished job_id=%s", job_id)
         return result

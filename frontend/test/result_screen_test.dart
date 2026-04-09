@@ -1,5 +1,6 @@
 // TDD: Tests for the restyled result screen with mascot and download buttons.
 import 'package:flutter/material.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/testing.dart' as http_testing;
 import 'package:http/http.dart' as http;
@@ -33,11 +34,10 @@ void main() {
   group('Result screen content', () {
     testWidgets('shows success mascot', (tester) async {
       await tester.pumpWidget(_app());
-      final images = tester.widgetList<Image>(find.byType(Image));
-      final paths = images
-          .where((img) => img.image is AssetImage)
-          .map((img) => (img.image as AssetImage).assetName);
-      expect(paths, contains('assets/mascots/mascot-success.png'));
+      await tester.pumpAndSettle();
+      expect(find.byType(SvgPicture), findsWidgets);
+      final svg = tester.widget<SvgPicture>(find.byType(SvgPicture).first);
+      expect(svg.bytesLoader.toString(), contains('mascot-success.svg'));
     });
 
     testWidgets('shows song title', (tester) async {

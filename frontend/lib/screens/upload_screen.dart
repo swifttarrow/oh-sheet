@@ -5,6 +5,7 @@ import 'dart:typed_data';
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 
 import '../api/client.dart';
 import '../api/models.dart';
@@ -172,18 +173,12 @@ class _UploadScreenState extends State<UploadScreen> {
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 Center(
-                  child: DecoratedBox(
-                    decoration: BoxDecoration(
-                      borderRadius: BorderRadius.circular(20),
-                      boxShadow: OhSheetStickerStyle.stickerShadows,
-                    ),
-                    child: ClipRRect(
-                      borderRadius: BorderRadius.circular(18),
-                      child: Image.asset(
-                        'assets/mascots/mascot-home-happy.png',
-                        height: 132,
-                      ),
-                    ),
+                  child: SvgPicture.asset(
+                    'assets/mascots/mascot-home-happy.svg',
+                    height: 132,
+                    fit: BoxFit.contain,
+                    clipBehavior: Clip.none,
+                    allowDrawingOutsideViewBox: true,
                   ),
                 ),
                 const SizedBox(height: 14),

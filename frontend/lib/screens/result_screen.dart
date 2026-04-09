@@ -4,6 +4,7 @@ library;
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../api/client.dart';
@@ -32,9 +33,10 @@ class ResultScreen extends StatelessWidget {
 
     final header = Column(
       children: [
-        Image.asset(
-          'assets/mascots/mascot-success.png',
+        SvgPicture.asset(
+          'assets/mascots/mascot-success.svg',
           height: twoCol ? 120 : 160,
+          fit: BoxFit.contain,
         ),
         const SizedBox(height: 16),
         if (job.title != null)
@@ -163,7 +165,7 @@ class ResultScreen extends StatelessWidget {
           icon: const Icon(Icons.arrow_back),
           onPressed: () => Navigator.of(context).pop(),
         ),
-        title: const Text('Oh Sheet'),
+        title: const Text('Oh Sheet!'),
       ),
       body: SafeArea(
         child: OhSheetResponsiveBody(

@@ -272,6 +272,7 @@ def _pretty_midi_to_transcription_result(
 
 def _stub_result(reason: str) -> TranscriptionResult:
     """Tiny shape-correct fallback so downstream stages still run."""
+    log.info("transcribe: stub result — %s", reason)
     return TranscriptionResult(
         schema_version=SCHEMA_VERSION,
         midi_tracks=[
@@ -901,6 +902,11 @@ class TranscribeService:
         *,
         job_id: str | None = None,
     ) -> TranscriptionResult:
+        log.info(
+            "transcribe: start job_id=%s audio_uri=%s",
+            job_id or "—",
+            payload.audio.uri if payload.audio else None,
+        )
         if payload.audio is None:
             return _stub_result("no audio in InputBundle")
 
@@ -959,4 +965,12 @@ class TranscribeService:
             except Exception as exc:  # noqa: BLE001 — best-effort persistence
                 log.warning("Failed to persist transcription MIDI for %s: %s", job_id, exc)
 
+        n_notes = sum(len(t.notes) for t in result.midi_tracks)
+        log.info(
+            "transcribe: done job_id=%s tracks=%d notes=%d transcription_midi=%s",
+            job_id or "—",
+            len(result.midi_tracks),
+            n_notes,
+            "yes" if result.transcription_midi_uri else "no",
+        )
         return result

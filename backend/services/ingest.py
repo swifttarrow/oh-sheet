@@ -198,6 +198,12 @@ class IngestService:
         self._blob_store = blob_store
 
     async def run(self, payload: InputBundle) -> InputBundle:
+        log.info(
+            "ingest: start source=%s has_audio=%s has_midi=%s",
+            payload.metadata.source,
+            payload.audio is not None,
+            payload.midi is not None,
+        )
         audio = payload.audio
         midi = payload.midi
 
@@ -228,12 +234,23 @@ class IngestService:
         if metadata_update:
             updated_metadata = payload.metadata.model_copy(update=metadata_update)
 
-        return payload.model_copy(update={
+        out = payload.model_copy(update={
             "schema_version": SCHEMA_VERSION,
             "audio": audio,
             "midi": midi,
             "metadata": updated_metadata,
         })
+        if out.audio is not None:
+            log.info(
+                "ingest: audio probed duration_sec=%.2f sample_rate=%d channels=%d",
+                out.audio.duration_sec,
+                out.audio.sample_rate,
+                out.audio.channels,
+            )
+        if out.midi is not None:
+            log.info("ingest: midi probed ticks_per_beat=%d", out.midi.ticks_per_beat)
+        log.info("ingest: done")
+        return out
 
     # ---- bundle constructors -------------------------------------------------
 

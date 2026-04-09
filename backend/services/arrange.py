@@ -308,4 +308,15 @@ class ArrangeService:
         *,
         difficulty: Difficulty = "intermediate",
     ) -> PianoScore:
-        return await asyncio.to_thread(_arrange_sync, payload, difficulty)
+        log.info(
+            "arrange: start tracks_in=%d difficulty=%s",
+            len(payload.midi_tracks),
+            difficulty,
+        )
+        score = await asyncio.to_thread(_arrange_sync, payload, difficulty)
+        log.info(
+            "arrange: done rh_notes=%d lh_notes=%d",
+            len(score.right_hand),
+            len(score.left_hand),
+        )
+        return score

@@ -1,5 +1,6 @@
 // TDD: Tests for the welcome hero section on UploadScreen.
 import 'package:flutter/material.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/testing.dart' as http_testing;
 import 'package:http/http.dart' as http;
@@ -17,7 +18,19 @@ void main() {
   group('Welcome hero section', () {
     testWidgets('displays mascot image', (tester) async {
       await tester.pumpWidget(_app());
-      expect(find.byType(Image), findsWidgets);
+      await tester.pumpAndSettle();
+      expect(find.byType(SvgPicture), findsWidgets);
+    });
+
+    testWidgets('renders mascot without clipping it into a rounded tile', (
+      tester,
+    ) async {
+      await tester.pumpWidget(_app());
+      await tester.pumpAndSettle();
+
+      final svg = tester.widget<SvgPicture>(find.byType(SvgPicture).first);
+      expect(svg.clipBehavior, Clip.none);
+      expect(svg.allowDrawingOutsideViewBox, isTrue);
     });
 
     testWidgets('displays headline text', (tester) async {

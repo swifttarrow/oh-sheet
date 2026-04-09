@@ -5,6 +5,7 @@ library;
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 
 import '../api/client.dart';
 import '../api/models.dart';
@@ -28,11 +29,11 @@ String friendlyStageName(String stage) => switch (stage) {
     };
 
 String mascotAssetForStage(String? stage) => switch (stage) {
-      'ingest' => 'assets/mascots/mascot-progress-ingest.png',
-      'transcribe' => 'assets/mascots/mascot-progress-transcribe.png',
-      'arrange' || 'humanize' => 'assets/mascots/mascot-progress-arrange.png',
-      'engrave' => 'assets/mascots/mascot-progress-engrave.png',
-      _ => 'assets/mascots/mascot-progress-ingest.png',
+      'ingest' => 'assets/mascots/mascot-progress-ingest.svg',
+      'transcribe' => 'assets/mascots/mascot-progress-transcribe.svg',
+      'arrange' || 'humanize' => 'assets/mascots/mascot-progress-arrange.svg',
+      'engrave' => 'assets/mascots/mascot-progress-engrave.svg',
+      _ => 'assets/mascots/mascot-progress-ingest.svg',
     };
 
 const pipelineTips = [
@@ -150,7 +151,7 @@ class _ProgressScreenState extends State<ProgressScreen> {
           icon: const Icon(Icons.arrow_back),
           onPressed: () => Navigator.of(context).pop(),
         ),
-        title: const Text('Oh Sheet'),
+        title: const Text('Oh Sheet!'),
       ),
       body: SafeArea(
         child: OhSheetResponsiveBody(
@@ -164,12 +165,13 @@ class _ProgressScreenState extends State<ProgressScreen> {
                     children: [
                       AnimatedSwitcher(
                         duration: const Duration(milliseconds: 400),
-                        child: Image.asset(
+                        child: SvgPicture.asset(
                           failed
-                              ? 'assets/mascots/mascot-error.png'
+                              ? 'assets/mascots/mascot-error.svg'
                               : mascotAssetForStage(_currentStage),
                           key: ValueKey(failed ? 'error' : _currentStage),
                           height: 176,
+                          fit: BoxFit.contain,
                         ),
                       ),
                       const SizedBox(height: 18),

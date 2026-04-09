@@ -26,6 +26,11 @@ class Settings(BaseSettings):
     # Worker timeout used by OrchestratorCommand envelopes.
     job_timeout_sec: int = 600
 
+    # Logging level for ``backend.*`` (pipeline, jobs, services). The root
+    # logger defaults to WARNING, so without configuration ``log.info`` would
+    # not appear when you run the API server.
+    log_level: str = "INFO"
+
     # ---- Basic Pitch transcription -----------------------------------------
     # Tunable knobs passed through to basic_pitch.inference.predict(). Defaults
     # mirror upstream (basic_pitch.constants.DEFAULT_*). The ONNX model ships

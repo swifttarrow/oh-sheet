@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import time
 import uuid
 from dataclasses import dataclass, field
 
@@ -62,6 +63,12 @@ class JobManager:
         async with self._lock:
             self._jobs[job_id] = record
 
+        log.info(
+            "job created job_id=%s variant=%s source=%s",
+            job_id,
+            config.variant,
+            bundle.metadata.source,
+        )
         self._emit(record, JobEvent(job_id=job_id, type="job_created"))
         record.task = asyncio.create_task(self._execute(record))
         return record
@@ -69,6 +76,8 @@ class JobManager:
     async def _execute(self, record: JobRecord) -> None:
         record.status = "running"
         self._emit(record, JobEvent(job_id=record.job_id, type="job_started"))
+        log.info("job running job_id=%s", record.job_id)
+        t0 = time.perf_counter()
         try:
             result = await self._runner.run(
                 job_id=record.job_id,
@@ -78,6 +87,13 @@ class JobManager:
             )
             record.result = result
             record.status = "succeeded"
+            elapsed_ms = (time.perf_counter() - t0) * 1000
+            log.info(
+                "job succeeded job_id=%s duration_ms=%.0f pdf_uri=%s",
+                record.job_id,
+                elapsed_ms,
+                result.pdf_uri,
+            )
             self._emit(
                 record,
                 JobEvent(
@@ -87,7 +103,12 @@ class JobManager:
                 ),
             )
         except Exception as exc:  # noqa: BLE001 — top-level supervisor
-            log.exception("job %s failed", record.job_id)
+            elapsed_ms = (time.perf_counter() - t0) * 1000
+            log.exception(
+                "job failed job_id=%s duration_ms=%.0f",
+                record.job_id,
+                elapsed_ms,
+            )
             record.status = "failed"
             record.error = repr(exc)
             self._emit(

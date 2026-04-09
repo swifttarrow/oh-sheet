@@ -278,4 +278,11 @@ class HumanizeService:
         self.seed = seed
 
     async def run(self, payload: PianoScore) -> HumanizedPerformance:
-        return await asyncio.to_thread(_humanize_sync, payload, self.seed)
+        log.info(
+            "humanize: start rh=%d lh=%d",
+            len(payload.right_hand),
+            len(payload.left_hand),
+        )
+        perf = await asyncio.to_thread(_humanize_sync, payload, self.seed)
+        log.info("humanize: done expressive_notes=%d", len(perf.expressive_notes))
+        return perf

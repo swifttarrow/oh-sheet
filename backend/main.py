@@ -1,6 +1,7 @@
 """FastAPI application factory and uvicorn entry point."""
 from __future__ import annotations
 
+import logging
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -16,8 +17,30 @@ from backend.contracts import SCHEMA_VERSION
 _STATIC_DIR = Path(__file__).resolve().parent.parent / "static"
 
 
+def _configure_app_logging() -> None:
+    """Attach a handler to ``backend.*`` so INFO logs show up in the server console.
+
+    Python's root logger defaults to WARNING; Uvicorn does not raise it for
+    application loggers. We scope to the ``backend`` package so library noise
+    stays at default levels unless you tune those loggers separately.
+    """
+    level = getattr(logging, settings.log_level.upper(), None)
+    if not isinstance(level, int):
+        level = logging.INFO
+    backend_logger = logging.getLogger("backend")
+    backend_logger.setLevel(level)
+    if not backend_logger.handlers:
+        handler = logging.StreamHandler()
+        handler.setFormatter(
+            logging.Formatter("%(levelname)s [%(name)s] %(message)s"),
+        )
+        backend_logger.addHandler(handler)
+    backend_logger.propagate = False
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    _configure_app_logging()
     settings.blob_root.mkdir(parents=True, exist_ok=True)
     yield
 

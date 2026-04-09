@@ -32,20 +32,20 @@ void main() {
 
   group('mascotAssetForStage', () {
     test('returns ingest mascot', () {
-      expect(mascotAssetForStage('ingest'), 'assets/mascots/mascot-progress-ingest.png');
+      expect(mascotAssetForStage('ingest'), 'assets/mascots/mascot-progress-ingest.svg');
     });
 
     test('returns transcribe mascot', () {
-      expect(mascotAssetForStage('transcribe'), 'assets/mascots/mascot-progress-transcribe.png');
+      expect(mascotAssetForStage('transcribe'), 'assets/mascots/mascot-progress-transcribe.svg');
     });
 
     test('returns arrange mascot for arrange and humanize', () {
-      expect(mascotAssetForStage('arrange'), 'assets/mascots/mascot-progress-arrange.png');
-      expect(mascotAssetForStage('humanize'), 'assets/mascots/mascot-progress-arrange.png');
+      expect(mascotAssetForStage('arrange'), 'assets/mascots/mascot-progress-arrange.svg');
+      expect(mascotAssetForStage('humanize'), 'assets/mascots/mascot-progress-arrange.svg');
     });
 
     test('returns engrave mascot', () {
-      expect(mascotAssetForStage('engrave'), 'assets/mascots/mascot-progress-engrave.png');
+      expect(mascotAssetForStage('engrave'), 'assets/mascots/mascot-progress-engrave.svg');
     });
   });
 
