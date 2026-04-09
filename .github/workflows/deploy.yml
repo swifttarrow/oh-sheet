@@ -13,6 +13,8 @@ env:
   PROJECT_ID: ${{ vars.GCP_PROJECT_ID }}
   REGION: ${{ vars.GCP_REGION || 'us-central1' }}
   IMAGE: ${{ vars.GCP_REGION || 'us-central1' }}-docker.pkg.dev/${{ vars.GCP_PROJECT_ID }}/oh-sheet/app
+  IMAGE_DECOMPOSER: ${{ vars.GCP_REGION || 'us-central1' }}-docker.pkg.dev/${{ vars.GCP_PROJECT_ID }}/oh-sheet/decomposer
+  IMAGE_ASSEMBLER: ${{ vars.GCP_REGION || 'us-central1' }}-docker.pkg.dev/${{ vars.GCP_PROJECT_ID }}/oh-sheet/assembler
 
 jobs:
   deploy:
@@ -37,11 +39,19 @@ jobs:
       - name: Authorize Docker push
         run: gcloud auth configure-docker ${{ env.REGION }}-docker.pkg.dev --quiet
 
-      - name: Build and push container image
+      - name: Build and push container images
         run: |
           docker build -t ${{ env.IMAGE }}:${{ github.sha }} -t ${{ env.IMAGE }}:latest .
           docker push ${{ env.IMAGE }}:${{ github.sha }}
           docker push ${{ env.IMAGE }}:latest
+
+          docker build -t ${{ env.IMAGE_DECOMPOSER }}:${{ github.sha }} -t ${{ env.IMAGE_DECOMPOSER }}:latest -f svc-decomposer/Dockerfile .
+          docker push ${{ env.IMAGE_DECOMPOSER }}:${{ github.sha }}
+          docker push ${{ env.IMAGE_DECOMPOSER }}:latest
+
+          docker build -t ${{ env.IMAGE_ASSEMBLER }}:${{ github.sha }} -t ${{ env.IMAGE_ASSEMBLER }}:latest -f svc-assembler/Dockerfile .
+          docker push ${{ env.IMAGE_ASSEMBLER }}:${{ github.sha }}
+          docker push ${{ env.IMAGE_ASSEMBLER }}:latest
 
       - name: Deploy to VM
         env:
@@ -60,6 +70,8 @@ jobs:
 
           # Write .env with the image tag and commit SHA for docker compose
           echo "IMAGE=${{ env.IMAGE }}:${{ github.sha }}" > /tmp/.env
+          echo "IMAGE_DECOMPOSER=${{ env.IMAGE_DECOMPOSER }}:${{ github.sha }}" >> /tmp/.env
+          echo "IMAGE_ASSEMBLER=${{ env.IMAGE_ASSEMBLER }}:${{ github.sha }}" >> /tmp/.env
           echo "COMMIT_SHA=${{ github.sha }}" >> /tmp/.env
 
           # Copy compose files to VM (SCP .env to temp name, then atomic mv)
