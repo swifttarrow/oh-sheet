@@ -29,10 +29,12 @@ from backend.contracts import (
 )
 from backend.jobs.events import JobEvent
 from backend.services.arrange import ArrangeService
+from backend.services.condense import CondenseService
 from backend.services.engrave import EngraveService
 from backend.services.humanize import HumanizeService
 from backend.services.ingest import IngestService
 from backend.services.transcribe import TranscribeService
+from backend.services.transform import TransformService
 
 log = logging.getLogger(__name__)
 
@@ -188,12 +190,16 @@ class PipelineRunner:
         ingest: IngestService,
         transcribe: TranscribeService,
         arrange: ArrangeService,
+        condense: CondenseService,
+        transform: TransformService,
         humanize: HumanizeService,
         engrave: EngraveService,
     ) -> None:
         self.ingest = ingest
         self.transcribe = transcribe
         self.arrange = arrange
+        self.condense = condense
+        self.transform = transform
         self.humanize = humanize
         self.engrave = engrave
 
@@ -239,6 +245,22 @@ class PipelineRunner:
                         "arrange stage requires a TranscriptionResult — none was produced"
                     )
                 score = await self.arrange.run(txr)
+
+            elif step == "condense":
+                if txr is None and bundle.midi is not None:
+                    txr = _bundle_to_transcription(bundle)
+                if txr is None:
+                    raise RuntimeError(
+                        "condense stage requires a TranscriptionResult — none was produced"
+                    )
+                score = await self.condense.run(txr)
+
+            elif step == "transform":
+                if score is None:
+                    raise RuntimeError(
+                        "transform stage requires a PianoScore — none was produced"
+                    )
+                score = await self.transform.run(score)
 
             elif step == "humanize":
                 if score is None:

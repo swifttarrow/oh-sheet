@@ -119,6 +119,34 @@ async def stage_arrange(
     )
 
 
+@router.post("/stages/condense", response_model=WorkerResponse)
+async def stage_condense(
+    cmd: OrchestratorCommand,
+    blob: Annotated[LocalBlobStore, Depends(get_blob_store)],
+    runner: Annotated[PipelineRunner, Depends(get_runner)],
+) -> WorkerResponse:
+    return await _run_stage(
+        cmd, blob,
+        input_model=TranscriptionResult,
+        coro=runner.condense.run,
+        output_key="score_condensed.json",
+    )
+
+
+@router.post("/stages/transform", response_model=WorkerResponse)
+async def stage_transform(
+    cmd: OrchestratorCommand,
+    blob: Annotated[LocalBlobStore, Depends(get_blob_store)],
+    runner: Annotated[PipelineRunner, Depends(get_runner)],
+) -> WorkerResponse:
+    return await _run_stage(
+        cmd, blob,
+        input_model=PianoScore,
+        coro=runner.transform.run,
+        output_key="score.json",
+    )
+
+
 @router.post("/stages/humanize", response_model=WorkerResponse)
 async def stage_humanize(
     cmd: OrchestratorCommand,

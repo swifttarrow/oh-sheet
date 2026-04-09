@@ -9,6 +9,8 @@ from pathlib import Path
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from backend.contracts import ScorePipelineMode
+
 # Default MT3 checkpoint lives next to the vendored source tree at
 # backend/vendor/mr_mt3/pretrained/mt3.pth (tracked via git-lfs).
 _VENDORED_MT3_CHECKPOINT = (
@@ -40,6 +42,10 @@ class Settings(BaseSettings):
     mt3_checkpoint_path: Path | None = _VENDORED_MT3_CHECKPOINT
     # Inference knobs.
     mt3_batch_size: int = 4
+
+    # Score path after transcription (or MIDI-derived TranscriptionResult).
+    # Env: ``OHSHEET_SCORE_PIPELINE`` — ``arrange`` (default) or ``condense_transform``.
+    score_pipeline: ScorePipelineMode = "arrange"
 
 
 settings = Settings()

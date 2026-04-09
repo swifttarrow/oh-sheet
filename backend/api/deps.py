@@ -13,10 +13,12 @@ from backend.config import settings
 from backend.jobs.manager import JobManager
 from backend.jobs.runner import PipelineRunner
 from backend.services.arrange import ArrangeService
+from backend.services.condense import CondenseService
 from backend.services.engrave import EngraveService
 from backend.services.humanize import HumanizeService
 from backend.services.ingest import IngestService
 from backend.services.transcribe import TranscribeService
+from backend.services.transform import TransformService
 from backend.storage.local import LocalBlobStore
 
 
@@ -32,6 +34,8 @@ def get_runner() -> PipelineRunner:
         ingest=IngestService(blob_store=blob),
         transcribe=TranscribeService(),
         arrange=ArrangeService(),
+        condense=CondenseService(),
+        transform=TransformService(),
         humanize=HumanizeService(),
         engrave=EngraveService(blob_store=blob),
     )

@@ -7,6 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
 from backend.api.deps import get_job_manager
+from backend.config import settings
 from backend.contracts import (
     SCHEMA_VERSION,
     Difficulty,
@@ -110,7 +111,11 @@ async def create_job(
         )
         variant = "full"
 
-    config = PipelineConfig(variant=variant, skip_humanizer=body.skip_humanizer)
+    config = PipelineConfig(
+        variant=variant,
+        skip_humanizer=body.skip_humanizer,
+        score_pipeline=settings.score_pipeline,
+    )
     record = await manager.submit(bundle, config)
     return _record_to_summary(record)
 

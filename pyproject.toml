@@ -26,6 +26,10 @@ dev = [
 youtube = [
     "yt-dlp>=2024.1",
 ]
+# Root utility: merge_midi_to_piano.py
+midi = [
+    "mido>=1.3",
+]
 # Pretrained MT3 baseline (backend.vendor.mr_mt3). Heavy ML deps — installed
 # only when you actually want to run the model. Without these the
 # TranscribeService falls back to a stub TranscriptionResult.
