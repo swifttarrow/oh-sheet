@@ -168,11 +168,24 @@ class _WebSheetMusicViewerState extends State<WebSheetMusicViewer> {
       console.log("[OSMD] MIDI:", midi.tracks.length, "tracks,",
         midi.duration.toFixed(1), "sec");
 
+      // Thresholds for filtering out silent/ghost notes before playback.
+      // Keep in sync with backend MIN_NOTE_DUR in engrave.py.
+      // - velocity is normalized 0.0–1.0 from @tonejs/midi
+      // - duration is in seconds
+      var MIN_VELOCITY = 0.05;        // ~6/127 MIDI — inaudible below this
+      var MIN_DURATION_SEC = 0.03;    // matches engrave.py MIN_NOTE_DUR
+
       var allNotes = [];
+      var skippedSilent = 0;
       for (var t = 0; t < midi.tracks.length; t++) {
         var track = midi.tracks[t];
         for (var n = 0; n < track.notes.length; n++) {
           var note = track.notes[n];
+          // Skip inaudible / zero-length notes so we don't play "rests"
+          if (note.velocity < MIN_VELOCITY || note.duration < MIN_DURATION_SEC) {
+            skippedSilent++;
+            continue;
+          }
           allNotes.push({
             name: note.name,
             time: note.time,
@@ -182,9 +195,12 @@ class _WebSheetMusicViewerState extends State<WebSheetMusicViewer> {
         }
       }
       allNotes.sort(function(a, b) { return a.time - b.time; });
+      if (skippedSilent > 0) {
+        console.log("[OSMD] Skipped", skippedSilent, "silent/short notes");
+      }
 
       if (allNotes.length === 0) {
-        console.warn("[OSMD] No notes in MIDI");
+        console.warn("[OSMD] No audible notes in MIDI");
         return;
       }
 
