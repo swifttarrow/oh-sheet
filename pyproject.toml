@@ -55,6 +55,7 @@ youtube = [
 basic-pitch = [
     "coremltools; platform_system == 'Darwin'",
     "librosa>=0.8.0",
+    "madmom>=0.17",
     "mir_eval>=0.6.0",
     "numpy>=1.26",
     "onnxruntime>=1.19",
@@ -63,6 +64,9 @@ basic-pitch = [
     "scikit-learn",
     "scipy>=1.4.1",
     "typing_extensions",
+]
+madmom = [
+    "madmom>=0.17",
 ]
 # Offline eval harness (scripts/eval_transcription.py) — scores
 # TranscribeService output against clean_midi ground truth via

@@ -384,5 +384,27 @@ class Settings(BaseSettings):
     arrange_beat_snap_weight: float = 0.3
     arrange_beat_snap_subdivision: float = 0.5
 
+    # ---- Beat tracker backend ------------------------------------------------
+    # "madmom" (default) uses madmom DBNBeatProcessor — more robust for
+    # variable-tempo music.  "librosa" uses the legacy librosa.beat.beat_track.
+    # "auto" tries madmom first, falls back to librosa.
+    beat_tracker: str = "madmom"
+
+    # ---- Adaptive quantization grid (arrange stage) --------------------------
+    # Instead of a rigid 1/16th-note grid, estimate the best-fit grid per
+    # piece from candidates. Improves triplet-feel and swing music.
+    arrange_adaptive_grid_enabled: bool = True
+    arrange_grid_candidates: str = "0.167,0.25,0.333,0.5"
+    arrange_min_notes_for_grid_estimation: int = 4
+
+    # ---- Duration refinement (per-pitch CQT energy gating) ------------------
+    # Refine note offsets by tracking energy decay at each note's specific
+    # pitch via CQT spectrogram.  More precise than global RMS gating.
+    duration_refine_enabled: bool = True
+    duration_refine_floor_ratio: float = 0.15
+    duration_refine_tail_sec: float = 0.03
+    duration_refine_min_duration_sec: float = 0.03
+    duration_refine_hop_length: int = 256
+
 
 settings = Settings()

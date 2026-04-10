@@ -35,7 +35,7 @@ from backend.contracts import (
 
 log = logging.getLogger(__name__)
 
-QUANT_GRID = 0.25            # 1/16th note
+QUANT_GRID = 0.25            # 1/16th note (default / fallback)
 SPLIT_PITCH = 60             # middle C — pitches >= split go right hand
 MAX_VOICES_RH = 4
 MAX_VOICES_LH = 3
@@ -57,6 +57,44 @@ def _quantize(onset: float, grid: float = QUANT_GRID) -> float:
 
 def _quantize_duration(dur: float, grid: float = QUANT_GRID) -> float:
     return max(round(dur / grid) * grid, grid)
+
+
+def _parse_grid_candidates(raw: str) -> list[float]:
+    """Parse a comma-separated string of floats into a list."""
+    return [float(tok.strip()) for tok in raw.split(",") if tok.strip()]
+
+
+def _estimate_best_grid(
+    beat_onsets: list[float],
+    *,
+    candidates: list[float] | None = None,
+    min_notes: int | None = None,
+) -> float:
+    """Pick the candidate grid that minimises mean quantization residual.
+
+    Falls back to QUANT_GRID when there are too few notes.
+    """
+    if min_notes is None:
+        min_notes = settings.arrange_min_notes_for_grid_estimation
+
+    if len(beat_onsets) < min_notes:
+        return QUANT_GRID
+
+    if candidates is None:
+        candidates = _parse_grid_candidates(settings.arrange_grid_candidates)
+
+    _EPS = 1e-9
+    best_grid = QUANT_GRID
+    best_residual = float("inf")
+    for grid in candidates:
+        residual = sum(abs(o - round(o / grid) * grid) for o in beat_onsets) / len(beat_onsets)
+        # On tied residual prefer the coarser (larger) grid for simpler notation.
+        if (residual + _EPS < best_residual) or (
+            abs(residual - best_residual) <= _EPS and grid > best_grid
+        ):
+            best_residual = residual
+            best_grid = grid
+    return best_grid
 
 
 # ---------------------------------------------------------------------------
@@ -106,10 +144,13 @@ def _assign_hands(
 def _resolve_overlaps(
     notes: list[tuple[int, float, float, int]],
     max_voices: int,
+    *,
+    grid: float = QUANT_GRID,
+    overlap_tol: float = NEAR_OVERLAP_TOL,
 ) -> list[tuple[int, float, float, int, int]]:
     """Quantize, drop near-duplicates, and greedily assign voice numbers."""
     quantized = [
-        (pitch, _quantize(onset), _quantize_duration(dur), vel)
+        (pitch, _quantize(onset, grid), _quantize_duration(dur, grid), vel)
         for pitch, onset, dur, vel in notes
     ]
 
@@ -123,7 +164,7 @@ def _resolve_overlaps(
         while (
             j < len(quantized)
             and quantized[j][0] == best[0]
-            and abs(quantized[j][1] - best[1]) <= NEAR_OVERLAP_TOL
+            and abs(quantized[j][1] - best[1]) <= overlap_tol
         ):
             if quantized[j][3] > best[3]:
                 best = quantized[j]
@@ -141,7 +182,7 @@ def _resolve_overlaps(
             pp, po, pd, pv = deduped[prev_idx]
             gap = onset - po
             if po + pd > onset:
-                if gap < QUANT_GRID * 0.5:
+                if gap < grid * 0.5:
                     drop.add(idx if pv >= vel else prev_idx)
                 else:
                     deduped[prev_idx] = (pp, po, gap, pv)
@@ -377,24 +418,33 @@ def _arrange_sync(
 
     rh_raw, lh_raw = _assign_hands(pitched_tracks, tempo_map)
 
+    # Adaptive grid estimation — pick the best quantization grid for this piece
+    if settings.arrange_adaptive_grid_enabled:
+        all_onsets = [n[1] for n in rh_raw] + [n[1] for n in lh_raw]
+        grid = _estimate_best_grid(all_onsets)
+        log.info("arrange: estimated grid=%.3f beats", grid)
+    else:
+        grid = QUANT_GRID
+    overlap_tol = 0.6 * grid
+
     max_rh = MAX_VOICES_RH if difficulty != "beginner" else 2
     max_lh = MAX_VOICES_LH if difficulty != "beginner" else 1
-    rh_voiced = _resolve_overlaps(rh_raw, max_rh)
-    lh_voiced = _resolve_overlaps(lh_raw, max_lh)
+    rh_voiced = _resolve_overlaps(rh_raw, max_rh, grid=grid, overlap_tol=overlap_tol)
+    lh_voiced = _resolve_overlaps(lh_raw, max_lh, grid=grid, overlap_tol=overlap_tol)
 
     # Post-quantization beat-synchronous snapping
     if settings.arrange_beat_snap_enabled:
         rh_voiced = _beat_snap(
             rh_voiced,
             tempo_map,
-            grid=QUANT_GRID,
+            grid=grid,
             snap_weight=settings.arrange_beat_snap_weight,
             subdivision=settings.arrange_beat_snap_subdivision,
         )
         lh_voiced = _beat_snap(
             lh_voiced,
             tempo_map,
-            grid=QUANT_GRID,
+            grid=grid,
             snap_weight=settings.arrange_beat_snap_weight,
             subdivision=settings.arrange_beat_snap_subdivision,
         )

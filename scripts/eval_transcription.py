@@ -442,6 +442,17 @@ class ScoreRow:
     # when debugging calibration issues.
     confidence: float
     wall_sec: float
+    # Onset accuracy (matched notes only)
+    onset_mae_sec: float = 0.0
+    onset_median_ae_sec: float = 0.0
+    # Duration accuracy (matched notes only)
+    duration_mae_sec: float = 0.0
+    duration_median_ae_sec: float = 0.0
+    duration_ratio_mean: float = 0.0
+    # Offset accuracy (matched notes only)
+    offset_mae_sec: float = 0.0
+    # How many notes were matched for these metrics
+    matched_notes: int = 0
     error: str | None = None
 
 
@@ -450,25 +461,43 @@ def _score(
     ref_pitches: Any,
     est_intervals: Any,
     est_pitches: Any,
-) -> dict[str, float]:
-    """Compute no-offset and with-offset P/R/F1 for one file.
+) -> dict[str, float | int]:
+    """Compute no-offset and with-offset P/R/F1 plus per-dimension error metrics.
 
     mir_eval raises on empty inputs, so we short-circuit to a zero row
     when either side has no notes. That's the semantically correct
     answer (precision is undefined, recall is 0 if ref is non-empty,
     and F1 degenerates to 0) and keeps the aggregate means honest.
+
+    In addition to P/R/F1, we use ``mir_eval.transcription.match_notes``
+    to find onset+pitch matched pairs and compute:
+    - onset MAE / median AE (timing accuracy of note attacks)
+    - duration MAE / median AE / ratio mean (length accuracy)
+    - offset MAE (timing accuracy of note releases)
+    These give independent visibility into whether improvements help
+    onset timing, duration accuracy, or both.
     """
     import mir_eval  # noqa: PLC0415
+    import numpy as np  # noqa: PLC0415
+
+    zero_row = {
+        "p_no_offset": 0.0,
+        "r_no_offset": 0.0,
+        "f1_no_offset": 0.0,
+        "p_with_offset": 0.0,
+        "r_with_offset": 0.0,
+        "f1_with_offset": 0.0,
+        "onset_mae_sec": 0.0,
+        "onset_median_ae_sec": 0.0,
+        "duration_mae_sec": 0.0,
+        "duration_median_ae_sec": 0.0,
+        "duration_ratio_mean": 0.0,
+        "offset_mae_sec": 0.0,
+        "matched_notes": 0,
+    }
 
     if len(ref_intervals) == 0 or len(est_intervals) == 0:
-        return {
-            "p_no_offset": 0.0,
-            "r_no_offset": 0.0,
-            "f1_no_offset": 0.0,
-            "p_with_offset": 0.0,
-            "r_with_offset": 0.0,
-            "f1_with_offset": 0.0,
-        }
+        return zero_row
 
     p_no, r_no, f_no, _ = mir_eval.transcription.precision_recall_f1_overlap(
         ref_intervals, ref_pitches, est_intervals, est_pitches,
@@ -482,6 +511,61 @@ def _score(
         pitch_tolerance=DEFAULT_PITCH_TOL,
         offset_ratio=DEFAULT_OFFSET_RATIO,
     )
+
+    # --- Per-dimension error metrics on matched note pairs ---
+    # Match on onset + pitch only (no offset constraint) so we measure
+    # onset/duration/offset errors independently of the offset gate.
+    matching = mir_eval.transcription.match_notes(
+        ref_intervals, ref_pitches, est_intervals, est_pitches,
+        onset_tolerance=DEFAULT_ONSET_TOL,
+        pitch_tolerance=DEFAULT_PITCH_TOL,
+        offset_ratio=None,
+    )
+
+    matched_notes = len(matching)
+    if matched_notes == 0:
+        return {
+            "p_no_offset": float(p_no),
+            "r_no_offset": float(r_no),
+            "f1_no_offset": float(f_no),
+            "p_with_offset": float(p_w),
+            "r_with_offset": float(r_w),
+            "f1_with_offset": float(f_w),
+            "onset_mae_sec": 0.0,
+            "onset_median_ae_sec": 0.0,
+            "duration_mae_sec": 0.0,
+            "duration_median_ae_sec": 0.0,
+            "duration_ratio_mean": 0.0,
+            "offset_mae_sec": 0.0,
+            "matched_notes": 0,
+        }
+
+    onset_errors = []
+    duration_errors = []
+    duration_ratios = []
+    offset_errors = []
+
+    for ri, ei in matching:
+        ref_onset = ref_intervals[ri, 0]
+        est_onset = est_intervals[ei, 0]
+        ref_offset = ref_intervals[ri, 1]
+        est_offset = est_intervals[ei, 1]
+        ref_dur = ref_offset - ref_onset
+        est_dur = est_offset - est_onset
+
+        onset_errors.append(abs(est_onset - ref_onset))
+        duration_errors.append(abs(est_dur - ref_dur))
+        offset_errors.append(abs(est_offset - ref_offset))
+
+        # Guard against zero-length reference notes (should not happen
+        # after our earlier filter, but be defensive).
+        if ref_dur > 0:
+            duration_ratios.append(est_dur / ref_dur)
+
+    onset_errors_arr = np.array(onset_errors)
+    duration_errors_arr = np.array(duration_errors)
+    offset_errors_arr = np.array(offset_errors)
+
     return {
         "p_no_offset": float(p_no),
         "r_no_offset": float(r_no),
@@ -489,6 +573,15 @@ def _score(
         "p_with_offset": float(p_w),
         "r_with_offset": float(r_w),
         "f1_with_offset": float(f_w),
+        "onset_mae_sec": float(np.mean(onset_errors_arr)),
+        "onset_median_ae_sec": float(np.median(onset_errors_arr)),
+        "duration_mae_sec": float(np.mean(duration_errors_arr)),
+        "duration_median_ae_sec": float(np.median(duration_errors_arr)),
+        "duration_ratio_mean": (
+            float(np.mean(duration_ratios)) if duration_ratios else 0.0
+        ),
+        "offset_mae_sec": float(np.mean(offset_errors_arr)),
+        "matched_notes": matched_notes,
     }
 
 
@@ -533,6 +626,7 @@ def _print_header(path_width: int) -> None:
         f"{'ref':>5}  {'est':>5}  "
         f"{'P':>5}  {'R':>5}  {'F1':>5}  "
         f"{'F1off':>6}  "
+        f"{'on_ms':>6}  {'dur_ms':>6}  {'d_rat':>5}  "
         f"{'conf':>5}  "
         f"{'sec':>6}"
     )
@@ -552,18 +646,23 @@ def _print_row(idx: int, row: ScoreRow, path_width: int) -> None:
         f"{row.ref_notes:>5}  {row.est_notes:>5}  "
         f"{row.p_no_offset:>5.2f}  {row.r_no_offset:>5.2f}  {row.f1_no_offset:>5.2f}  "
         f"{row.f1_with_offset:>6.2f}  "
+        f"{row.onset_mae_sec * 1000:>6.1f}  {row.duration_mae_sec * 1000:>6.1f}  {row.duration_ratio_mean:>5.2f}  "
         f"{row.confidence:>5.2f}  "
         f"{row.wall_sec:>6.1f}"
     )
 
 
 def _aggregate(rows: list[ScoreRow]) -> dict[str, float]:
-    """Compute mean / median F1 over non-errored rows.
+    """Compute mean / median F1 and per-dimension error metrics over non-errored rows.
 
     We average P/R/F1 per file (equal weight per song) rather than
     micro-averaging over notes. This matches the convention used in
     music-transcription papers and gives a small-corpus eval a
     bounded-variance headline number.
+
+    The onset/duration/offset error metrics are also averaged per file
+    (not weighted by matched_notes) so every song contributes equally
+    to the headline numbers, consistent with the F1 averaging.
     """
     ok = [r for r in rows if r.error is None]
     if not ok:
@@ -581,6 +680,13 @@ def _aggregate(rows: list[ScoreRow]) -> dict[str, float]:
         "median_f1_no_offset": _med("f1_no_offset"),
         "mean_f1_with_offset": _m("f1_with_offset"),
         "median_f1_with_offset": _med("f1_with_offset"),
+        "mean_onset_mae_sec": _m("onset_mae_sec"),
+        "mean_onset_median_ae_sec": _m("onset_median_ae_sec"),
+        "mean_duration_mae_sec": _m("duration_mae_sec"),
+        "mean_duration_median_ae_sec": _m("duration_median_ae_sec"),
+        "mean_duration_ratio_mean": _m("duration_ratio_mean"),
+        "mean_offset_mae_sec": _m("offset_mae_sec"),
+        "total_matched_notes": sum(r.matched_notes for r in ok),
         "mean_confidence": _m("confidence"),
         "mean_wall_sec": _m("wall_sec"),
     }
@@ -600,6 +706,15 @@ def _print_aggregate(agg: dict[str, float]) -> None:
     print(f"  median F1 (no-off):   {agg['median_f1_no_offset']:.3f}")
     print(f"  mean F1 (w/ offset):  {agg['mean_f1_with_offset']:.3f}")
     print(f"  median F1 (w/ off):   {agg['median_f1_with_offset']:.3f}")
+    print("  --- per-dimension (matched notes) ---")
+    print(f"  total matched notes:  {int(agg['total_matched_notes'])}")
+    print(f"  mean onset MAE:       {agg['mean_onset_mae_sec'] * 1000:.1f} ms")
+    print(f"  mean onset med AE:    {agg['mean_onset_median_ae_sec'] * 1000:.1f} ms")
+    print(f"  mean duration MAE:    {agg['mean_duration_mae_sec'] * 1000:.1f} ms")
+    print(f"  mean duration med AE: {agg['mean_duration_median_ae_sec'] * 1000:.1f} ms")
+    print(f"  mean duration ratio:  {agg['mean_duration_ratio_mean']:.3f}")
+    print(f"  mean offset MAE:      {agg['mean_offset_mae_sec'] * 1000:.1f} ms")
+    print("  ---")
     print(f"  mean confidence:      {agg['mean_confidence']:.3f}")
     print(f"  mean wall sec/file:   {agg['mean_wall_sec']:.1f}")
 
@@ -633,6 +748,10 @@ def _role_breakdown(
     for role in roles:
         all_f1s: list[float] = []
         active_f1s: list[float] = []
+        active_onset_maes: list[float] = []
+        active_duration_maes: list[float] = []
+        active_duration_ratios: list[float] = []
+        active_offset_maes: list[float] = []
         for _row, ref_i, ref_p, result in rows_with_results:
             est_i, est_p = _predicted_notes(result, role_filter=role)
             if len(est_i) == 0:
@@ -641,11 +760,28 @@ def _role_breakdown(
             scores = _score(ref_i, ref_p, est_i, est_p)
             all_f1s.append(scores["f1_no_offset"])
             active_f1s.append(scores["f1_no_offset"])
+            if scores["matched_notes"] > 0:
+                active_onset_maes.append(scores["onset_mae_sec"])
+                active_duration_maes.append(scores["duration_mae_sec"])
+                active_duration_ratios.append(scores["duration_ratio_mean"])
+                active_offset_maes.append(scores["offset_mae_sec"])
         if all_f1s:
             out[role] = {
                 "mean_f1_no_offset": statistics.fmean(all_f1s),
                 "mean_f1_no_offset_when_active": (
                     statistics.fmean(active_f1s) if active_f1s else 0.0
+                ),
+                "mean_onset_mae_sec": (
+                    statistics.fmean(active_onset_maes) if active_onset_maes else 0.0
+                ),
+                "mean_duration_mae_sec": (
+                    statistics.fmean(active_duration_maes) if active_duration_maes else 0.0
+                ),
+                "mean_duration_ratio_mean": (
+                    statistics.fmean(active_duration_ratios) if active_duration_ratios else 0.0
+                ),
+                "mean_offset_mae_sec": (
+                    statistics.fmean(active_offset_maes) if active_offset_maes else 0.0
                 ),
                 "n_files_scored": len(all_f1s),
                 "n_files_with_role": len(active_f1s),
@@ -662,11 +798,15 @@ def _print_role_breakdown(role_scores: dict[str, dict[str, float]]) -> None:
     print("  mean F1 counts files with zero predictions as 0.0;")
     print("  'active' restricts to files where the role fired.")
     for role, scores in role_scores.items():
+        onset_ms = scores["mean_onset_mae_sec"] * 1000
+        dur_ms = scores["mean_duration_mae_sec"] * 1000
+        d_rat = scores["mean_duration_ratio_mean"]
         print(
             f"  {role:<8}  mean F1 {scores['mean_f1_no_offset']:.3f}  "
             f"(active {scores['mean_f1_no_offset_when_active']:.3f}, "
             f"{int(scores['n_files_with_role'])}/"
-            f"{int(scores['n_files_scored'])} files)"
+            f"{int(scores['n_files_scored'])} files)  "
+            f"on:{onset_ms:.0f}ms  dur:{dur_ms:.0f}ms  d_rat:{d_rat:.2f}"
         )
 
 
@@ -750,6 +890,13 @@ def _eval_one(
         f1_with_offset=scores["f1_with_offset"],
         confidence=float(result.quality.overall_confidence),
         wall_sec=wall,
+        onset_mae_sec=scores["onset_mae_sec"],
+        onset_median_ae_sec=scores["onset_median_ae_sec"],
+        duration_mae_sec=scores["duration_mae_sec"],
+        duration_median_ae_sec=scores["duration_median_ae_sec"],
+        duration_ratio_mean=scores["duration_ratio_mean"],
+        offset_mae_sec=scores["offset_mae_sec"],
+        matched_notes=int(scores["matched_notes"]),
     ), ref_i, ref_p, result
 
 
