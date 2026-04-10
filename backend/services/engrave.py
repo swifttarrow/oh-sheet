@@ -171,7 +171,11 @@ def _render_musicxml_bytes(
         key_root = score.metadata.key.split(":")[0] if ":" in score.metadata.key else "C"
         mode = "major" if "minor" not in score.metadata.key else "minor"
         ks = music21.key.Key(key_root, mode)
-        bpm = score.metadata.tempo_map[0].bpm if score.metadata.tempo_map else 120.0
+        # Round BPM to a whole number so the metronome mark reads cleanly
+        # (e.g., ♩ = 99 instead of ♩ = 99.38401442307693). The tempo map
+        # itself stays float for beat→sec conversions elsewhere.
+        bpm_float = score.metadata.tempo_map[0].bpm if score.metadata.tempo_map else 120.0
+        bpm = round(bpm_float)
         tempo_mark = music21.tempo.MetronomeMark(number=bpm)
 
         articulations_at: dict[str, str] = {}
