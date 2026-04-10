@@ -117,11 +117,11 @@ def test_per_stem_bp_thresholds_are_passed_correctly(
     assert captured["vocals"]["onset_threshold"] == 0.6
     assert captured["vocals"]["frame_threshold"] == 0.25
 
-    # Bass: onset=0.4, frame=0.35
+    # Bass: onset=0.5, frame=0.3 (reverted to globals after bass F1 regressed)
     assert captured["bass"]["onset_threshold"] == settings.basic_pitch_stem_onset_threshold_bass
     assert captured["bass"]["frame_threshold"] == settings.basic_pitch_stem_frame_threshold_bass
-    assert captured["bass"]["onset_threshold"] == 0.4
-    assert captured["bass"]["frame_threshold"] == 0.35
+    assert captured["bass"]["onset_threshold"] == 0.5
+    assert captured["bass"]["frame_threshold"] == 0.3
 
     # Other: onset=0.5, frame=0.3
     assert captured["other"]["onset_threshold"] == settings.basic_pitch_stem_onset_threshold_other
@@ -224,8 +224,8 @@ def test_generic_fallback_when_stem_specific_is_none(
     assert captured["vocals"]["frame_threshold"] == 0.25
 
     # Bass should also use its specific value, not the generic.
-    assert captured["bass"]["onset_threshold"] == 0.4
-    assert captured["bass"]["frame_threshold"] == 0.35
+    assert captured["bass"]["onset_threshold"] == 0.5
+    assert captured["bass"]["frame_threshold"] == 0.3
 
 
 # ---------------------------------------------------------------------------
@@ -242,9 +242,9 @@ def test_config_stem_threshold_defaults():
     assert s.basic_pitch_stem_onset_threshold_vocals == 0.6
     assert s.basic_pitch_stem_frame_threshold_vocals == 0.25
 
-    # Bass: lower onset for weaker activations, moderate frame
-    assert s.basic_pitch_stem_onset_threshold_bass == 0.4
-    assert s.basic_pitch_stem_frame_threshold_bass == 0.35
+    # Bass: use global defaults (tested lower, regressed bass F1)
+    assert s.basic_pitch_stem_onset_threshold_bass == 0.5
+    assert s.basic_pitch_stem_frame_threshold_bass == 0.3
 
     # Other: close to global defaults, slightly tighter onset
     assert s.basic_pitch_stem_onset_threshold_other == 0.5

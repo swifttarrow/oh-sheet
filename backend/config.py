@@ -67,10 +67,11 @@ class Settings(BaseSettings):
     basic_pitch_stem_frame_threshold_vocals: float = 0.25
 
     # Bass stem: low-frequency notes produce weaker activations in BP's
-    # mel spectrogram — lower onset threshold to catch quiet bass notes,
-    # keep frame threshold moderate.
-    basic_pitch_stem_onset_threshold_bass: float = 0.4
-    basic_pitch_stem_frame_threshold_bass: float = 0.35
+    # mel spectrogram. Use global defaults — tested onset=0.4/frame=0.35
+    # but it regressed bass F1 by -0.019 due to over-detection of
+    # sub-harmonic artifacts at lower thresholds.
+    basic_pitch_stem_onset_threshold_bass: float = 0.5
+    basic_pitch_stem_frame_threshold_bass: float = 0.3
 
     # Other stem (chords/accompaniment): polyphonic, use defaults close
     # to global but slightly tighter onset to reduce bleed artifacts.
@@ -129,8 +130,8 @@ class Settings(BaseSettings):
     # global cleanup_* defaults when cleanup_for_role() is used.
     cleanup_melody_merge_gap_sec: float = 0.02   # tighter than global 0.03
     cleanup_melody_ghost_max_duration_sec: float = 0.04  # tighter than global 0.05
-    cleanup_bass_merge_gap_sec: float = 0.05     # looser — bass notes sustain longer
-    cleanup_bass_ghost_max_duration_sec: float = 0.08    # bass has legitimate short notes less often
+    cleanup_bass_merge_gap_sec: float = 0.04     # slightly looser than global 0.03
+    cleanup_bass_ghost_max_duration_sec: float = 0.06    # slightly looser than global 0.05
     cleanup_chords_merge_gap_sec: float = 0.04   # moderate
     cleanup_chords_octave_amp_ratio: float = 0.5  # stricter — real chord octave doublings are common
 
@@ -331,7 +332,7 @@ class Settings(BaseSettings):
     # pass run and their outputs are fused. When disabled, CREPE
     # replaces BP entirely (the pre-hybrid behavior).
     crepe_hybrid_enabled: bool = True
-    crepe_hybrid_bp_min_amp: float = 0.3  # BP notes below this amp are dropped in fusion
+    crepe_hybrid_bp_min_amp: float = 0.35  # BP notes below this amp are dropped in fusion
     crepe_hybrid_overlap_threshold: float = 0.5  # min temporal overlap fraction to fuse
     crepe_max_pitch_leap: int = 12  # max semitone leap before octave-snap kicks in
 
