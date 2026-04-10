@@ -719,6 +719,11 @@ def _run_without_stems(
                 audio_path,
                 min_score=settings.chord_min_template_score,
                 hpss_margin=settings.chord_hpss_margin,
+                seventh_enabled=settings.chord_seventh_templates_enabled,
+                hmm_enabled=settings.chord_hmm_enabled,
+                hmm_self_transition=settings.chord_hmm_self_transition,
+                hmm_temperature=settings.chord_hmm_temperature,
+                key_label="C:major",
             )
         except Exception as exc:  # noqa: BLE001 — never let chord recog sink transcribe
             log.warning("chord recognition raised: %s", exc)
@@ -1034,6 +1039,11 @@ def _run_with_stems(
                 chord_src,
                 min_score=settings.chord_min_template_score,
                 hpss_margin=settings.chord_hpss_margin,
+                seventh_enabled=settings.chord_seventh_templates_enabled,
+                hmm_enabled=settings.chord_hmm_enabled,
+                hmm_self_transition=settings.chord_hmm_self_transition,
+                hmm_temperature=settings.chord_hmm_temperature,
+                key_label="C:major",
             )
             if chord_stats.skipped and chord_src != audio_path:
                 log.debug(
@@ -1043,6 +1053,11 @@ def _run_with_stems(
                     audio_path,
                     min_score=settings.chord_min_template_score,
                     hpss_margin=settings.chord_hpss_margin,
+                    seventh_enabled=settings.chord_seventh_templates_enabled,
+                    hmm_enabled=settings.chord_hmm_enabled,
+                    hmm_self_transition=settings.chord_hmm_self_transition,
+                    hmm_temperature=settings.chord_hmm_temperature,
+                    key_label="C:major",
                 )
         except Exception as exc:  # noqa: BLE001 — chord recog must not sink transcribe
             log.warning("chord recognition raised: %s", exc)

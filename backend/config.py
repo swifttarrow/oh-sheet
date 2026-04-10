@@ -126,6 +126,10 @@ class Settings(BaseSettings):
     chord_recognition_enabled: bool = True
     chord_min_template_score: float = 0.55
     chord_hpss_margin: float = 3.0               # librosa.effects.harmonic margin
+    chord_seventh_templates_enabled: bool = True
+    chord_hmm_enabled: bool = True
+    chord_hmm_self_transition: float = 0.8
+    chord_hmm_temperature: float = 1.0
 
     # ---- Demucs source separation (pre-Basic Pitch) -----------------------
     # When enabled, the transcribe stage runs Demucs over the source
