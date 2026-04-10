@@ -6,15 +6,11 @@ checking whether detected chords better support the runner-up key.
 """
 from __future__ import annotations
 
-import pytest
-
 from backend.contracts import RealtimeChordEvent
 from backend.services.key_estimation import (
-    KeyEstimationStats,
     _diatonic_chords_for_key,
     refine_key_with_chords,
 )
-
 
 # ---------------------------------------------------------------------------
 # Helpers — build chord event lists

@@ -13,13 +13,10 @@ import pytest
 np = pytest.importorskip("numpy")
 
 from backend.services.chord_recognition import (  # noqa: E402
-    DEFAULT_CHORD_HMM_SELF_TRANSITION,
-    DEFAULT_CHORD_HMM_TEMPERATURE,
     _build_chord_templates,
     _diatonic_labels_for_key,
     _smooth_chords_hmm,
 )
-
 
 # ---------------------------------------------------------------------------
 # Template construction

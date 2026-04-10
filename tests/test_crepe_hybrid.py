@@ -13,7 +13,6 @@ from backend.services.crepe_melody import (
 )
 from backend.services.transcription_cleanup import NoteEvent
 
-
 # ---------------------------------------------------------------------------
 # helpers
 # ---------------------------------------------------------------------------
@@ -201,7 +200,7 @@ class TestOctaveSnap:
             _ne(1.0, 1.5, 72),   # after prev snapped to 60: +12 from 60, +12 from 60
             _ne(1.5, 2.0, 60),   # close to 60
         ]
-        result = _octave_snap(notes, max_pitch_leap=12)
+        _octave_snap(notes, max_pitch_leap=12)
         # First octave error: pred=60, mid=72, succ=72 (original).
         # diff_prev=12, diff_succ=0 — succ is NOT exactly 12 away, so
         # the first one is NOT snapped.

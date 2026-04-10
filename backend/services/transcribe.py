@@ -398,7 +398,6 @@ def _compute_amplitude_envelope(
     """
     try:
         import librosa  # noqa: PLC0415 — ships with the basic-pitch extra
-        import numpy as np  # noqa: PLC0415
 
         y, sr = librosa.load(str(audio_path), sr=None, mono=True)
         if len(y) == 0:

@@ -179,7 +179,6 @@ def test_recognize_returns_empty_for_silence():
 
 def test_config_defaults_match_chord_module_defaults():
     from backend.config import Settings
-
     from backend.services.chord_recognition import (
         DEFAULT_CHORD_HMM_ENABLED,
         DEFAULT_CHORD_HMM_SELF_TRANSITION,
