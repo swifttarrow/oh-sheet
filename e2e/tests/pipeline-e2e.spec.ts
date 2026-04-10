@@ -4,11 +4,12 @@
  * Wires the entire service stack together and verifies the pipeline
  * produces a sheet music PDF from a MIDI upload, for three different
  * MIDI files. Enforces a 2-minute per-file latency budget and asserts
- * on error propagation at the API layer (empty payload, malformed
- * JSON, non-existent job id).
+ * on error propagation at the API layer (unsupported MIDI extension,
+ * empty job payload, malformed JSON, non-existent job id).
  *
  * Run locally against the docker compose stack:
  *     docker compose up -d
+ *     cd e2e
  *     BASE_URL=http://localhost:8000 npm test -- pipeline-e2e.spec.ts
  */
 import { test, expect } from "@playwright/test";
@@ -89,9 +90,13 @@ async function runPipeline(
   expect(jobId).toBeTruthy();
 
   // 3. Wait for completion via WebSocket, with a hard 2-minute ceiling.
-  const httpBase =
+  // Trim any trailing slashes from baseURL so concatenation below can't
+  // produce a double-slash path (e.g. ws://host//v1/...) which can fail
+  // route matching on some servers.
+  const httpBase = (
     (test.info().project.use as { baseURL?: string }).baseURL ??
-    "http://localhost:8000";
+    "http://localhost:8000"
+  ).replace(/\/+$/, "");
   const wsBase = httpBase.replace(/^http/, "ws");
   const wsUrl = `${wsBase}/v1/jobs/${jobId}/ws`;
 
@@ -195,6 +200,34 @@ test.describe("Pipeline E2E — MIDI → sheet music PDF", () => {
 });
 
 test.describe("Pipeline E2E — error propagation", () => {
+  test("unsupported file extension on MIDI upload is rejected with 4xx", async ({
+    request,
+  }) => {
+    // The MIDI upload endpoint must reject non-MIDI extensions at the API
+    // layer with a structured 4xx error, not silently accept them.
+    const res = await request.post("/v1/uploads/midi", {
+      multipart: {
+        file: {
+          name: "not-a-midi.txt",
+          mimeType: "text/plain",
+          buffer: Buffer.from("this is clearly not a MIDI file"),
+        },
+      },
+    });
+    expect(
+      res.status(),
+      `expected 4xx for non-MIDI extension, got ${res.status()}`,
+    ).toBeGreaterThanOrEqual(400);
+    expect(res.status()).toBeLessThan(500);
+
+    const body = await res.json();
+    expect(
+      body.detail,
+      "error response must include a non-empty detail field",
+    ).toBeTruthy();
+    expect(String(body.detail).length).toBeGreaterThan(0);
+  });
+
   test("empty job payload is rejected with a 4xx + clear error", async ({
     request,
   }) => {
