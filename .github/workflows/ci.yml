@@ -83,6 +83,7 @@ jobs:
           python-version: "3.13"
       - run: pip install python-semantic-release
       - name: Validate config parses correctly
+        shell: bash {0}
         run: |
           # Exit 0 = version printed, 1 = no release (expected on PR branch), 2+ = config error
           semantic-release version --print --no-vcs-release; rc=$?
