@@ -113,6 +113,20 @@ upload_to_repository = false
 - Deploy workflow: still triggers on push to main, still uses commit SHA for Docker image tags.
 - Docker compose: `COMMIT_SHA` env var remains, version is additive.
 
+## Testing Plan
+
+**1. Health endpoint**: pytest — `GET /v1/health` returns JSON with `version` matching `backend.__version__` and `commit` from the `COMMIT_SHA` env var (falls back to a default like `"unknown"` when unset).
+
+**2. Frontend version display**: Flutter widget test — verify the version text widget renders in each screen's scaffold. Test with both a defined `APP_VERSION` and the `'dev'` default.
+
+**3. Version file sync**: A CI lint step (shell or pytest) that reads all 6 version sources (`pyproject.toml`, `backend/__init__.py`, `shared/pyproject.toml`, `svc-decomposer/pyproject.toml`, `svc-assembler/pyproject.toml`, semver portion of `frontend/pubspec.yaml`) and asserts they match. Catches manual edits that drift.
+
+**4. Semantic-release dry run**: Run `semantic-release version --dry-run` in CI on PRs to validate config parsing and commit history readability. No actual bump — just confirms the setup works.
+
+**5. release.yml workflow**: Manual validation via `workflow_dispatch` on first deployment. Verify the git tag, release commit, and all version files are correct after the first real merge.
+
+**6. pubspec.yaml sync script**: Test the sync logic in isolation — given a version string and current pubspec content, assert correct semver and incremented build number in output.
+
 ## Out of Scope
 
 - Changelog generation (can be added later via semantic-release's built-in support).
