@@ -3,7 +3,7 @@ FROM python:3.12-slim
 
 WORKDIR /app
 
-RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg \
+RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg gcc g++ \
     && rm -rf /var/lib/apt/lists/*
 
 COPY shared/ shared/
@@ -11,5 +11,9 @@ RUN pip install --no-cache-dir ./shared
 
 COPY pyproject.toml .
 COPY backend/ backend/
-RUN pip install --no-cache-dir "setuptools<78" ".[basic-pitch]" \
+# madmom requires Cython + numpy at build time (C extensions).
+# Mirror the Makefile install-basic-pitch sequence.
+RUN pip install --no-cache-dir setuptools Cython numpy \
+    && pip install --no-cache-dir --no-build-isolation "madmom>=0.16" \
+    && pip install --no-cache-dir ".[basic-pitch]" \
     && pip install --no-cache-dir --no-deps "basic-pitch>=0.4"

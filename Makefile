@@ -45,6 +45,12 @@ install-backend:
 	pip install -e ".[dev]"
 
 install-basic-pitch:
+	# madmom has no pre-built wheels and its setup.py requires Cython +
+	# setuptools at build time.  pip's default build-isolation doesn't
+	# expose packages already in the venv, so we pre-install the build
+	# deps and then build madmom without isolation.
+	pip install setuptools Cython numpy
+	pip install --no-build-isolation "madmom>=0.16"
 	pip install -e ".[basic-pitch]"
 	# basic-pitch 0.4.0 hard-codes tensorflow-macos as a base dep on
 	# Darwin+Python>3.11 (no wheels for 3.13), so install it with

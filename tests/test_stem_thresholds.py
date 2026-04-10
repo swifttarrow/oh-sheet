@@ -21,10 +21,14 @@ import pytest
 
 pretty_midi = pytest.importorskip("pretty_midi")
 
-from backend.services import transcribe as transcribe_mod  # noqa: E402
+from backend.services import transcribe_audio as audio_mod  # noqa: E402
+from backend.services import transcribe_inference as inference_mod  # noqa: E402
+from backend.services import transcribe_pipeline_stems as stems_mod  # noqa: E402
 from backend.services.stem_separation import SeparatedStems, StemSeparationStats  # noqa: E402
-from backend.services.transcribe import (  # noqa: E402
+from backend.services.transcribe_inference import (  # noqa: E402
     _BasicPitchPass,
+)
+from backend.services.transcribe_pipeline_stems import (  # noqa: E402
     _run_with_stems,
 )
 from backend.services.transcription_cleanup import CleanupStats  # noqa: E402
@@ -67,17 +71,17 @@ def _make_stems(tmp_path: Path) -> SeparatedStems:
 def stub_audio_helpers(monkeypatch):
     """Silence audio-only stages — tempo, chord recog, duration probe."""
     monkeypatch.setattr(
-        transcribe_mod, "tempo_map_from_audio_path", lambda _path: None
+        stems_mod, "tempo_map_from_audio_path", lambda _path: None
     )
     monkeypatch.setattr(
-        transcribe_mod, "_audio_duration_sec", lambda _path: None
+        audio_mod, "_audio_duration_sec", lambda _path: None
     )
 
     def fake_recognize_chords(_path, **_kwargs):
         from backend.services.chord_recognition import ChordRecognitionStats
         return [], ChordRecognitionStats(skipped=True)
 
-    monkeypatch.setattr(transcribe_mod, "recognize_chords", fake_recognize_chords)
+    monkeypatch.setattr(stems_mod, "recognize_chords", fake_recognize_chords)
 
 
 # ---------------------------------------------------------------------------
@@ -98,7 +102,7 @@ def test_per_stem_bp_thresholds_are_passed_correctly(
         captured[label] = kw
         return _make_pass(label)
 
-    monkeypatch.setattr(transcribe_mod, "_basic_pitch_single_pass", fake_pass)
+    monkeypatch.setattr(inference_mod, "_basic_pitch_single_pass", fake_pass)
 
     from backend.config import settings
     monkeypatch.setattr(settings, "demucs_parallel_stems", False)
@@ -148,7 +152,7 @@ def test_per_stem_cleanup_thresholds_are_passed_correctly(
         captured[label] = kw
         return _make_pass(label)
 
-    monkeypatch.setattr(transcribe_mod, "_basic_pitch_single_pass", fake_pass)
+    monkeypatch.setattr(inference_mod, "_basic_pitch_single_pass", fake_pass)
 
     from backend.config import settings
     monkeypatch.setattr(settings, "demucs_parallel_stems", False)
@@ -189,7 +193,7 @@ def test_generic_fallback_when_stem_specific_is_none(
         captured[label] = kw
         return _make_pass(label)
 
-    monkeypatch.setattr(transcribe_mod, "_basic_pitch_single_pass", fake_pass)
+    monkeypatch.setattr(inference_mod, "_basic_pitch_single_pass", fake_pass)
 
     from backend.config import settings
     monkeypatch.setattr(settings, "demucs_parallel_stems", False)
