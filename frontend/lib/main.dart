@@ -5,6 +5,7 @@ import 'responsive.dart';
 import 'screens/upload_screen.dart';
 import 'theme.dart';
 import 'widgets/sticker_widgets.dart';
+import 'widgets/version_footer.dart';
 
 void main() {
   runApp(const OhSheetApp());
@@ -61,50 +62,59 @@ class _AppShellState extends State<_AppShell> {
         if (wide) {
           return Scaffold(
             backgroundColor: OhSheetColors.cream,
-            body: Row(
+            body: Stack(
               children: [
-                DecoratedBox(
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    border: const Border(
-                      right: BorderSide(color: OhSheetColors.inkStroke, width: 2.5),
+                Row(
+                  children: [
+                    DecoratedBox(
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        border: const Border(
+                          right: BorderSide(color: OhSheetColors.inkStroke, width: 2.5),
+                        ),
+                        boxShadow: [
+                          BoxShadow(
+                            color: OhSheetColors.inkStroke.withValues(alpha: 0.07),
+                            offset: const Offset(4, 0),
+                            blurRadius: 14,
+                          ),
+                        ],
+                      ),
+                      child: NavigationRail(
+                        selectedIndex: _currentIndex,
+                        onDestinationSelected: (i) => setState(() => _currentIndex = i),
+                        labelType: NavigationRailLabelType.all,
+                        destinations: const [
+                          NavigationRailDestination(
+                            icon: Icon(Icons.home_outlined),
+                            selectedIcon: Icon(Icons.home),
+                            label: Text('Home'),
+                          ),
+                          NavigationRailDestination(
+                            icon: Icon(Icons.library_music_outlined),
+                            selectedIcon: Icon(Icons.library_music),
+                            label: Text('Library'),
+                          ),
+                          NavigationRailDestination(
+                            icon: Icon(Icons.person_outline),
+                            selectedIcon: Icon(Icons.person),
+                            label: Text('Profile'),
+                          ),
+                        ],
+                      ),
                     ),
-                    boxShadow: [
-                      BoxShadow(
-                        color: OhSheetColors.inkStroke.withValues(alpha: 0.07),
-                        offset: const Offset(4, 0),
-                        blurRadius: 14,
+                    Expanded(
+                      child: IndexedStack(
+                        index: _currentIndex,
+                        children: pages,
                       ),
-                    ],
-                  ),
-                  child: NavigationRail(
-                    selectedIndex: _currentIndex,
-                    onDestinationSelected: (i) => setState(() => _currentIndex = i),
-                    labelType: NavigationRailLabelType.all,
-                    destinations: const [
-                      NavigationRailDestination(
-                        icon: Icon(Icons.home_outlined),
-                        selectedIcon: Icon(Icons.home),
-                        label: Text('Home'),
-                      ),
-                      NavigationRailDestination(
-                        icon: Icon(Icons.library_music_outlined),
-                        selectedIcon: Icon(Icons.library_music),
-                        label: Text('Library'),
-                      ),
-                      NavigationRailDestination(
-                        icon: Icon(Icons.person_outline),
-                        selectedIcon: Icon(Icons.person),
-                        label: Text('Profile'),
-                      ),
-                    ],
-                  ),
+                    ),
+                  ],
                 ),
-                Expanded(
-                  child: IndexedStack(
-                    index: _currentIndex,
-                    children: pages,
-                  ),
+                const Positioned(
+                  right: 12,
+                  bottom: 8,
+                  child: VersionFooter(),
                 ),
               ],
             ),
@@ -113,9 +123,18 @@ class _AppShellState extends State<_AppShell> {
 
         return Scaffold(
           backgroundColor: OhSheetColors.cream,
-          body: IndexedStack(
-            index: _currentIndex,
-            children: pages,
+          body: Stack(
+            children: [
+              IndexedStack(
+                index: _currentIndex,
+                children: pages,
+              ),
+              const Positioned(
+                right: 12,
+                bottom: 8,
+                child: VersionFooter(),
+              ),
+            ],
           ),
           bottomNavigationBar: Padding(
             padding: const EdgeInsets.fromLTRB(16, 0, 16, 14),
