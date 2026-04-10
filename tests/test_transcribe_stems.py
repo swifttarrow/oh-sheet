@@ -226,7 +226,7 @@ def test_run_with_stems_parallel_populates_all_three_roles(
 
     call_log: list[str] = []
 
-    def fake_pass(stem_path: Path, *, keep_model_output: bool = True):
+    def fake_pass(stem_path: Path, *, keep_model_output: bool = True, **_kw):
         # Per-stem expectation: only the vocals pass keeps its
         # ``model_output`` alive, because the Phase-2 Viterbi
         # melody extractor needs the vocals contour to re-score
@@ -285,7 +285,7 @@ def test_run_with_stems_isolates_per_stem_failures(
     stems = _make_stems(tmp_path)
     stem_stats = StemSeparationStats(stems_written=["vocals", "bass", "other", "drums"])
 
-    def fake_pass(stem_path: Path, *, keep_model_output: bool = True):
+    def fake_pass(stem_path: Path, *, keep_model_output: bool = True, **_kw):
         if stem_path.stem == "bass":
             raise RuntimeError("simulated BP OOM on bass stem")
         return _make_pass(stem_path.stem)
@@ -322,7 +322,7 @@ def test_run_with_stems_serial_mode_matches_parallel(
     stems = _make_stems(tmp_path)
     stem_stats = StemSeparationStats(stems_written=["vocals", "bass", "other", "drums"])
 
-    def fake_pass(stem_path: Path, *, keep_model_output: bool = True):
+    def fake_pass(stem_path: Path, *, keep_model_output: bool = True, **_kw):
         return _make_pass(stem_path.stem)
 
     monkeypatch.setattr(transcribe_mod, "_basic_pitch_single_pass", fake_pass)
@@ -355,7 +355,7 @@ def test_run_with_stems_all_empty_falls_back_to_single_mix(
     stems = _make_stems(tmp_path)
     stem_stats = StemSeparationStats(stems_written=["vocals", "bass", "other", "drums"])
 
-    def fake_pass(stem_path: Path, *, keep_model_output: bool = True):
+    def fake_pass(stem_path: Path, *, keep_model_output: bool = True, **_kw):
         p = _make_pass(stem_path.stem)
         p.cleaned_events = []  # empty — forces the fallback branch
         return p
@@ -435,7 +435,7 @@ def test_run_with_stems_runs_viterbi_on_vocals_contour(
     # the same numpy array we planted on the vocals ``_BasicPitchPass``.
     fake_contour = np.zeros((20, melody_mod.N_CONTOUR_BINS), dtype=np.float32)
 
-    def fake_pass(stem_path: Path, *, keep_model_output: bool = True):
+    def fake_pass(stem_path: Path, *, keep_model_output: bool = True, **_kw):
         label = stem_path.stem
         mo = {"contour": fake_contour} if label == "vocals" else {}
         return _make_pass(label, model_output=mo)
@@ -516,7 +516,7 @@ def test_run_with_stems_falls_back_when_viterbi_returns_empty(
 
     fake_contour = np.zeros((20, melody_mod.N_CONTOUR_BINS), dtype=np.float32)
 
-    def fake_pass(stem_path: Path, *, keep_model_output: bool = True):
+    def fake_pass(stem_path: Path, *, keep_model_output: bool = True, **_kw):
         label = stem_path.stem
         mo = {"contour": fake_contour} if label == "vocals" else {}
         return _make_pass(label, model_output=mo)
@@ -561,15 +561,16 @@ def test_run_with_stems_falls_back_when_viterbi_returns_empty(
 def test_crepe_owns_melody_skips_basic_pitch_vocals_pass(
     monkeypatch, tmp_path, stub_audio_helpers,
 ):
-    """When CREPE returns events, the vocals stem skips Basic Pitch.
+    """When CREPE returns events and hybrid is OFF, vocals stem skips BP.
 
-    This is the "crepe_owns_melody" wiring: if
-    ``crepe_vocal_melody_enabled`` is on and
-    ``extract_vocal_melody_crepe`` returns a non-empty note list, the
-    stems path drops the vocals job from ``stem_jobs`` entirely and
-    routes the CREPE events straight to MELODY. Basic Pitch still
-    runs on the bass/other stems. This test pins all three guarantees
-    so a future refactor can't silently re-enable the duplicate pass.
+    This is the "crepe_owns_melody" wiring without hybrid fusion: if
+    ``crepe_vocal_melody_enabled`` is on, ``crepe_hybrid_enabled`` is
+    off, and ``extract_vocal_melody_crepe`` returns a non-empty note
+    list, the stems path drops the vocals job from ``stem_jobs``
+    entirely and routes the CREPE events straight to MELODY. Basic
+    Pitch still runs on the bass/other stems. This test pins all three
+    guarantees so a future refactor can't silently re-enable the
+    duplicate pass.
     """
     from backend.services.crepe_melody import CrepeMelodyStats
 
@@ -578,7 +579,7 @@ def test_crepe_owns_melody_skips_basic_pitch_vocals_pass(
 
     call_log: list[str] = []
 
-    def fake_pass(stem_path: Path, *, keep_model_output: bool = True):
+    def fake_pass(stem_path: Path, *, keep_model_output: bool = True, **_kw):
         call_log.append(stem_path.stem)
         return _make_pass(stem_path.stem)
 
@@ -606,6 +607,7 @@ def test_crepe_owns_melody_skips_basic_pitch_vocals_pass(
 
     from backend.config import settings
     monkeypatch.setattr(settings, "crepe_vocal_melody_enabled", True)
+    monkeypatch.setattr(settings, "crepe_hybrid_enabled", False)
     monkeypatch.setattr(settings, "demucs_parallel_stems", True)
     monkeypatch.setattr(settings, "chord_recognition_enabled", False)
 
@@ -614,9 +616,9 @@ def test_crepe_owns_melody_skips_basic_pitch_vocals_pass(
 
     result, _ = _run_with_stems(audio_path, stems, stem_stats)
 
-    # (a) crepe_owns_melody must skip the BP vocals pass entirely.
+    # (a) crepe_owns_melody (non-hybrid) must skip the BP vocals pass.
     assert "vocals" not in call_log, (
-        "crepe_owns_melody must skip the BP vocals pass"
+        "crepe_owns_melody must skip the BP vocals pass when hybrid is off"
     )
     # The other two stems still ran through Basic Pitch.
     assert "bass" in call_log
@@ -634,6 +636,72 @@ def test_crepe_owns_melody_skips_basic_pitch_vocals_pass(
     # operators can tell which melody path ran.
     warnings_joined = " ".join(result.quality.warnings)
     assert "crepe test warn" in warnings_joined
+
+
+def test_crepe_hybrid_runs_bp_vocals_and_fuses(
+    monkeypatch, tmp_path, stub_audio_helpers,
+):
+    """When CREPE succeeds and hybrid is ON, both CREPE and BP vocals run.
+
+    The hybrid path runs BP on the vocals stem alongside CREPE, then
+    fuses the two event lists via ``fuse_crepe_and_bp_melody``. This
+    test verifies that (a) BP does run on the vocals stem, and (b) the
+    MELODY track carries the fused output (CREPE's pitch with BP's
+    onset timing when they overlap).
+    """
+    from backend.services.crepe_melody import CrepeMelodyStats
+
+    stems = _make_stems(tmp_path)
+    stem_stats = StemSeparationStats(stems_written=["vocals", "bass", "other", "drums"])
+
+    call_log: list[str] = []
+
+    def fake_pass(stem_path: Path, *, keep_model_output: bool = True, **_kw):
+        call_log.append(stem_path.stem)
+        return _make_pass(stem_path.stem)
+
+    # CREPE returns a note at pitch 74.
+    crepe_note = (0.0, 1.0, 74, 0.6, None)
+    crepe_stats = CrepeMelodyStats(
+        skipped=False, model="full", device="cpu",
+        n_frames=100, n_voiced_frames=60, n_notes=1,
+        wall_sec=0.1, warnings=["crepe test warn"],
+    )
+
+    monkeypatch.setattr(
+        transcribe_mod,
+        "extract_vocal_melody_crepe",
+        lambda *_args, **_kwargs: ([crepe_note], crepe_stats),
+    )
+    monkeypatch.setattr(transcribe_mod, "_basic_pitch_single_pass", fake_pass)
+
+    from backend.config import settings
+    monkeypatch.setattr(settings, "crepe_vocal_melody_enabled", True)
+    monkeypatch.setattr(settings, "crepe_hybrid_enabled", True)
+    monkeypatch.setattr(settings, "demucs_parallel_stems", True)
+    monkeypatch.setattr(settings, "chord_recognition_enabled", False)
+
+    audio_path = tmp_path / "mix.wav"
+    audio_path.write_bytes(b"\x00")
+
+    result, _ = _run_with_stems(audio_path, stems, stem_stats)
+
+    # (a) In hybrid mode, BP DOES run on the vocals stem.
+    assert "vocals" in call_log, (
+        "hybrid mode must run BP on the vocals stem for fusion"
+    )
+    assert "bass" in call_log
+    assert "other" in call_log
+
+    # (b) The MELODY track should exist (fusion of CREPE + BP events).
+    melody_tracks = [
+        t for t in result.midi_tracks if t.instrument == InstrumentRole.MELODY
+    ]
+    assert len(melody_tracks) == 1
+    # The fused output should include the CREPE pitch (74) — either
+    # directly or as the fused pitch when BP vocals overlap.
+    pitches = {n.pitch for n in melody_tracks[0].notes}
+    assert 74 in pitches
 
 
 def test_run_with_stems_uses_backfill_melody_notes_wrapper(
@@ -668,7 +736,7 @@ def test_run_with_stems_uses_backfill_melody_notes_wrapper(
     stem_stats = StemSeparationStats(stems_written=["vocals", "bass", "other", "drums"])
     fake_contour = np.zeros((20, melody_mod.N_CONTOUR_BINS), dtype=np.float32)
 
-    def fake_pass(stem_path: Path, *, keep_model_output: bool = True):
+    def fake_pass(stem_path: Path, *, keep_model_output: bool = True, **_kw):
         label = stem_path.stem
         mo = {"contour": fake_contour} if label == "vocals" else {}
         return _make_pass(label, model_output=mo)
@@ -746,7 +814,7 @@ def test_run_with_stems_blob_midi_inherits_audio_tempo_and_4_4(
     stems = _make_stems(tmp_path)
     stem_stats = StemSeparationStats(stems_written=["vocals", "bass", "other", "drums"])
 
-    def fake_pass(stem_path: Path, *, keep_model_output: bool = True):
+    def fake_pass(stem_path: Path, *, keep_model_output: bool = True, **_kw):
         # All three stems drop ``model_output`` — we're testing the
         # blob-MIDI tempo wiring, not the Viterbi path.
         return _make_pass(stem_path.stem)
@@ -816,7 +884,7 @@ def test_run_with_stems_blob_midi_falls_back_to_120_without_tempo_map(
     stems = _make_stems(tmp_path)
     stem_stats = StemSeparationStats(stems_written=["vocals", "bass", "other", "drums"])
 
-    def fake_pass(stem_path: Path, *, keep_model_output: bool = True):
+    def fake_pass(stem_path: Path, *, keep_model_output: bool = True, **_kw):
         return _make_pass(stem_path.stem)
 
     monkeypatch.setattr(transcribe_mod, "_basic_pitch_single_pass", fake_pass)
@@ -886,7 +954,7 @@ def test_run_without_stems_falls_back_to_midi_data_when_cleaned_events_empty(
     # "cleanup dropped everything" shape.
     empty_pm = pretty_midi.PrettyMIDI()
 
-    def fake_pass(audio_path: Path, *, keep_model_output: bool = True):
+    def fake_pass(audio_path: Path, *, keep_model_output: bool = True, **_kw):
         return _BasicPitchPass(
             cleaned_events=[],
             model_output={},
@@ -938,7 +1006,7 @@ def test_run_with_stems_falls_back_to_midi_data_when_rebuild_returns_none(
     # the outer "all stems empty → fall back to single-mix" guard —
     # this test is specifically about the *blob rebuild* fallback
     # inside the stems-path happy route.
-    def fake_pass(stem_path: Path, *, keep_model_output: bool = True):
+    def fake_pass(stem_path: Path, *, keep_model_output: bool = True, **_kw):
         return _make_pass(stem_path.stem)
 
     monkeypatch.setattr(transcribe_mod, "_basic_pitch_single_pass", fake_pass)
