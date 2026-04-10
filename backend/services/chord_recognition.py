@@ -318,9 +318,14 @@ def _smooth_chords_hmm(
             diatonic_share = 0.15
             non_diatonic_share = 0.05
             total_share = (
-                diatonic_share * max(n_diatonic, 1)
-                + non_diatonic_share * max(n_non_diatonic, 1)
+                diatonic_share * n_diatonic
+                + non_diatonic_share * n_non_diatonic
             )
+            if total_share == 0:
+                # All non-self states are in one category — uniform fallback.
+                total_share = 1.0
+                diatonic_share = 1.0 / max(n_diatonic + n_non_diatonic, 1)
+                non_diatonic_share = diatonic_share
             for j in range(n_states):
                 if j == i:
                     continue

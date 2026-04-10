@@ -152,10 +152,10 @@ class TranscribeService:
                 payload.audio.uri, audio_path, exc,
             )
 
-        if not audio_path.is_file():
-            return _stub_result(f"audio file missing: {audio_path}")
-
         try:
+            if not audio_path.is_file():
+                return _stub_result(f"audio file missing: {audio_path}")
+
             result, midi_bytes = await asyncio.to_thread(
                 _run_basic_pitch_sync, audio_path,
             )

@@ -120,7 +120,7 @@ def refine_durations(
             refined.append(ev)
             continue
 
-        new_offset = start + (start_frame + decay_idx) * frame_duration + tail_sec
+        new_offset = start + decay_idx * frame_duration + tail_sec
 
         # Enforce minimum duration
         if new_offset - start < min_duration_sec:

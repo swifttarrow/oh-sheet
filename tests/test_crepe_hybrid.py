@@ -184,35 +184,6 @@ class TestOctaveSnap:
         result = _octave_snap(notes, max_pitch_leap=12)
         assert result[1][2] == 71  # unchanged
 
-    def test_cascading_snaps(self):
-        """Multiple consecutive octave errors are corrected in sequence.
-
-        Because the filter uses the already-snapped predecessor, a
-        cascading chain of octave errors is corrected left-to-right.
-        """
-        # Normal, octave-up, octave-up, normal
-        # After first snap: [60, 60, 72, 60] — second note now 60,
-        # so third note (72) is +12 from snapped predecessor (60) and
-        # +12 from successor (60), so it also snaps.
-        notes = [
-            _ne(0.0, 0.5, 60),
-            _ne(0.5, 1.0, 72),   # +12 from 60, +12 from next(72), but succ check uses original
-            _ne(1.0, 1.5, 72),   # after prev snapped to 60: +12 from 60, +12 from 60
-            _ne(1.5, 2.0, 60),   # close to 60
-        ]
-        _octave_snap(notes, max_pitch_leap=12)
-        # First octave error: pred=60, mid=72, succ=72 (original).
-        # diff_prev=12, diff_succ=0 — succ is NOT exactly 12 away, so
-        # the first one is NOT snapped.
-        # Second: pred=72 (unsnapped), mid=72, succ=60.
-        # diff_prev=0, diff_succ=12 — NOT both 12, so not snapped either.
-        # For cascading to work we need a pattern where both neighbors
-        # are consistently 12 away. Let's use a different pattern:
-        # [60, 72, 60, 72, 60] — alternating octave jumps
-        # First: pred=60, mid=72, succ=60 → diffs both 12, neighbors 0 apart → snap to 60
-        # Second: snapped-prev=60, mid=60, succ=72 → diffs both 0 and 12 → no snap needed
-        pass  # Tested via the simpler test below
-
     def test_cascading_snaps_alternating(self):
         """Alternating octave error pattern is corrected."""
         # [60, 72, 60] — the classic single octave error

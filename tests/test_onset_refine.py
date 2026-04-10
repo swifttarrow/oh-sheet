@@ -63,13 +63,6 @@ def _mock_deps(odf_values, odf_times, peak_indices):
     }
 
 
-def _apply_patches(mocks):
-    """Return a combined context manager that patches all four functions."""
-    import contextlib
-
-    return contextlib.ExitStack()
-
-
 class _PatchContext:
     """Context manager that patches librosa/scipy inside onset_refine."""
 

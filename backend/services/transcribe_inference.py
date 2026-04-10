@@ -8,6 +8,7 @@ Extracted from ``transcribe.py``.
 from __future__ import annotations
 
 import logging
+import threading
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -32,20 +33,29 @@ log = logging.getLogger(__name__)
 # Held as Any to avoid importing basic_pitch at module import time
 # (optional dep, stub path needs to work without it).
 _BP_MODEL: Any = None
+_BP_MODEL_LOCK = threading.Lock()
 
 
 def _load_basic_pitch_model() -> Any:
-    """Lazy-load the Basic Pitch model. Cached for the process lifetime."""
+    """Lazy-load the Basic Pitch model. Cached for the process lifetime.
+
+    Uses double-checked locking so parallel stem threads don't each
+    load their own copy of the model.
+    """
     global _BP_MODEL
     if _BP_MODEL is not None:
         return _BP_MODEL
 
-    from basic_pitch import ICASSP_2022_MODEL_PATH  # noqa: PLC0415
-    from basic_pitch.inference import Model  # noqa: PLC0415
+    with _BP_MODEL_LOCK:
+        if _BP_MODEL is not None:
+            return _BP_MODEL
 
-    log.info("Loading Basic Pitch model from %s", ICASSP_2022_MODEL_PATH)
-    _BP_MODEL = Model(ICASSP_2022_MODEL_PATH)
-    return _BP_MODEL
+        from basic_pitch import ICASSP_2022_MODEL_PATH  # noqa: PLC0415
+        from basic_pitch.inference import Model  # noqa: PLC0415
+
+        log.info("Loading Basic Pitch model from %s", ICASSP_2022_MODEL_PATH)
+        _BP_MODEL = Model(ICASSP_2022_MODEL_PATH)
+        return _BP_MODEL
 
 
 @dataclass

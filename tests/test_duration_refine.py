@@ -77,6 +77,31 @@ class TestRefineShortensDecayedNote:
         assert stats.mean_trim_sec > 0
         assert refined[0][0] == note_start
 
+    def test_note_trimmed_at_decay_nonzero_start(self):
+        """Regression: notes with start > 0 must also be refined."""
+        pitch = 60
+        note_start = 2.0
+        note_end = 3.0
+        start_frame = int(note_start / FRAME_DUR)
+        decay_frame = start_frame + 40
+        n_frames = int(note_end / FRAME_DUR) + 10
+
+        fake_cqt = _make_cqt(N_BINS, n_frames, pitch, decay_frame)
+        fake_audio = np.zeros(int(SR * note_end), dtype=np.float32)
+        mock_lr = _make_mock_librosa(fake_audio, SR, fake_cqt)
+
+        events: list[NoteEvent] = [(note_start, note_end, pitch, 0.8, None)]
+
+        with patch.dict(sys.modules, {"librosa": mock_lr}):
+            refined, stats = refine_durations(
+                events, Path("/fake/audio.wav"), sr=SR, hop_length=HOP
+            )
+
+        assert len(refined) == 1
+        assert refined[0][1] < note_end, "Note with start > 0 should be trimmed"
+        assert stats.refined_count == 1
+        assert refined[0][0] == note_start
+
 
 class TestMinDurationRespected:
     def test_min_duration_floor(self):

@@ -202,8 +202,8 @@ def _run_with_stems(
             frame = settings.basic_pitch_stem_frame_threshold
         return onset, frame
 
-    def _get_stem_cleanup_thresholds(label: str) -> tuple[float | None, float | None]:
-        """Return (octave_amp_ratio, ghost_max_duration_sec) for a given stem."""
+    def _get_stem_cleanup_thresholds() -> tuple[float | None, float | None]:
+        """Return (octave_amp_ratio, ghost_max_duration_sec) for a stem."""
         return (
             settings.cleanup_stem_octave_amp_ratio,
             settings.cleanup_stem_ghost_max_duration_sec,
@@ -212,7 +212,7 @@ def _run_with_stems(
     def _run_stem(job: tuple[str, Path]) -> tuple[str, _bp_mod._BasicPitchPass | None]:
         label, stem_path = job
         onset_thr, frame_thr = _get_stem_bp_thresholds(label)
-        oct_ratio, ghost_dur = _get_stem_cleanup_thresholds(label)
+        oct_ratio, ghost_dur = _get_stem_cleanup_thresholds()
         try:
             bp = _bp_mod._basic_pitch_single_pass(
                 stem_path,
@@ -259,7 +259,7 @@ def _run_with_stems(
     # envelope. The role map: vocals -> melody, bass -> bass, other -> chords.
     _stem_role_map = {"vocals": "melody", "bass": "bass", "other": "chords"}
     for label, bp in per_stem_passes.items():
-        if bp is None or not bp.cleaned_events:
+        if not bp.cleaned_events:
             continue
         role = _stem_role_map.get(label)
         if role is None:
@@ -357,22 +357,12 @@ def _run_with_stems(
             except Exception as exc:  # noqa: BLE001 — never let Viterbi sink transcribe
                 log.warning("vocals-stem melody Viterbi raised: %s", exc)
             else:
-                # Only promote the Viterbi output when it actually
-                # ran and found voiced content. ``skipped=True``
-                # means numpy/contour-shape issues; an empty
-                # ``extracted`` with no skip means the path was
-                # entirely unvoiced — either way, fall back to the
-                # raw BP events rather than silently drop the track.
                 if not melody_stats.skipped and extracted:
                     vocals_melody_events = extracted
-            # Release the contour reference now that the Viterbi is done
-            # with it — mirrors the ``keep_model_output=False`` memory
-            # optimization for the bass/other stems so the vocals
-            # contour tensor can be GC'd before the result is built.
-            # Kept inside the ``melody_extraction_enabled`` guard so a
-            # future downstream consumer that reads ``model_output``
-            # past this point isn't silently handed an empty dict.
-            vocals_bp.model_output.clear()
+        # Release the contour tensor unconditionally so it can be GC'd
+        # before the result is built — mirrors ``keep_model_output=False``
+        # for bass/other stems.
+        vocals_bp.model_output.clear()
         events_by_role[InstrumentRole.MELODY] = vocals_melody_events
     if bass_bp is not None and bass_bp.cleaned_events:
         events_by_role[InstrumentRole.BASS] = bass_bp.cleaned_events

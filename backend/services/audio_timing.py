@@ -124,10 +124,14 @@ def _madmom_beat_track(y, sr: int) -> list[float] | None:
 
         import soundfile as sf  # noqa: PLC0415
 
-        with tempfile.NamedTemporaryFile(suffix=".wav", delete=True) as tmp:
+        tmp = tempfile.NamedTemporaryFile(suffix=".wav", delete=False)
+        try:
             sf.write(tmp.name, y, _MADMOM_SR)
+            tmp.close()
             rnn_processor = RNNBeatProcessor()
             activations = rnn_processor(tmp.name)
+        finally:
+            Path(tmp.name).unlink(missing_ok=True)
 
         dbn_processor = DBNBeatTrackingProcessor(fps=100)
         beat_times = dbn_processor(activations)

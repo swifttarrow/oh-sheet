@@ -250,8 +250,8 @@ def _make_settings(**overrides):
         # Per-role overrides
         "cleanup_melody_merge_gap_sec": 0.02,
         "cleanup_melody_ghost_max_duration_sec": 0.04,
-        "cleanup_bass_merge_gap_sec": 0.05,
-        "cleanup_bass_ghost_max_duration_sec": 0.08,
+        "cleanup_bass_merge_gap_sec": 0.04,
+        "cleanup_bass_ghost_max_duration_sec": 0.06,
         "cleanup_chords_merge_gap_sec": 0.04,
         "cleanup_chords_octave_amp_ratio": 0.5,
         # Energy gating
@@ -285,19 +285,19 @@ def test_cleanup_for_role_melody_uses_tighter_merge():
 
 
 def test_cleanup_for_role_bass_uses_looser_merge():
-    """Bass role should use 0.05 merge gap instead of global 0.03."""
-    # Two fragments with 40ms gap: above global 0.03 but below bass's 0.05
+    """Bass role should use 0.04 merge gap instead of global 0.03."""
+    # Two fragments with 35ms gap: above global 0.03 but below bass's 0.04
     events = [
         _n(0.0, 0.50, 36, 0.9),
-        _n(0.54, 1.00, 36, 0.8),  # 40ms gap
+        _n(0.535, 1.00, 36, 0.8),  # 35ms gap
     ]
     s = _make_settings()
 
-    # With bass role (0.05 gap) — should merge (40ms < 50ms)
+    # With bass role (0.04 gap) — should merge (35ms < 40ms)
     cleaned_bass, stats_bass = cleanup_for_role(events, "bass", s)
     assert stats_bass.merged == 1
 
-    # With global defaults (0.03 gap) — should NOT merge (40ms > 30ms)
+    # With global defaults (0.03 gap) — should NOT merge (35ms > 30ms)
     cleaned_global, stats_global = cleanup_note_events(events)
     assert stats_global.merged == 0
 
