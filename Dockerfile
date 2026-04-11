@@ -15,8 +15,15 @@ FROM python:3.12-slim
 
 WORKDIR /app
 
-# System deps for yt-dlp (ffmpeg) and general health
-RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg curl \
+# System deps:
+#   ffmpeg   — yt-dlp audio extraction
+#   lilypond — MusicXML → PDF via musicxml2ly + lilypond (the engrave
+#              service falls back to a 60-byte stub PDF without this)
+#   curl     — health checks / debug
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        ffmpeg \
+        lilypond \
+        curl \
     && rm -rf /var/lib/apt/lists/*
 
 # Install shared package first (changes less often)

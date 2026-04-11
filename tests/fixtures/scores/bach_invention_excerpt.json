@@ -1,0 +1,119 @@
+{
+  "schema_version": "3.0.0",
+  "right_hand": [
+    {
+      "id": "rh-0000",
+      "pitch": 72,
+      "onset_beat": 0.0,
+      "duration_beat": 1.0,
+      "velocity": 80,
+      "voice": 1
+    },
+    {
+      "id": "rh-0001",
+      "pitch": 74,
+      "onset_beat": 1.0,
+      "duration_beat": 1.0,
+      "velocity": 80,
+      "voice": 1
+    },
+    {
+      "id": "rh-0002",
+      "pitch": 76,
+      "onset_beat": 2.0,
+      "duration_beat": 1.0,
+      "velocity": 80,
+      "voice": 1
+    },
+    {
+      "id": "rh-0003",
+      "pitch": 77,
+      "onset_beat": 3.0,
+      "duration_beat": 1.0,
+      "velocity": 80,
+      "voice": 1
+    },
+    {
+      "id": "rh-0004",
+      "pitch": 79,
+      "onset_beat": 4.0,
+      "duration_beat": 1.0,
+      "velocity": 80,
+      "voice": 1
+    },
+    {
+      "id": "rh-0005",
+      "pitch": 77,
+      "onset_beat": 5.0,
+      "duration_beat": 1.0,
+      "velocity": 80,
+      "voice": 1
+    },
+    {
+      "id": "rh-0006",
+      "pitch": 76,
+      "onset_beat": 6.0,
+      "duration_beat": 1.0,
+      "velocity": 80,
+      "voice": 1
+    },
+    {
+      "id": "rh-0007",
+      "pitch": 74,
+      "onset_beat": 7.0,
+      "duration_beat": 1.0,
+      "velocity": 80,
+      "voice": 1
+    },
+    {
+      "id": "rh-0100",
+      "pitch": 60,
+      "onset_beat": 0.0,
+      "duration_beat": 2.0,
+      "velocity": 80,
+      "voice": 2
+    },
+    {
+      "id": "rh-0101",
+      "pitch": 64,
+      "onset_beat": 2.0,
+      "duration_beat": 2.0,
+      "velocity": 80,
+      "voice": 2
+    },
+    {
+      "id": "rh-0102",
+      "pitch": 65,
+      "onset_beat": 4.0,
+      "duration_beat": 2.0,
+      "velocity": 80,
+      "voice": 2
+    },
+    {
+      "id": "rh-0103",
+      "pitch": 64,
+      "onset_beat": 6.0,
+      "duration_beat": 2.0,
+      "velocity": 80,
+      "voice": 2
+    }
+  ],
+  "left_hand": [],
+  "metadata": {
+    "key": "C:major",
+    "time_signature": [
+      4,
+      4
+    ],
+    "tempo_map": [
+      {
+        "time_sec": 0.0,
+        "beat": 0.0,
+        "bpm": 120.0
+      }
+    ],
+    "difficulty": "intermediate",
+    "sections": [],
+    "chord_symbols": []
+  }
+}

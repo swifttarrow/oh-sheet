@@ -1,0 +1,184 @@
+{
+  "schema_version": "3.0.0",
+  "right_hand": [
+    {
+      "id": "rh-0000",
+      "pitch": 60,
+      "onset_beat": 0.0,
+      "duration_beat": 1.0,
+      "velocity": 80,
+      "voice": 1
+    },
+    {
+      "id": "rh-0001",
+      "pitch": 64,
+      "onset_beat": 0.0,
+      "duration_beat": 1.0,
+      "velocity": 80,
+      "voice": 1
+    },
+    {
+      "id": "rh-0002",
+      "pitch": 67,
+      "onset_beat": 0.0,
+      "duration_beat": 1.0,
+      "velocity": 80,
+      "voice": 1
+    },
+    {
+      "id": "rh-0003",
+      "pitch": 65,
+      "onset_beat": 1.0,
+      "duration_beat": 1.0,
+      "velocity": 80,
+      "voice": 1
+    },
+    {
+      "id": "rh-0004",
+      "pitch": 69,
+      "onset_beat": 1.0,
+      "duration_beat": 1.0,
+      "velocity": 80,
+      "voice": 1
+    },
+    {
+      "id": "rh-0005",
+      "pitch": 72,
+      "onset_beat": 1.0,
+      "duration_beat": 1.0,
+      "velocity": 80,
+      "voice": 1
+    },
+    {
+      "id": "rh-0006",
+      "pitch": 67,
+      "onset_beat": 2.0,
+      "duration_beat": 1.0,
+      "velocity": 80,
+      "voice": 1
+    },
+    {
+      "id": "rh-0007",
+      "pitch": 71,
+      "onset_beat": 2.0,
+      "duration_beat": 1.0,
+      "velocity": 80,
+      "voice": 1
+    },
+    {
+      "id": "rh-0008",
+      "pitch": 74,
+      "onset_beat": 2.0,
+      "duration_beat": 1.0,
+      "velocity": 80,
+      "voice": 1
+    },
+    {
+      "id": "rh-0009",
+      "pitch": 60,
+      "onset_beat": 3.0,
+      "duration_beat": 1.0,
+      "velocity": 80,
+      "voice": 1
+    },
+    {
+      "id": "rh-0010",
+      "pitch": 64,
+      "onset_beat": 3.0,
+      "duration_beat": 1.0,
+      "velocity": 80,
+      "voice": 1
+    },
+    {
+      "id": "rh-0011",
+      "pitch": 67,
+      "onset_beat": 3.0,
+      "duration_beat": 1.0,
+      "velocity": 80,
+      "voice": 1
+    }
+  ],
+  "left_hand": [
+    {
+      "id": "lh-0000",
+      "pitch": 36,
+      "onset_beat": 0.0,
+      "duration_beat": 1.0,
+      "velocity": 70,
+      "voice": 1
+    },
+    {
+      "id": "lh-0001",
+      "pitch": 48,
+      "onset_beat": 0.0,
+      "duration_beat": 1.0,
+      "velocity": 70,
+      "voice": 1
+    },
+    {
+      "id": "lh-0002",
+      "pitch": 41,
+      "onset_beat": 1.0,
+      "duration_beat": 1.0,
+      "velocity": 70,
+      "voice": 1
+    },
+    {
+      "id": "lh-0003",
+      "pitch": 53,
+      "onset_beat": 1.0,
+      "duration_beat": 1.0,
+      "velocity": 70,
+      "voice": 1
+    },
+    {
+      "id": "lh-0004",
+      "pitch": 43,
+      "onset_beat": 2.0,
+      "duration_beat": 1.0,
+      "velocity": 70,
+      "voice": 1
+    },
+    {
+      "id": "lh-0005",
+      "pitch": 55,
+      "onset_beat": 2.0,
+      "duration_beat": 1.0,
+      "velocity": 70,
+      "voice": 1
+    },
+    {
+      "id": "lh-0006",
+      "pitch": 36,
+      "onset_beat": 3.0,
+      "duration_beat": 1.0,
+      "velocity": 70,
+      "voice": 1
+    },
+    {
+      "id": "lh-0007",
+      "pitch": 48,
+      "onset_beat": 3.0,
+      "duration_beat": 1.0,
+      "velocity": 70,
+      "voice": 1
+    }
+  ],
+  "metadata": {
+    "key": "C:major",
+    "time_signature": [
+      4,
+      4
+    ],
+    "tempo_map": [
+      {
+        "time_sec": 0.0,
+        "beat": 0.0,
+        "bpm": 120.0
+      }
+    ],
+    "difficulty": "intermediate",
+    "sections": [],
+    "chord_symbols": []
+  }
+}

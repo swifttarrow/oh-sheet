@@ -1,4 +1,3 @@
-oh-sheet.duckdns.org {
+{$DOMAIN:localhost} {
     reverse_proxy orchestrator:8000
 }
-

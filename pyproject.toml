@@ -27,6 +27,10 @@ dev = [
     "httpx>=0.26",
     "ruff>=0.4",
     "mypy>=1.10",
+    # Engrave-evaluation harness: lxml drives the xpath lints that check
+    # the MusicXML music21 emits (see tests/test_engrave_quality.py and
+    # docs/engrave-improvement-plan.md Phase 0.2 Layer L2).
+    "lxml>=5.0",
 ]
 youtube = [
     "yt-dlp>=2024.1",

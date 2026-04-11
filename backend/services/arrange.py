@@ -37,8 +37,15 @@ log = logging.getLogger(__name__)
 
 QUANT_GRID = 0.25            # 1/16th note (default / fallback)
 SPLIT_PITCH = 60             # middle C — pitches >= split go right hand
-MAX_VOICES_RH = 4
-MAX_VOICES_LH = 3
+# Piano notation is defined by at most two voices per staff (stems up =
+# melody, stems down = accompaniment). Capping here means engrave can
+# trust the voice assignment and emit ``<voice>1</voice>`` / ``<voice>2</voice>``
+# directly instead of collapsing everything back down. Going wider
+# (4/3 previously) produced voice-3 notes that OSMD's VexFlow backend
+# crashes on and that no pianist can actually read as four parallel
+# lines on one staff.
+MAX_VOICES_RH = 2
+MAX_VOICES_LH = 2
 MIN_TRACK_CONFIDENCE = 0.35
 NEAR_OVERLAP_TOL = 0.15      # beats
 
@@ -386,6 +393,7 @@ def _chord_to_score_chord(
         duration_beat=max(end - onset, QUANT_GRID),
         label=chord.label,
         root=chord.root,
+        confidence=chord.confidence,
     )
 
 
@@ -427,7 +435,7 @@ def _arrange_sync(
         grid = QUANT_GRID
     overlap_tol = 0.6 * grid
 
-    max_rh = MAX_VOICES_RH if difficulty != "beginner" else 2
+    max_rh = MAX_VOICES_RH if difficulty != "beginner" else 1
     max_lh = MAX_VOICES_LH if difficulty != "beginner" else 1
     rh_voiced = _resolve_overlaps(rh_raw, max_rh, grid=grid, overlap_tol=overlap_tol)
     lh_voiced = _resolve_overlaps(lh_raw, max_lh, grid=grid, overlap_tol=overlap_tol)

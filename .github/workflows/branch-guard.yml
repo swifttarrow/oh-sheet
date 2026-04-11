@@ -1,0 +1,25 @@
+name: Branch Guard
+
+# Enforces the release flow: the only way to get code into main is via a PR
+# from the qa branch. This check must be set as a required status check on
+# main's branch protection rules for the guarantee to hold.
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, reopened, synchronize, edited]
+
+jobs:
+  enforce-qa-source:
+    name: PR to main must come from qa
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify source branch is qa
+        run: |
+          if [[ "${{ github.event.pull_request.head.ref }}" != "qa" ]]; then
+            echo "::error::PRs to main must originate from the 'qa' branch."
+            echo "::error::This PR's source is '${{ github.event.pull_request.head.ref }}'."
+            echo "::error::Release flow: feature branch → qa → main."
+            exit 1
+          fi
+          echo "Source branch is qa — OK."

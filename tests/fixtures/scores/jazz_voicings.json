@@ -1,0 +1,216 @@
+{
+  "schema_version": "3.0.0",
+  "right_hand": [
+    {
+      "id": "rh-0000",
+      "pitch": 64,
+      "onset_beat": 0.0,
+      "duration_beat": 1.0,
+      "velocity": 80,
+      "voice": 1
+    },
+    {
+      "id": "rh-0001",
+      "pitch": 71,
+      "onset_beat": 0.0,
+      "duration_beat": 1.0,
+      "velocity": 80,
+      "voice": 1
+    },
+    {
+      "id": "rh-0002",
+      "pitch": 61,
+      "onset_beat": 1.0,
+      "duration_beat": 1.0,
+      "velocity": 80,
+      "voice": 1
+    },
+    {
+      "id": "rh-0003",
+      "pitch": 70,
+      "onset_beat": 1.0,
+      "duration_beat": 1.0,
+      "velocity": 80,
+      "voice": 1
+    },
+    {
+      "id": "rh-0004",
+      "pitch": 65,
+      "onset_beat": 2.0,
+      "duration_beat": 1.0,
+      "velocity": 80,
+      "voice": 1
+    },
+    {
+      "id": "rh-0005",
+      "pitch": 72,
+      "onset_beat": 2.0,
+      "duration_beat": 1.0,
+      "velocity": 80,
+      "voice": 1
+    },
+    {
+      "id": "rh-0006",
+      "pitch": 66,
+      "onset_beat": 3.0,
+      "duration_beat": 1.0,
+      "velocity": 80,
+      "voice": 1
+    },
+    {
+      "id": "rh-0007",
+      "pitch": 72,
+      "onset_beat": 3.0,
+      "duration_beat": 1.0,
+      "velocity": 80,
+      "voice": 1
+    },
+    {
+      "id": "rh-0008",
+      "pitch": 68,
+      "onset_beat": 4.0,
+      "duration_beat": 1.0,
+      "velocity": 80,
+      "voice": 1
+    },
+    {
+      "id": "rh-0009",
+      "pitch": 75,
+      "onset_beat": 4.0,
+      "duration_beat": 1.0,
+      "velocity": 80,
+      "voice": 1
+    },
+    {
+      "id": "rh-0010",
+      "pitch": 69,
+      "onset_beat": 5.0,
+      "duration_beat": 1.0,
+      "velocity": 80,
+      "voice": 1
+    },
+    {
+      "id": "rh-0011",
+      "pitch": 75,
+      "onset_beat": 5.0,
+      "duration_beat": 1.0,
+      "velocity": 80,
+      "voice": 1
+    },
+    {
+      "id": "rh-0012",
+      "pitch": 69,
+      "onset_beat": 6.0,
+      "duration_beat": 1.0,
+      "velocity": 80,
+      "voice": 1
+    },
+    {
+      "id": "rh-0013",
+      "pitch": 76,
+      "onset_beat": 6.0,
+      "duration_beat": 1.0,
+      "velocity": 80,
+      "voice": 1
+    },
+    {
+      "id": "rh-0014",
+      "pitch": 71,
+      "onset_beat": 7.0,
+      "duration_beat": 1.0,
+      "velocity": 80,
+      "voice": 1
+    },
+    {
+      "id": "rh-0015",
+      "pitch": 77,
+      "onset_beat": 7.0,
+      "duration_beat": 1.0,
+      "velocity": 80,
+      "voice": 1
+    }
+  ],
+  "left_hand": [
+    {
+      "id": "lh-0000",
+      "pitch": 36,
+      "onset_beat": 0.0,
+      "duration_beat": 1.0,
+      "velocity": 70,
+      "voice": 1
+    },
+    {
+      "id": "lh-0001",
+      "pitch": 37,
+      "onset_beat": 1.0,
+      "duration_beat": 1.0,
+      "velocity": 70,
+      "voice": 1
+    },
+    {
+      "id": "lh-0002",
+      "pitch": 38,
+      "onset_beat": 2.0,
+      "duration_beat": 1.0,
+      "velocity": 70,
+      "voice": 1
+    },
+    {
+      "id": "lh-0003",
+      "pitch": 39,
+      "onset_beat": 3.0,
+      "duration_beat": 1.0,
+      "velocity": 70,
+      "voice": 1
+    },
+    {
+      "id": "lh-0004",
+      "pitch": 40,
+      "onset_beat": 4.0,
+      "duration_beat": 1.0,
+      "velocity": 70,
+      "voice": 1
+    },
+    {
+      "id": "lh-0005",
+      "pitch": 41,
+      "onset_beat": 5.0,
+      "duration_beat": 1.0,
+      "velocity": 70,
+      "voice": 1
+    },
+    {
+      "id": "lh-0006",
+      "pitch": 42,
+      "onset_beat": 6.0,
+      "duration_beat": 1.0,
+      "velocity": 70,
+      "voice": 1
+    },
+    {
+      "id": "lh-0007",
+      "pitch": 43,
+      "onset_beat": 7.0,
+      "duration_beat": 1.0,
+      "velocity": 70,
+      "voice": 1
+    }
+  ],
+  "metadata": {
+    "key": "C:major",
+    "time_signature": [
+      4,
+      4
+    ],
+    "tempo_map": [
+      {
+        "time_sec": 0.0,
+        "beat": 0.0,
+        "bpm": 120.0
+      }
+    ],
+    "difficulty": "intermediate",
+    "sections": [],
+    "chord_symbols": []
+  }
+}
