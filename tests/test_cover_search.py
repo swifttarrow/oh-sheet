@@ -405,3 +405,40 @@ class TestProbeYoutubeMetadata:
             _, artist = probe_youtube_metadata("https://youtu.be/clocks")
 
         assert artist == "Coldplay"
+
+
+# ---------------------------------------------------------------------------
+# Layer 5: contract field for per-job opt-in
+# ---------------------------------------------------------------------------
+#
+# The user toggles "try to find a clean piano cover" on the upload screen.
+# That choice travels through the pipeline as a field on InputMetadata so
+# the ingest stage can read it and decide whether to run cover_search.
+
+
+class TestPreferCleanSourceField:
+    """InputMetadata must carry a ``prefer_clean_source`` flag so the
+    user's per-request choice survives the trip from POST /v1/jobs
+    through Celery dispatch into the ingest worker."""
+
+    def test_prefer_clean_source_defaults_to_false(self):
+        from shared.contracts import InputMetadata
+        meta = InputMetadata(source="title_lookup")
+        assert meta.prefer_clean_source is False
+
+    def test_prefer_clean_source_accepts_true(self):
+        from shared.contracts import InputMetadata
+        meta = InputMetadata(
+            source="title_lookup",
+            title="https://youtu.be/abc",
+            prefer_clean_source=True,
+        )
+        assert meta.prefer_clean_source is True
+
+    def test_prefer_clean_source_round_trips_json(self):
+        # The contract is serialized via model_dump()/model_validate() between
+        # Celery tasks, so the field must survive JSON encoding.
+        from shared.contracts import InputMetadata
+        original = InputMetadata(source="title_lookup", prefer_clean_source=True)
+        roundtripped = InputMetadata.model_validate(original.model_dump(mode="json"))
+        assert roundtripped.prefer_clean_source is True

@@ -129,6 +129,12 @@ class InputMetadata(BaseModel):
     title: str | None = None
     artist: str | None = None
     source: Literal["title_lookup", "audio_upload", "midi_upload"]
+    # When True, the ingest stage will attempt to find a clean piano
+    # cover of the song (via yt-dlp search + scoring) and swap the
+    # user's URL for the cover's URL before transcription. See
+    # backend/services/cover_search.py for the matching logic.
+    # Defaults to False so existing callers and fixtures keep working.
+    prefer_clean_source: bool = False
 
 
 class InputBundle(BaseModel):
