@@ -34,6 +34,13 @@ class _UploadScreenState extends State<UploadScreen> {
   bool _submitting = false;
   String? _error;
 
+  // Opt-in for the backend cover_search fast path. Only surfaced in
+  // YouTube mode because it's meaningless for audio uploads (user
+  // already picked the source) and plain title lookups (no URL to swap).
+  // Defaults off so the user's first experience matches what they
+  // pasted; they can flip it on once they see the option.
+  bool _preferCleanSource = false;
+
   static final _youtubeRegex = RegExp(
     r'^https?://(www\.|music\.|m\.)?youtu(\.be/|be\.com/watch\?v=)([\w-]{11})',
   );
@@ -135,6 +142,7 @@ class _UploadScreenState extends State<UploadScreen> {
             artist: _artistController.text.trim().isEmpty
                 ? null
                 : _artistController.text.trim(),
+            preferCleanSource: _preferCleanSource,
           );
           break;
       }
@@ -302,6 +310,37 @@ class _UploadScreenState extends State<UploadScreen> {
                           controller: _artistController,
                           decoration: const InputDecoration(
                             labelText: 'Artist (optional)',
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                        // Cover-search opt-in. When on, the backend swaps
+                        // the pasted URL for a clean piano cover of the same
+                        // song before transcribing — dramatically cleaner
+                        // output on full-band pop mixes because Basic Pitch
+                        // transcribes every audible pitch as a piano note.
+                        SwitchListTile(
+                          key: const ValueKey('ohsheet_prefer_clean_source_toggle'),
+                          contentPadding: EdgeInsets.zero,
+                          dense: true,
+                          value: _preferCleanSource,
+                          onChanged: (v) => setState(() => _preferCleanSource = v),
+                          activeThumbColor: OhSheetColors.teal,
+                          title: const Text(
+                            'Find a clean piano cover',
+                            style: TextStyle(
+                              fontWeight: FontWeight.w700,
+                              fontSize: 14,
+                              color: OhSheetColors.darkText,
+                            ),
+                          ),
+                          subtitle: const Text(
+                            'Search YouTube for a piano cover of this song '
+                            'and transcribe that instead — much cleaner results '
+                            'for full-band pop tracks.',
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: OhSheetColors.mutedText,
+                            ),
                           ),
                         ),
                       ] else ...[
