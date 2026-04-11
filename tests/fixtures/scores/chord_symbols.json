@@ -1,0 +1,137 @@
+{
+  "schema_version": "3.0.0",
+  "right_hand": [
+    {
+      "id": "rh-0000",
+      "pitch": 60,
+      "onset_beat": 0.0,
+      "duration_beat": 1.0,
+      "velocity": 80,
+      "voice": 1
+    },
+    {
+      "id": "rh-0001",
+      "pitch": 62,
+      "onset_beat": 1.0,
+      "duration_beat": 1.0,
+      "velocity": 80,
+      "voice": 1
+    },
+    {
+      "id": "rh-0002",
+      "pitch": 64,
+      "onset_beat": 2.0,
+      "duration_beat": 1.0,
+      "velocity": 80,
+      "voice": 1
+    },
+    {
+      "id": "rh-0003",
+      "pitch": 65,
+      "onset_beat": 3.0,
+      "duration_beat": 1.0,
+      "velocity": 80,
+      "voice": 1
+    },
+    {
+      "id": "rh-0004",
+      "pitch": 67,
+      "onset_beat": 4.0,
+      "duration_beat": 1.0,
+      "velocity": 80,
+      "voice": 1
+    },
+    {
+      "id": "rh-0005",
+      "pitch": 69,
+      "onset_beat": 5.0,
+      "duration_beat": 1.0,
+      "velocity": 80,
+      "voice": 1
+    },
+    {
+      "id": "rh-0006",
+      "pitch": 71,
+      "onset_beat": 6.0,
+      "duration_beat": 1.0,
+      "velocity": 80,
+      "voice": 1
+    },
+    {
+      "id": "rh-0007",
+      "pitch": 72,
+      "onset_beat": 7.0,
+      "duration_beat": 1.0,
+      "velocity": 80,
+      "voice": 1
+    }
+  ],
+  "left_hand": [],
+  "metadata": {
+    "key": "C:major",
+    "time_signature": [
+      4,
+      4
+    ],
+    "tempo_map": [
+      {
+        "time_sec": 0.0,
+        "beat": 0.0,
+        "bpm": 120.0
+      }
+    ],
+    "difficulty": "intermediate",
+    "sections": [],
+    "chord_symbols": [
+      {
+        "beat": 0.0,
+        "duration_beat": 1.0,
+        "label": "C:maj7",
+        "root": 60,
+        "confidence": 0.95
+      },
+      {
+        "beat": 1.0,
+        "duration_beat": 1.0,
+        "label": "Dm7",
+        "root": 62,
+        "confidence": 0.9
+      },
+      {
+        "beat": 2.0,
+        "duration_beat": 1.0,
+        "label": "F:maj7",
+        "root": 65,
+        "confidence": 0.85
+      },
+      {
+        "beat": 3.0,
+        "duration_beat": 1.0,
+        "label": "G5",
+        "root": 67,
+        "confidence": 0.8
+      },
+      {
+        "beat": 4.0,
+        "duration_beat": 1.0,
+        "label": "C:maj",
+        "root": 60,
+        "confidence": 0.3
+      },
+      {
+        "beat": 5.0,
+        "duration_beat": 1.0,
+        "label": "???",
+        "root": 60,
+        "confidence": 0.9
+      },
+      {
+        "beat": 6.0,
+        "duration_beat": 1.0,
+        "label": "C5",
+        "root": 60,
+        "confidence": 0.95
+      }
+    ]
+  }
+}

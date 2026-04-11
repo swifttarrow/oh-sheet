@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import re
 import shutil
 import subprocess
 import tempfile
@@ -148,6 +149,69 @@ _PEDAL_TEXT = {
 }
 
 
+# Chord symbols below this transcriber confidence are dropped — the
+# audio-harmony pipeline routinely emits low-confidence labels that look
+# like pitch-octave pairs ("G5", "E5") rather than chord qualities, and
+# they clutter the notation more than they help.
+_CHORD_MIN_CONFIDENCE = 0.5
+
+# Anything that lexically looks like a pitch-and-octave (e.g. "G5",
+# "C#4", "Db3") is an artifact of the transcription pipeline treating
+# a single pitch as a chord. Filter these out before handing to music21
+# so ``ChordSymbol`` doesn't build a one-note "chord".
+_PITCH_OCTAVE_RE = re.compile(r"^[A-G][#b]?\d+$")
+
+
+def _attach_chord_symbols(part, chord_symbols, music21) -> int:  # noqa: ANN001
+    """Insert chord symbols onto a music21 part, returning the count rendered.
+
+    Chord symbols from audio transcription are noisy — single-pitch
+    false positives, low-confidence guesses, and Harte labels music21
+    can't parse all end up here. Applies three filters before committing:
+
+    1. **Confidence gate.** Drop anything below
+       ``_CHORD_MIN_CONFIDENCE``. The transcriber already reports its
+       own uncertainty; trust it.
+    2. **Shape gate.** Reject labels that match ``[A-G][#b]?\\d+`` —
+       those are pitch-octave pairs (e.g. "G5"), not chord qualities.
+    3. **Parse gate.** ``music21.harmony.ChordSymbol`` must parse the
+       label cleanly AND the resulting chord must carry ≥ 3 distinct
+       pitches. Everything else is a one-note or two-note artifact
+       that clutters the staff.
+
+    music21's ChordSymbol parser uses a custom pitch-name grammar that
+    doesn't accept Harte's colon separator ("C:maj7"), so we strip the
+    colon before parsing. Any parser error lands in a broad except —
+    ChordSymbol raises a grab-bag of exception types and the cost of a
+    missed symbol is much lower than the cost of an exploding engrave.
+    """
+    rendered = 0
+    for cs in chord_symbols:
+        if cs.confidence < _CHORD_MIN_CONFIDENCE:
+            continue
+        label = cs.label.strip()
+        if not label or _PITCH_OCTAVE_RE.match(label):
+            continue
+        # music21 doesn't accept Harte's "root:quality" colon form.
+        parse_label = label.replace(":", "")
+        try:
+            h = music21.harmony.ChordSymbol(parse_label)
+        except Exception:  # noqa: BLE001 — ChordSymbol raises many types
+            continue
+        try:
+            pitches = h.pitches
+        except Exception:  # noqa: BLE001 — defensive, some labels parse but can't resolve
+            continue
+        if len({p.midi % 12 for p in pitches}) < 3:
+            continue
+        try:
+            part.insert(max(0.0, float(cs.beat)), h)
+        except Exception:  # noqa: BLE001 — insertion shouldn't fail, but don't crash engrave
+            continue
+        rendered += 1
+    return rendered
+
+
 def _attach_dynamics(part, dynamics, music21) -> None:  # noqa: ANN001 — music21 is untyped
     """Insert ``DynamicMarking`` events into a music21 part.
 
@@ -191,14 +255,23 @@ def _render_musicxml_bytes(
     perf: HumanizedPerformance | None,
     title: str,
     composer: str,
-) -> bytes:
+) -> tuple[bytes, int]:
     """Render a PianoScore to MusicXML via music21.
+
+    Returns a ``(bytes, chord_symbols_rendered)`` tuple so the caller
+    can report how many chord symbols actually survived the filter gate
+    in ``_attach_chord_symbols`` (see plan phase 3.2). The bare length
+    of ``score.metadata.chord_symbols`` lies about rendered content —
+    low-confidence, unparseable, or pitch-octave-shaped labels are
+    dropped before they ever reach the staff.
 
     music21 is a hard dependency (see ``pyproject.toml``); if it raises
     during export we let the exception propagate so the job manager can
     surface the failure instead of silently emitting a stub.
     """
     import music21  # noqa: PLC0415 — heavy import, kept lazy for test speed
+
+    chord_symbols_rendered = 0
 
     s = music21.stream.Score()
     s.metadata = music21.metadata.Metadata()
@@ -305,16 +378,13 @@ def _render_musicxml_bytes(
         if hand_name == "Left Hand" and perf is not None:
             _attach_pedal_marks(part, perf.expression.pedal_events, music21)
 
-        # Chord symbols disabled for now — the harmonic analysis from
-        # audio transcription produces noisy labels (G5, E5, etc.) that
-        # clutter the notation. Re-enable when chord recognition quality
-        # improves or when source is a clean MIDI upload.
-        # for cs in score.metadata.chord_symbols:
-        #     try:
-        #         h = music21.harmony.ChordSymbol(cs.label.replace(":", ""))
-        #         part.insert(cs.beat, h)
-        #     except Exception:
-        #         pass
+        # Chord symbols ride above the RH staff where pianists read them.
+        # ``_attach_chord_symbols`` handles confidence / shape / parse
+        # filtering so noisy transcriber output doesn't reach the score.
+        if hand_name == "Right Hand":
+            chord_symbols_rendered += _attach_chord_symbols(
+                part, score.metadata.chord_symbols, music21,
+            )
 
         # Quantize to a 16th-note + triplet grid. With
         # defaults.divisionsPerQuarter=12 forced below, every quantized
@@ -370,7 +440,7 @@ def _render_musicxml_bytes(
         music21.defaults.divisionsPerQuarter = 12
         s.write("musicxml", fp=str(tmp_path))
         raw = tmp_path.read_bytes()
-        return _sanitize_musicxml_for_osmd(raw)
+        return _sanitize_musicxml_for_osmd(raw), chord_symbols_rendered
     finally:
         music21.defaults.divisionsPerQuarter = prior_divisions
         tmp_path.unlink(missing_ok=True)
@@ -392,8 +462,6 @@ def _sanitize_musicxml_for_osmd(raw: bytes) -> bytes:
        crashes (``parentVoiceEntry undefined``) on 3+ voices per part;
        clamping to 2 is the minimum-damage fallback.
     """
-    import re
-
     text = raw.decode("utf-8")
 
     def _clamp(match: re.Match[str]) -> str:
@@ -497,8 +565,14 @@ def _engrave_sync(
     payload: HumanizedPerformance | PianoScore,
     title: str,
     composer: str,
-) -> tuple[bytes, bytes, bytes]:
-    """Render all three artifacts. Returns (pdf, musicxml, midi)."""
+) -> tuple[bytes, bytes, bytes, int]:
+    """Render all three artifacts.
+
+    Returns ``(pdf, musicxml, midi, chord_symbols_rendered)``. The trailing
+    count reflects chord symbols that *actually made it to the staff* after
+    ``_attach_chord_symbols`` filtering — not the raw input count — so
+    ``EngravedScoreData.includes_chord_symbols`` can tell the truth.
+    """
     if isinstance(payload, HumanizedPerformance):
         score = payload.score
         perf: HumanizedPerformance | None = payload
@@ -534,9 +608,11 @@ def _engrave_sync(
         )
 
     midi_bytes = _render_midi_bytes(perf)
-    musicxml_bytes = _render_musicxml_bytes(score, perf, title, composer)
+    musicxml_bytes, chord_symbols_rendered = _render_musicxml_bytes(
+        score, perf, title, composer,
+    )
     pdf_bytes = _render_pdf_bytes(musicxml_bytes)
-    return pdf_bytes, musicxml_bytes, midi_bytes
+    return pdf_bytes, musicxml_bytes, midi_bytes, chord_symbols_rendered
 
 
 class EngraveService:
@@ -559,8 +635,8 @@ class EngraveService:
             title,
             isinstance(payload, HumanizedPerformance),
         )
-        pdf_bytes, musicxml_bytes, midi_bytes = await asyncio.to_thread(
-            _engrave_sync, payload, title, composer,
+        pdf_bytes, musicxml_bytes, midi_bytes, chord_symbols_rendered = (
+            await asyncio.to_thread(_engrave_sync, payload, title, composer)
         )
 
         prefix = f"jobs/{job_id}/output"
@@ -569,21 +645,26 @@ class EngraveService:
         midi_uri = self.blob_store.put_bytes(f"{prefix}/humanized.mid", midi_bytes)
 
         score = payload.score if isinstance(payload, HumanizedPerformance) else payload
-        chord_count = len(score.metadata.chord_symbols)
+        chord_input_count = len(score.metadata.chord_symbols)
 
         log.info(
-            "engrave: done job_id=%s bytes pdf=%d musicxml=%d midi=%d chord_symbols=%d",
+            "engrave: done job_id=%s bytes pdf=%d musicxml=%d midi=%d "
+            "chord_symbols=%d/%d rendered",
             job_id,
             len(pdf_bytes),
             len(musicxml_bytes),
             len(midi_bytes),
-            chord_count,
+            chord_symbols_rendered,
+            chord_input_count,
         )
 
         # These flags describe what was *actually rendered*. As of PR-5
         # (plan phase 1.3–1.6) engrave renders dynamics and pedal marks
         # when the humanized input populates them, so we surface that
         # state directly from the expression map instead of hardcoding.
+        # PR-11 (plan phase 3.2) extends the same truth-telling to chord
+        # symbols: the input count can lie (low-confidence / unparseable
+        # labels are dropped), so gate on the filtered-rendered count.
         perf_for_flags = payload if isinstance(payload, HumanizedPerformance) else None
         return EngravedOutput(
             schema_version=SCHEMA_VERSION,
@@ -591,7 +672,7 @@ class EngraveService:
                 includes_dynamics=bool(perf_for_flags and perf_for_flags.expression.dynamics),
                 includes_pedal_marks=bool(perf_for_flags and perf_for_flags.expression.pedal_events),
                 includes_fingering=False,
-                includes_chord_symbols=chord_count > 0,
+                includes_chord_symbols=chord_symbols_rendered > 0,
                 title=title,
                 composer=composer,
             ),

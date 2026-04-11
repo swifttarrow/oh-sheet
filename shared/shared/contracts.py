@@ -207,6 +207,10 @@ class ScoreChordEvent(BaseModel):
     duration_beat: float
     label: str                                 # Harte notation
     root: int
+    # Propagated from the upstream ``RealtimeChordEvent`` so engrave can
+    # gate chord-symbol rendering on transcriber confidence. Defaults to
+    # 1.0 for legacy/test inputs that don't carry a confidence score.
+    confidence: float = Field(default=1.0, ge=0.0, le=1.0)
 
 
 class ScoreSection(BaseModel):

@@ -393,6 +393,7 @@ def _chord_to_score_chord(
         duration_beat=max(end - onset, QUANT_GRID),
         label=chord.label,
         root=chord.root,
+        confidence=chord.confidence,
     )
 
 

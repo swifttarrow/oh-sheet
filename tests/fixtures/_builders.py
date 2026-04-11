@@ -31,6 +31,7 @@ from backend.contracts import (
     PedalEvent,
     PianoScore,
     QualitySignal,
+    ScoreChordEvent,
     ScoreMetadata,
     ScoreNote,
     TempoMapEntry,
@@ -52,6 +53,7 @@ def _meta(
     key: str = "C:major",
     time_signature: tuple[int, int] = (4, 4),
     tempo_map: list[TempoMapEntry] | None = None,
+    chord_symbols: list[ScoreChordEvent] | None = None,
 ) -> ScoreMetadata:
     return ScoreMetadata(
         key=key,
@@ -59,7 +61,7 @@ def _meta(
         tempo_map=tempo_map or _tempo(),
         difficulty="intermediate",
         sections=[],
-        chord_symbols=[],
+        chord_symbols=chord_symbols or [],
     )
 
 
@@ -282,6 +284,56 @@ def build_overlapping_same_pitch() -> PianoScore:
     )
 
 
+def build_chord_symbols() -> PianoScore:
+    """Mixed-quality chord symbols — the PR-11 filter-gate fixture.
+
+    Seven input chord symbols that exercise every branch of
+    ``_attach_chord_symbols``:
+
+    1. ``C:maj7`` @ beat 0, conf 0.95 — clean, parses, ≥3 pitches → **rendered**.
+    2. ``Dm7``    @ beat 1, conf 0.90 — no colon, parses, ≥3 pitches → **rendered**.
+    3. ``F:maj7`` @ beat 2, conf 0.85 — colon form, ≥3 pitches → **rendered**.
+    4. ``G5``     @ beat 3, conf 0.80 — pitch-octave shape
+       (``^[A-G][#b]?\\d+$``) → **dropped (shape gate)**.
+    5. ``C:maj``  @ beat 4, conf 0.30 — would parse, but below the
+       0.5 confidence threshold → **dropped (confidence gate)**.
+    6. ``???``    @ beat 5, conf 0.90 — unparseable garbage → **dropped (parse gate)**.
+    7. ``C5``     @ beat 6, conf 0.95 — pitch-octave shape → **dropped (shape gate)**.
+
+    Expected rendered count: **3**. Note the deliberate choice not to
+    test ``G7`` / ``C7`` / ``C9`` — plan phase 3.2 accepts that the
+    ``^[A-G][#b]?\\d+$`` shape gate is aggressive enough to kill
+    dominant-sevenths written as bare ``G7``, because the audio
+    transcriber's false positives dominate the legitimate uses. Callers
+    that want dominant sevenths through this gate should emit Harte
+    colon form (``G:7``) — which the filter strips to ``G7`` for
+    parsing but which still *lexically* fails the shape check.
+
+    Paired with a simple C major melody so the test can focus on
+    harmony output, not note plumbing.
+    """
+    # Two-bar single-line RH so there's something to hang the symbols on.
+    rh = [
+        _rh(i, pitch=p, onset=float(i), duration=1.0)
+        for i, p in enumerate([60, 62, 64, 65, 67, 69, 71, 72])
+    ]
+    chord_symbols = [
+        ScoreChordEvent(beat=0.0, duration_beat=1.0, label="C:maj7", root=60, confidence=0.95),
+        ScoreChordEvent(beat=1.0, duration_beat=1.0, label="Dm7",    root=62, confidence=0.90),
+        ScoreChordEvent(beat=2.0, duration_beat=1.0, label="F:maj7", root=65, confidence=0.85),
+        ScoreChordEvent(beat=3.0, duration_beat=1.0, label="G5",     root=67, confidence=0.80),
+        ScoreChordEvent(beat=4.0, duration_beat=1.0, label="C:maj",  root=60, confidence=0.30),
+        ScoreChordEvent(beat=5.0, duration_beat=1.0, label="???",    root=60, confidence=0.90),
+        ScoreChordEvent(beat=6.0, duration_beat=1.0, label="C5",     root=60, confidence=0.95),
+    ]
+    return PianoScore(
+        schema_version=SCHEMA_VERSION,
+        right_hand=rh,
+        left_hand=[],
+        metadata=_meta(chord_symbols=chord_symbols),
+    )
+
+
 def build_humanized_with_offsets() -> HumanizedPerformance:
     """C major scale wrapped as a HumanizedPerformance with timing offsets + a pedal event.
 
@@ -429,6 +481,7 @@ _BUILDERS: dict[str, Callable[[], PianoScore | HumanizedPerformance]] = {
     "humanized_with_expression": build_humanized_with_expression,
     "empty_left_hand": build_empty_left_hand,
     "overlapping_same_pitch": build_overlapping_same_pitch,
+    "chord_symbols": build_chord_symbols,
 }
 
 FIXTURE_NAMES: tuple[str, ...] = tuple(_BUILDERS.keys())

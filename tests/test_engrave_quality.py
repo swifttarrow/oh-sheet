@@ -71,7 +71,7 @@ def engraved_artifacts() -> dict[str, tuple[bytes, bytes]]:
     cache: dict[str, tuple[bytes, bytes]] = {}
     for name in FIXTURE_NAMES:
         fixture = load_score_fixture(name)
-        _pdf, musicxml, midi = _engrave_sync(fixture, title=name, composer="test")
+        _pdf, musicxml, midi, _chord_count = _engrave_sync(fixture, title=name, composer="test")
         cache[name] = (musicxml, midi)
     return cache
 
@@ -465,10 +465,119 @@ def test_engrave_does_not_leak_music21_defaults():
     from backend.services.engrave import _engrave_sync
 
     prior = music21.defaults.divisionsPerQuarter
-    _pdf, _xml, _midi = _engrave_sync(
+    _pdf, _xml, _midi, _chord_count = _engrave_sync(
         load_score_fixture("c_major_scale"), title="t", composer="c"
     )
     assert music21.defaults.divisionsPerQuarter == prior
+
+
+# ---------------------------------------------------------------------------
+# L2 — Chord symbol filter gate (plan phase 3.2 / PR-11)
+# ---------------------------------------------------------------------------
+
+
+def test_l2_chord_symbols_filter_gate(engraved_artifacts):
+    """Plan phase 3.2 — only the three clean labels reach MusicXML.
+
+    The ``chord_symbols`` fixture carries seven input labels covering
+    every branch of ``_attach_chord_symbols``:
+
+    - ``C:maj7``, ``Dm7``, ``F:maj7`` — high-confidence, parseable, ≥3 pitches **→ rendered**
+    - ``G5`` — pitch-octave shape **→ dropped (shape gate)**
+    - ``C:maj`` — below 0.5 confidence **→ dropped (confidence gate)**
+    - ``???`` — unparseable **→ dropped (parse gate)**
+    - ``C5`` — pitch-octave shape **→ dropped (shape gate)**
+
+    Assertion: exactly three ``<harmony>`` elements land in the output,
+    with roots ``{C, D, F}``.
+    """
+    from lxml import etree
+
+    musicxml, _ = engraved_artifacts["chord_symbols"]
+    root = etree.fromstring(musicxml)
+    harmonies = list(root.iter("harmony"))
+    assert len(harmonies) == 3, (
+        f"expected 3 rendered chord symbols after filter gate, got {len(harmonies)}"
+    )
+
+    roots = {h.findtext("root/root-step") for h in harmonies}
+    assert roots == {"C", "D", "F"}, (
+        f"expected chord roots {{C, D, F}}, got {roots}"
+    )
+
+
+def test_l2_chord_symbols_flag_reflects_filter(tmp_path):
+    """``EngravedScoreData.includes_chord_symbols`` must gate on the *rendered*
+    count, not the raw input count. PR-11 (plan phase 3.2) wires the
+    filter-gate return value all the way out through ``EngraveService``
+    so the flag stops lying about what's on the page.
+    """
+    import asyncio
+
+    from backend.services.engrave import EngraveService
+    from backend.storage.local import LocalBlobStore
+    from tests.fixtures import load_score_fixture
+
+    svc = EngraveService(LocalBlobStore(tmp_path))
+    fixture = load_score_fixture("chord_symbols")
+    out = asyncio.run(
+        svc.run(fixture, job_id="test-pr11-chord-flag", title="t", composer="c")
+    )
+    assert out.metadata.includes_chord_symbols is True
+
+
+def test_l2_chord_symbols_flag_false_when_all_filtered(tmp_path):
+    """Input with *only* bad chord labels → ``includes_chord_symbols`` is False.
+
+    Previously the flag was ``len(chord_symbols) > 0``, which would
+    return True even when every label was about to be dropped. Build a
+    throwaway score with three shape-gate-failing labels and verify the
+    flag flips to False after rendering.
+    """
+    import asyncio
+
+    from backend.contracts import (
+        SCHEMA_VERSION,
+        PianoScore,
+        ScoreChordEvent,
+        ScoreMetadata,
+        ScoreNote,
+        TempoMapEntry,
+    )
+    from backend.services.engrave import EngraveService
+    from backend.storage.local import LocalBlobStore
+
+    score = PianoScore(
+        schema_version=SCHEMA_VERSION,
+        right_hand=[
+            ScoreNote(id="rh-0000", pitch=60, onset_beat=0.0, duration_beat=1.0,
+                      velocity=80, voice=1),
+            ScoreNote(id="rh-0001", pitch=62, onset_beat=1.0, duration_beat=1.0,
+                      velocity=80, voice=1),
+        ],
+        left_hand=[],
+        metadata=ScoreMetadata(
+            key="C:major",
+            time_signature=(4, 4),
+            tempo_map=[TempoMapEntry(time_sec=0.0, beat=0.0, bpm=120.0)],
+            difficulty="intermediate",
+            sections=[],
+            chord_symbols=[
+                ScoreChordEvent(beat=0.0, duration_beat=1.0, label="G5",
+                                root=67, confidence=0.99),
+                ScoreChordEvent(beat=1.0, duration_beat=1.0, label="C3",
+                                root=48, confidence=0.99),
+            ],
+        ),
+    )
+
+    svc = EngraveService(LocalBlobStore(tmp_path))
+    out = asyncio.run(
+        svc.run(score, job_id="test-pr11-chord-flag-false", title="t", composer="c")
+    )
+    assert out.metadata.includes_chord_symbols is False, (
+        "flag should be False when every input chord is filtered out"
+    )
 
 
 def test_l2_engraved_flags_reflect_rendered_content(engraved_artifacts):
