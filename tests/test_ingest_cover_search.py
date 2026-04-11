@@ -99,7 +99,7 @@ class TestCoverSearchSwapsUrl:
 
         with (
             patch("backend.services.ingest.probe_youtube_metadata") as mock_probe,
-            patch("backend.services.ingest.find_piano_cover") as mock_find,
+            patch("backend.services.ingest.find_clean_source") as mock_find,
             patch("backend.services.ingest._download_youtube_sync") as mock_dl,
         ):
             mock_probe.return_value = ("bohemian rhapsody", "Queen")
@@ -128,7 +128,7 @@ class TestCoverSearchSwapsUrl:
 
         with (
             patch("backend.services.ingest.probe_youtube_metadata") as mock_probe,
-            patch("backend.services.ingest.find_piano_cover") as mock_find,
+            patch("backend.services.ingest.find_clean_source") as mock_find,
             patch("backend.services.ingest._download_youtube_sync") as mock_dl,
         ):
             mock_probe.return_value = ("bohemian rhapsody", "Queen")
@@ -139,7 +139,7 @@ class TestCoverSearchSwapsUrl:
 
         # probe is called with the original URL
         mock_probe.assert_called_once_with("https://youtu.be/fJ9rUzIMcZQ")
-        # find_piano_cover gets the probed title + artist
+        # find_clean_source gets the probed title + artist
         mock_find.assert_called_once()
         call = mock_find.call_args
         # title is first positional arg, artist is second
@@ -156,13 +156,13 @@ class TestCoverSearchFallsBackToOriginal:
     """Any failure in the cover-search chain must leave the original
     URL in place — the silent-failure contract."""
 
-    def test_falls_back_when_find_piano_cover_returns_none(self, service):
+    def test_falls_back_when_find_clean_source_returns_none(self, service):
         original_url = "https://youtube.com/watch?v=originalVID"
         bundle = _make_bundle(original_url, prefer_clean_source=True)
 
         with (
             patch("backend.services.ingest.probe_youtube_metadata") as mock_probe,
-            patch("backend.services.ingest.find_piano_cover") as mock_find,
+            patch("backend.services.ingest.find_clean_source") as mock_find,
             patch("backend.services.ingest._download_youtube_sync") as mock_dl,
         ):
             mock_probe.return_value = ("some title", "some artist")
@@ -181,7 +181,7 @@ class TestCoverSearchFallsBackToOriginal:
 
         with (
             patch("backend.services.ingest.probe_youtube_metadata") as mock_probe,
-            patch("backend.services.ingest.find_piano_cover") as mock_find,
+            patch("backend.services.ingest.find_clean_source") as mock_find,
             patch("backend.services.ingest._download_youtube_sync") as mock_dl,
         ):
             mock_probe.return_value = None  # probe failed
@@ -189,21 +189,21 @@ class TestCoverSearchFallsBackToOriginal:
 
             asyncio.run(service.run(bundle))
 
-        # find_piano_cover should NOT even be called if the probe failed —
+        # find_clean_source should NOT even be called if the probe failed —
         # no point searching for a song we couldn't identify.
         mock_find.assert_not_called()
         called_url = mock_dl.call_args.args[0]
         assert called_url == original_url
 
-    def test_falls_back_when_find_piano_cover_raises(self, service):
-        # find_piano_cover is documented as silent-failure, but defensive
+    def test_falls_back_when_find_clean_source_raises(self, service):
+        # find_clean_source is documented as silent-failure, but defensive
         # depth: if it somehow does raise, ingest still must not crash.
         original_url = "https://youtube.com/watch?v=originalVID"
         bundle = _make_bundle(original_url, prefer_clean_source=True)
 
         with (
             patch("backend.services.ingest.probe_youtube_metadata") as mock_probe,
-            patch("backend.services.ingest.find_piano_cover") as mock_find,
+            patch("backend.services.ingest.find_clean_source") as mock_find,
             patch("backend.services.ingest._download_youtube_sync") as mock_dl,
         ):
             mock_probe.return_value = ("title", "artist")
@@ -232,7 +232,7 @@ class TestCoverSearchGating:
 
         with (
             patch("backend.services.ingest.probe_youtube_metadata") as mock_probe,
-            patch("backend.services.ingest.find_piano_cover") as mock_find,
+            patch("backend.services.ingest.find_clean_source") as mock_find,
             patch("backend.services.ingest._download_youtube_sync") as mock_dl,
         ):
             mock_dl.side_effect = lambda url, _bs: _fake_downloaded_audio(url)
@@ -252,7 +252,7 @@ class TestCoverSearchGating:
 
         with (
             patch("backend.services.ingest.probe_youtube_metadata") as mock_probe,
-            patch("backend.services.ingest.find_piano_cover") as mock_find,
+            patch("backend.services.ingest.find_clean_source") as mock_find,
             patch("backend.services.ingest._download_youtube_sync") as mock_dl,
         ):
             mock_dl.side_effect = lambda url, _bs: _fake_downloaded_audio(url)
@@ -263,7 +263,7 @@ class TestCoverSearchGating:
 
     def test_uses_configured_min_score_threshold(self, service, monkeypatch):
         # If operator bumps OHSHEET_COVER_SEARCH_MIN_SCORE=90, that value
-        # must propagate into find_piano_cover's min_score parameter.
+        # must propagate into find_clean_source's min_score parameter.
         import backend.services.ingest as ingest_mod
         monkeypatch.setattr(ingest_mod.settings, "cover_search_min_score", 90)
 
@@ -271,7 +271,7 @@ class TestCoverSearchGating:
 
         with (
             patch("backend.services.ingest.probe_youtube_metadata") as mock_probe,
-            patch("backend.services.ingest.find_piano_cover") as mock_find,
+            patch("backend.services.ingest.find_clean_source") as mock_find,
             patch("backend.services.ingest._download_youtube_sync") as mock_dl,
         ):
             mock_probe.return_value = ("title", "artist")
@@ -308,7 +308,7 @@ class TestCoverSearchSkipsNonYoutubeInputs:
 
         with (
             patch("backend.services.ingest.probe_youtube_metadata") as mock_probe,
-            patch("backend.services.ingest.find_piano_cover") as mock_find,
+            patch("backend.services.ingest.find_clean_source") as mock_find,
             patch("backend.services.ingest._download_youtube_sync") as mock_dl,
         ):
             asyncio.run(service.run(bundle))
@@ -339,7 +339,7 @@ class TestCoverSearchSkipsNonYoutubeInputs:
 
         with (
             patch("backend.services.ingest.probe_youtube_metadata") as mock_probe,
-            patch("backend.services.ingest.find_piano_cover") as mock_find,
+            patch("backend.services.ingest.find_clean_source") as mock_find,
         ):
             asyncio.run(service.run(bundle))
 

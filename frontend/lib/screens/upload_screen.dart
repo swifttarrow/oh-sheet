@@ -313,11 +313,13 @@ class _UploadScreenState extends State<UploadScreen> {
                           ),
                         ),
                         const SizedBox(height: 12),
-                        // Cover-search opt-in. When on, the backend swaps
-                        // the pasted URL for a clean piano cover of the same
-                        // song before transcribing — dramatically cleaner
-                        // output on full-band pop mixes because Basic Pitch
-                        // transcribes every audible pitch as a piano note.
+                        // Clean-source opt-in. When on, the backend searches
+                        // for the best alternative source (easy/moderate piano
+                        // cover OR 8-bit chiptune cover) and transcribes that
+                        // instead of the full-band original. Dramatically
+                        // cleaner output on pop mixes because Basic Pitch is
+                        // much happier with piano-shaped or chiptune-shaped
+                        // audio than with a full band.
                         SwitchListTile(
                           key: const ValueKey('ohsheet_prefer_clean_source_toggle'),
                           contentPadding: EdgeInsets.zero,
@@ -326,7 +328,7 @@ class _UploadScreenState extends State<UploadScreen> {
                           onChanged: (v) => setState(() => _preferCleanSource = v),
                           activeThumbColor: OhSheetColors.teal,
                           title: const Text(
-                            'Find a clean piano cover',
+                            'Find a clean source',
                             style: TextStyle(
                               fontWeight: FontWeight.w700,
                               fontSize: 14,
@@ -334,9 +336,9 @@ class _UploadScreenState extends State<UploadScreen> {
                             ),
                           ),
                           subtitle: const Text(
-                            'Search YouTube for a piano cover of this song '
-                            'and transcribe that instead — much cleaner results '
-                            'for full-band pop tracks.',
+                            'Search for a piano cover or 8-bit version of '
+                            'this song and transcribe that instead — much '
+                            'cleaner results for full-band pop tracks.',
                             style: TextStyle(
                               fontSize: 12,
                               color: OhSheetColors.mutedText,
