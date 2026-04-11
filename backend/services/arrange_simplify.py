@@ -49,9 +49,9 @@ _DURATION_GRID: tuple[float, ...] = (0.25, 0.5, 1.0, 2.0, 4.0)
 def simplify_score(
     score: PianoScore,
     *,
-    min_velocity: int = 40,
+    min_velocity: int = 55,
     chord_merge_beats: float = 0.125,
-    max_onsets_per_beat: int = 6,
+    max_onsets_per_beat: int = 4,
     min_duration_beats: float = 0.25,
 ) -> PianoScore:
     """Return a simplified copy of ``score`` with fewer, cleaner notes.

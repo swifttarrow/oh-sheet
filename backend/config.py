@@ -132,10 +132,16 @@ class Settings(BaseSettings):
     # raw transcription levels (~2000 notes per song) down to something a
     # human could actually read and play. See
     # backend/services/arrange_simplify.py for the five-step pipeline.
+    #
+    # Tuning history:
+    # v1 (min_vel=40, max_onsets=6): RH -19%, LH -0% on real songs. LH
+    #    untouched because bass notes from Basic Pitch rarely dip below 40.
+    # v2 (min_vel=55, max_onsets=4): raises the floor above typical bass
+    #    velocity range and caps density at sight-reading levels.
     arrange_simplify_enabled: bool = True
-    arrange_simplify_min_velocity: int = 40       # drop anything quieter
+    arrange_simplify_min_velocity: int = 55       # drop anything quieter
     arrange_simplify_chord_merge_beats: float = 0.125   # merge within 1/32 note
-    arrange_simplify_max_onsets_per_beat: int = 6       # density cap
+    arrange_simplify_max_onsets_per_beat: int = 4       # density cap
     arrange_simplify_min_duration_beats: float = 0.25   # 16th note floor
 
     # ---- Demucs source separation (pre-Basic Pitch) -----------------------
