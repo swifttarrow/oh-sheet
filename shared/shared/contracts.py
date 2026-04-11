@@ -244,6 +244,9 @@ class ExpressiveNote(BaseModel):
     velocity: int = Field(..., ge=0, le=127)
     hand: Literal["rh", "lh"]
     voice: int
+    # Onset-only nudge: engrave applies this to the attack time and leaves the
+    # release on the metronomic grid, so a positive value shortens the note
+    # and a negative value lengthens it. Do not interpret as a whole-note shift.
     timing_offset_ms: float = Field(..., ge=-50.0, le=50.0)
     velocity_offset: int = Field(..., ge=-30, le=30)
 

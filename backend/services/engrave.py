@@ -84,8 +84,12 @@ def _render_midi_bytes(perf: HumanizedPerformance) -> bytes:
             offset = beat_to_sec(en.onset_beat + en.duration_beat, tempo_map) - midi_time_offset
         except ValueError:
             continue
+        # timing_offset_ms is an *onset-only* nudge — the release boundary
+        # stays on the metronomic grid, so a late-struck note plays shorter
+        # and an early-struck note plays longer. Mirrors humanize._humanize_timing,
+        # which models downbeat anticipation / backbeat push as attack-time
+        # gestures with no release component.
         onset += en.timing_offset_ms / 1000.0
-        offset += en.timing_offset_ms / 1000.0
         onset = max(0.0, onset)
         offset = max(onset + 0.01, offset)
         raw_notes.append((en.pitch, onset, offset, max(1, min(127, en.velocity))))

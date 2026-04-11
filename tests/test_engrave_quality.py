@@ -13,11 +13,8 @@ fixture in ``tests/fixtures/scores/`` through ``_engrave_sync`` and:
   ``<divisions>`` ≤ 480, pitches within the 88-key piano range, note
   count consistent with the fixture.
 
-A separate ``xfail``-marked test exists for the
-``humanized_with_offsets`` fixture, pinning the current
-``timing_offset_ms`` behavior (see plan Phase 1.2). When that PR lands
-and the bug is fixed, the xfail flips to a pass and CI fails under
-``strict=True`` — at which point the marker should be removed.
+A dedicated test pins the onset-only semantics of ``timing_offset_ms``
+against the ``humanized_with_offsets`` fixture (see plan Phase 1.2).
 """
 from __future__ import annotations
 
@@ -117,21 +114,16 @@ def test_l1_midi_round_trip(name: str, engraved_artifacts):
         )
 
 
-@pytest.mark.xfail(
-    reason="timing_offset_ms is applied to BOTH onset and offset (engrave.py:87-88). "
-           "Plan Phase 1.2 resolves the semantics; flipping this to a pass means "
-           "the bug is fixed and the marker should be removed.",
-    strict=True,
-)
 def test_l1_humanized_timing_offset_is_onset_only(engraved_artifacts):
-    """Pin the *expected* onset-only semantics of ``timing_offset_ms``.
+    """``timing_offset_ms`` is an onset-only nudge — release stays fixed.
 
     The fixture's first RH note is C4 at beat 0, duration 1 beat, with
     ``timing_offset_ms = +20``. At 120 BPM one beat is 0.5 s, so an
-    onset-only shift would produce ``onset = 0.020 s`` and
-    ``offset = 0.500 s`` (duration compressed to 0.480 s). The current
-    implementation shifts both onset and offset equally, producing
-    ``offset = 0.520 s`` — that is what ``strict=True`` is pinning.
+    onset-only shift produces ``onset = 0.020 s`` and
+    ``offset = 0.500 s`` (duration compressed to 0.480 s).
+
+    Mirrors ``humanize._humanize_timing``, which models downbeat
+    anticipation / backbeat push as attack-time gestures only.
     """
     import pretty_midi
 
