@@ -472,6 +472,57 @@ def test_engrave_does_not_leak_music21_defaults():
 
 
 # ---------------------------------------------------------------------------
+# L2 — Tuplet survival (plan phase 3.4 / PR-13)
+# ---------------------------------------------------------------------------
+
+
+def test_l2_triplet_eighths_render_as_tuplet(engraved_artifacts):
+    """Plan phase 3.4 — triplet-8ths survive without engrave re-quantizing.
+
+    The ``triplet_eighths`` fixture carries 12 RH notes at 1/3-beat
+    spacing over 4 beats — a clean triplet grid from arrange's
+    ``_estimate_best_grid`` path. Before PR-13, engrave re-quantized
+    every Part to ``quarterLengthDivisors=(4, 3)`` as a safety net
+    inherited from the divisions=10080 era; the coarser divisor tuple
+    could not represent triplet-16ths and the re-quantize silently
+    dropped fine resolution.
+
+    After PR-13 engrave trusts arrange's grid directly and music21's
+    ``makeNotation`` auto-detects the tuplet bracket. What we check:
+
+    - Each triplet-8th duration = divisions/3 (at divisions=12, that's 4).
+    - The MusicXML carries ``<time-modification>`` elements with
+      ``<actual-notes>3</actual-notes>`` / ``<normal-notes>2</normal-notes>``
+      on each triplet member — the standard "3 in the time of 2"
+      encoding for an 8th-note triplet.
+    - At least 12 such time-modification blocks land on RH (one per
+      triplet 8th).
+    """
+    from lxml import etree
+
+    musicxml, _ = engraved_artifacts["triplet_eighths"]
+    root = etree.fromstring(musicxml)
+
+    # Every triplet 8th should have <time-modification> with 3/2 ratio.
+    triplet_members = 0
+    for note in root.iter("note"):
+        if note.find("rest") is not None:
+            continue
+        tm = note.find("time-modification")
+        if tm is None:
+            continue
+        actual = tm.findtext("actual-notes")
+        normal = tm.findtext("normal-notes")
+        if actual == "3" and normal == "2":
+            triplet_members += 1
+
+    assert triplet_members >= 12, (
+        f"expected ≥12 triplet-8th members with <time-modification>3:2</time-modification>, "
+        f"got {triplet_members}"
+    )
+
+
+# ---------------------------------------------------------------------------
 # L2 — Key signature verification (plan phase 3.3 / PR-12)
 # ---------------------------------------------------------------------------
 

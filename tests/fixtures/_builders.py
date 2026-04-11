@@ -284,6 +284,41 @@ def build_overlapping_same_pitch() -> PianoScore:
     )
 
 
+def build_triplet_eighths() -> PianoScore:
+    """Triplet-8ths grid — the PR-13 tuplet-survival fixture.
+
+    A bar of straight quarter-note LH root on C2, under an RH line of
+    four 8th-note triplets (12 notes total over 4 beats). Each triplet
+    subdivision lands on a 1/3-beat onset — clean arrange-grid output
+    that requires music21's ``makeNotation`` to auto-detect the tuplet
+    bracket without an explicit ``quantize(quarterLengthDivisors=...)``
+    hint.
+
+    After PR-13 engrave no longer re-quantizes inside ``_render_musicxml_bytes``
+    (arrange's grid is trusted directly), so this fixture is the
+    canary for the tuplet path. Expected output: each triplet 8th
+    carries ``<time-modification>`` with ``<actual-notes>3</actual-notes>``
+    + ``<normal-notes>2</normal-notes>`` in the MusicXML.
+    """
+    # Four beats of triplet-8ths: 12 notes, each at quarter/3 duration.
+    rh: list[ScoreNote] = []
+    for i in range(12):
+        onset = i * (1.0 / 3.0)
+        pitch = 60 + (i % 8)  # ascending C major scale under the triplet grid
+        rh.append(_rh(i, pitch=pitch, onset=onset, duration=1.0 / 3.0))
+
+    lh = [
+        _lh(i, pitch=36, onset=float(i), duration=1.0)
+        for i in range(4)
+    ]
+    return PianoScore(
+        schema_version=SCHEMA_VERSION,
+        right_hand=rh,
+        left_hand=lh,
+        metadata=_meta(),
+    )
+
+
 def build_mislabeled_key() -> PianoScore:
     """F# minor piece mislabeled as C major — the PR-12 KS override fixture.
 
@@ -534,6 +569,7 @@ _BUILDERS: dict[str, Callable[[], PianoScore | HumanizedPerformance]] = {
     "overlapping_same_pitch": build_overlapping_same_pitch,
     "chord_symbols": build_chord_symbols,
     "mislabeled_key": build_mislabeled_key,
+    "triplet_eighths": build_triplet_eighths,
 }
 
 FIXTURE_NAMES: tuple[str, ...] = tuple(_BUILDERS.keys())

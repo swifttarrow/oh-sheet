@@ -476,12 +476,18 @@ def _render_musicxml_bytes(
                 part, score.metadata.chord_symbols, music21,
             )
 
-        # Quantize to a 16th-note + triplet grid. With
-        # defaults.divisionsPerQuarter=12 forced below, every quantized
-        # quarterLength lands exactly on a grid tick (16th = 3, triplet-8th
-        # = 4, quarter = 12) so <duration> values are integers without
-        # post-hoc rescaling.
-        part.quantize(quarterLengthDivisors=(4, 3), inPlace=True)
+        # Trust arrange's grid. arrange already quantizes every onset
+        # and duration via ``_estimate_best_grid`` (see
+        # ``backend/services/arrange.py``), picking the best of
+        # {triplet-16th, 16th, triplet-8th, 8th} for the incoming
+        # material. Re-quantizing here to a coarser ``(4, 3)`` divisor
+        # tuple would throw away whatever triplet-16th content arrange
+        # preserved. ``makeNotation`` auto-detects tuplet brackets from
+        # the raw quarterLength without an explicit hint, so the safety
+        # net no longer buys anything. PR-9 forces
+        # ``defaults.divisionsPerQuarter=12`` at the export boundary,
+        # which is LCM(2, 3, 4) — every grid value arrange can emit
+        # lands on an integer ``<duration>``.
         part.makeNotation(inPlace=True)
 
         # makeMeasures rebuilds per-measure Voice sub-streams with fresh
