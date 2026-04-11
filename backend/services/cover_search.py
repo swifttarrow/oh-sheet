@@ -113,6 +113,11 @@ PIANO_MODERATE_CHANNELS: tuple[str, ...] = (
     "martin walsh",
     "adam chen",
     "aaronastro",
+    # Kesh Piano Music (@keshpianomusic) — see TRUSTED_TUTORIAL_CHANNELS
+    # below. yt-dlp returns ``channel='Kesh'`` which is too broad for
+    # substring matching (risks false positives against the pop artist
+    # Kesha), so we match on the unambiguous uploader_id handle.
+    "keshpianomusic",
 )
 
 # Tier 3 — virtuoso / concert-level arrangements. Defined here for
@@ -137,6 +142,32 @@ PIANO_ADVANCED_CHANNELS: tuple[str, ...] = (
 # _EASY_TIER_BONUS below.
 COVER_CHANNEL_ALLOWLIST: tuple[str, ...] = (
     PIANO_EASY_CHANNELS + PIANO_MODERATE_CHANNELS
+)
+
+
+# ---------------------------------------------------------------------------
+# Trusted tutorial channels — exempt from the "tutorial" keyword penalty
+# ---------------------------------------------------------------------------
+#
+# Some channels explicitly label their videos as "Piano Tutorial" but
+# produce clean transcription-quality audio — Synthesia-style rendered
+# piano with no voiceover or backing track. For those channels the
+# ``-20`` tutorial penalty in _BAD_KEYWORDS is the wrong signal: it
+# marks them down for what they CALL themselves, not what they actually
+# sound like. Basic Pitch can transcribe their audio fine.
+#
+# Channels listed here bypass the tutorial penalty. Matched against
+# yt-dlp's ``uploader_id`` (the ``@handle``, with the ``@`` stripped)
+# so the identifier is unambiguous even for channels whose display
+# name is a common word. "keshpianomusic" matches ``@keshpianomusic``
+# cleanly without colliding with the pop artist Kesha.
+#
+# Add new entries here as dry-runs identify other trustworthy
+# tutorial-labelled channels. Keep it narrow — the penalty exists for
+# a reason and most tutorials ARE noisy (voiceover, slowdowns, etc.).
+
+TRUSTED_TUTORIAL_CHANNELS: tuple[str, ...] = (
+    "keshpianomusic",
 )
 
 
@@ -311,23 +342,37 @@ def score_candidate_for_variant(
     """
     title_norm = normalize_title(entry.get("title", ""))
     channel_norm = (entry.get("channel") or "").lower()
+    # uploader_id is yt-dlp's "@handle" form (e.g. "@keshpianomusic").
+    # Strip the leading "@" so allowlist entries can be plain strings.
+    uploader_id_norm = (entry.get("uploader_id") or "").lower().lstrip("@")
     wanted_title_norm = normalize_title(wanted_title)
     wanted_artist_norm = (wanted_artist or "").lower().strip()
+
+    # Helper: does any allowlist entry match either the channel name
+    # OR the uploader_id handle? Checking both fields lets us pin
+    # specific channels via their unambiguous handle when their
+    # display name is too broad (e.g. "Kesh" would collide with the
+    # pop artist "Kesha").
+    def _matches_any(allowlist: tuple[str, ...]) -> bool:
+        return any(
+            entry_key in channel_norm or entry_key in uploader_id_norm
+            for entry_key in allowlist
+        )
 
     score = 0
 
     # +50 if the channel is in this variant's allowlist (substring match
-    # so "Rousseau - Official" still matches "rousseau").
-    if any(trusted in channel_norm for trusted in variant.channel_allowlist):
+    # against channel OR uploader_id so "Rousseau - Official" still
+    # matches "rousseau" and "@keshpianomusic" still matches
+    # "keshpianomusic").
+    if _matches_any(variant.channel_allowlist):
         score += 50
 
     # Piano-only extra: +10 if the channel is in the "easy" tier of the
     # piano allowlist. Soft preference so easy arrangements win ties
     # against moderate arrangements. Chiptune variant doesn't have
     # difficulty sub-tiers so this check is a no-op there.
-    if variant.name == "piano" and any(
-        trusted in channel_norm for trusted in PIANO_EASY_CHANNELS
-    ):
+    if variant.name == "piano" and _matches_any(PIANO_EASY_CHANNELS):
         score += _EASY_TIER_BONUS
 
     # +30 if any of this variant's positive keywords appear in the title.
@@ -348,8 +393,11 @@ def score_candidate_for_variant(
 
     # -20 for any bad keyword — karaoke, tutorials, and lessons are not
     # cover recordings and will confuse Basic Pitch worse than the mix.
-    # Shared across all variants.
-    if any(bad in title_norm for bad in _BAD_KEYWORDS):
+    # EXEMPTION: channels on TRUSTED_TUTORIAL_CHANNELS bypass the
+    # penalty because their "tutorial" videos are actually clean
+    # synthesized-piano audio suitable for transcription (e.g. Kesh).
+    is_trusted_tutorial = _matches_any(TRUSTED_TUTORIAL_CHANNELS)
+    if not is_trusted_tutorial and any(bad in title_norm for bad in _BAD_KEYWORDS):
         score -= 20
 
     return score
