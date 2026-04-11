@@ -25,7 +25,7 @@ from backend.contracts import (
     RemoteAudioFile,
     RemoteMidiFile,
 )
-from backend.services.cover_search import find_clean_source, probe_youtube_metadata
+from backend.services.cover_search import find_piano_cover, probe_youtube_metadata
 
 log = logging.getLogger(__name__)
 
@@ -139,26 +139,21 @@ def _download_youtube_sync(url: str, blob_store) -> tuple[RemoteAudioFile, str |
 
 
 def _maybe_swap_for_cover_sync(url: str) -> str:
-    """If a high-scoring clean source for ``url`` exists, return its URL;
+    """If a high-scoring piano cover of ``url`` exists, return its URL;
     otherwise return ``url`` unchanged.
 
     This is the ingest stage's "fast path" router (see
     ``backend/services/cover_search.py``). The rationale: Basic Pitch
     transcribes every audible pitch as a piano note, so feeding it a
     polyphonic pop mix produces dense, unplayable sheet music. A clean
-    piano cover (easy / moderate tier) is already piano-shaped, which
-    is exactly what Basic Pitch is good at. An 8-bit / chiptune cover
-    is even cleaner — monophonic channels, no reverb, no drums mixed
-    into pitched content — so when one exists it often outscores any
-    piano cover in the same search.
+    piano cover is monophonic or piano-only, which is exactly what
+    Basic Pitch is good at.
 
-    ``find_clean_source`` runs both variants and returns the single
-    highest-scoring result across piano+chiptune. This function is the
-    thin async wrapper that enforces the silent-failure contract: ANY
-    exception or non-match falls back to the original URL. Job
-    continues, user gets the direct transcription they implicitly
-    asked for. Called via ``asyncio.to_thread`` because both probe and
-    search are blocking network I/O.
+    Silent-failure contract: ANY exception or non-match falls back to
+    the original URL. Job continues, user gets the direct transcription
+    they implicitly asked for. This function is called via
+    ``asyncio.to_thread`` because both probe and search are blocking
+    network I/O.
     """
     try:
         probed = probe_youtube_metadata(url)
@@ -172,12 +167,12 @@ def _maybe_swap_for_cover_sync(url: str) -> str:
 
     title, artist = probed
     try:
-        match = find_clean_source(
+        match = find_piano_cover(
             title,
             artist,
             min_score=settings.cover_search_min_score,
         )
-    except Exception as exc:  # noqa: BLE001 — defensive depth; find_clean_source
+    except Exception as exc:  # noqa: BLE001 — defensive depth; find_piano_cover
                               # is documented silent-failure but we must never
                               # crash the job on a cover-search bug.
         log.warning("ingest: cover_search find crashed for %r: %s", title, exc)
@@ -187,19 +182,6 @@ def _maybe_swap_for_cover_sync(url: str) -> str:
         log.info(
             "ingest: cover_search no match for title=%r artist=%r — using original URL",
             title, artist,
-        )
-        return url
-
-    # Defense-in-depth (PR #47 review, Critical): even with the
-    # _normalize_entry_url fix upstream in _yt_dlp_search, we refuse
-    # to propagate any cover_search result whose URL we can't parse as
-    # YouTube. A bad URL here would reach _download_youtube_sync and
-    # crash the job with ValueError, violating the silent-failure
-    # contract. Falling back to the original URL is always safe.
-    if not is_youtube_url(match.url):
-        log.warning(
-            "ingest: cover_search returned non-YouTube URL %r — falling back to original",
-            match.url,
         )
         return url
 
@@ -375,25 +357,10 @@ class IngestService:
         )
 
     @staticmethod
-    def from_title_lookup(
-        title: str,
-        artist: str | None = None,
-        *,
-        prefer_clean_source: bool = False,
-    ) -> InputBundle:
-        # prefer_clean_source is keyword-only so callers can't shadow
-        # artist positionally. Tests, scripts, and any non-API caller
-        # that wants to exercise the cover_search fast path must pass
-        # this flag through; the live API route constructs InputBundle
-        # directly, so production is unaffected. PR #47 review #3.
+    def from_title_lookup(title: str, artist: str | None = None) -> InputBundle:
         return InputBundle(
             schema_version=SCHEMA_VERSION,
             audio=None,
             midi=None,
-            metadata=InputMetadata(
-                title=title,
-                artist=artist,
-                source="title_lookup",
-                prefer_clean_source=prefer_clean_source,
-            ),
+            metadata=InputMetadata(title=title, artist=artist, source="title_lookup"),
         )
