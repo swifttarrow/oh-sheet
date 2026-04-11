@@ -59,18 +59,21 @@ class OhSheetApi {
 
   /// Submit a job. Provide exactly one of ``audio``, ``midi``, or ``title``.
   ///
-  /// ``preferCleanSource`` opts the user into the backend's piano-cover
-  /// search fast path: when true, the ingest stage will try to find a
-  /// clean piano cover of the song and transcribe that instead of the
-  /// original YouTube URL. Only meaningful for YouTube-URL title
-  /// submissions; ignored by the audio/midi upload variants.
+  /// ``preferCleanSource`` opts the user into the backend's clean-source
+  /// search fast path: when true, the ingest stage looks for a piano or
+  /// 8-bit cover of the song and transcribes that instead of the
+  /// original YouTube URL. Pass ``null`` (the default) to omit the
+  /// field entirely from the request body. Caller code for audio / MIDI
+  /// / plain-title modes should not pass this parameter at all — it is
+  /// meaningful only for YouTube URL submissions, and shipping it
+  /// anyway is semantic noise in request logs (PR #47 review #4).
   Future<JobSummary> createJob({
     RemoteAudioFile? audio,
     RemoteMidiFile? midi,
     String? title,
     String? artist,
     bool skipHumanizer = false,
-    bool preferCleanSource = false,
+    bool? preferCleanSource,
   }) async {
     final body = <String, dynamic>{
       if (audio != null) 'audio': audio.toJson(),
@@ -78,7 +81,7 @@ class OhSheetApi {
       if (title != null && title.isNotEmpty) 'title': title,
       if (artist != null && artist.isNotEmpty) 'artist': artist,
       'skip_humanizer': skipHumanizer,
-      'prefer_clean_source': preferCleanSource,
+      if (preferCleanSource != null) 'prefer_clean_source': preferCleanSource,
     };
     final response = await _client.post(
       _u('/v1/jobs'),

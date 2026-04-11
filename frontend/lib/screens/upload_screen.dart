@@ -246,6 +246,15 @@ class _UploadScreenState extends State<UploadScreen> {
                             _mode = s.first;
                             _pickedFile = null;
                             _error = null;
+                            // Reset clean-source opt-in on every mode
+                            // change. The toggle is YouTube-only; letting
+                            // its state persist across a mode switch
+                            // means the user could flip it ON, switch
+                            // to Audio, switch back to YouTube, and
+                            // submit with the flag still set silently —
+                            // the invisible-state footgun PR #47 review
+                            // flagged as (Important).
+                            _preferCleanSource = false;
                           }),
                         ),
                       ),

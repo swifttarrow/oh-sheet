@@ -532,6 +532,104 @@ class TestCoverSearchSettings:
 
 
 # ---------------------------------------------------------------------------
+# PR #47 review: yt-dlp entry URL normalization (Critical)
+# ---------------------------------------------------------------------------
+#
+# yt-dlp's ``extract_flat=True`` mode is inconsistent about where the
+# watch URL ends up — see _normalize_entry_url's docstring for details.
+# The dangerous case is a bare 11-char video ID landing in the ``url``
+# field: it flows unchecked through CoverSearchResult.url →
+# _maybe_swap_for_cover_sync → _download_youtube_sync, where
+# extract_youtube_id rejects it and _download_youtube_sync raises
+# ValueError — crashing the ingest job.
+
+
+class TestNormalizeEntryUrl:
+    """Normalize yt-dlp entries into canonical watch URLs."""
+
+    def test_full_https_url_in_url_field_returned_as_is(self):
+        from backend.services.cover_search import _normalize_entry_url
+        entry = {"url": "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
+                 "id": "dQw4w9WgXcQ"}
+        assert _normalize_entry_url(entry) == "https://www.youtube.com/watch?v=dQw4w9WgXcQ"
+
+    def test_full_http_url_accepted(self):
+        from backend.services.cover_search import _normalize_entry_url
+        entry = {"url": "http://youtube.com/watch?v=dQw4w9WgXcQ",
+                 "id": "dQw4w9WgXcQ"}
+        assert _normalize_entry_url(entry) == "http://youtube.com/watch?v=dQw4w9WgXcQ"
+
+    def test_bare_video_id_in_url_field_reconstructed_from_id(self):
+        # The (Critical) case: extract_flat sometimes puts just the
+        # 11-char ID in the "url" field. Without normalization, this
+        # flows into _download_youtube_sync and crashes the job.
+        from backend.services.cover_search import _normalize_entry_url
+        entry = {"url": "dQw4w9WgXcQ", "id": "dQw4w9WgXcQ"}
+        assert _normalize_entry_url(entry) == "https://www.youtube.com/watch?v=dQw4w9WgXcQ"
+
+    def test_webpage_url_wins_when_url_field_is_bare_id(self):
+        # Prefer webpage_url — it's always the full canonical form when
+        # yt-dlp populates it at all.
+        from backend.services.cover_search import _normalize_entry_url
+        entry = {
+            "url": "dQw4w9WgXcQ",
+            "webpage_url": "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
+            "id": "dQw4w9WgXcQ",
+        }
+        assert _normalize_entry_url(entry) == "https://www.youtube.com/watch?v=dQw4w9WgXcQ"
+
+    def test_webpage_url_used_when_url_field_missing(self):
+        from backend.services.cover_search import _normalize_entry_url
+        entry = {
+            "webpage_url": "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
+            "id": "dQw4w9WgXcQ",
+        }
+        assert _normalize_entry_url(entry) == "https://www.youtube.com/watch?v=dQw4w9WgXcQ"
+
+    def test_empty_url_field_falls_back_to_id(self):
+        from backend.services.cover_search import _normalize_entry_url
+        entry = {"url": "", "id": "dQw4w9WgXcQ"}
+        assert _normalize_entry_url(entry) == "https://www.youtube.com/watch?v=dQw4w9WgXcQ"
+
+    def test_nothing_resolvable_returns_empty_string(self):
+        # Caller must drop this entry.
+        from backend.services.cover_search import _normalize_entry_url
+        entry = {"title": "some video", "channel": "some channel"}
+        assert _normalize_entry_url(entry) == ""
+
+    def test_yt_dlp_search_drops_entries_with_unresolvable_url(self):
+        # Integration: _yt_dlp_search must drop unresolvable entries
+        # rather than let bare IDs pass through.
+        import types
+
+        import backend.services.cover_search as cs
+
+        fake_response = {
+            "entries": [
+                {"url": "dQw4w9WgXcQ", "id": "dQw4w9WgXcQ",
+                 "title": "t1", "channel": "c1"},
+                {"title": "t2", "channel": "c2"},  # dropped — no URL
+                {"webpage_url": "https://www.youtube.com/watch?v=abc12345678",
+                 "id": "abc12345678", "title": "t3", "channel": "c3"},
+            ]
+        }
+
+        class _FakeYDL:
+            def __init__(self, opts): pass
+            def __enter__(self): return self
+            def __exit__(self, *a): return False
+            def extract_info(self, query, download): return fake_response
+
+        fake_yt_dlp = types.SimpleNamespace(YoutubeDL=_FakeYDL)
+        with patch.dict("sys.modules", {"yt_dlp": fake_yt_dlp}):
+            entries = cs._yt_dlp_search("anything", top_k=5)
+
+        assert len(entries) == 2
+        assert entries[0]["url"] == "https://www.youtube.com/watch?v=dQw4w9WgXcQ"
+        assert entries[1]["url"] == "https://www.youtube.com/watch?v=abc12345678"
+
+
+# ---------------------------------------------------------------------------
 # Layer 7: multi-variant search — piano + chiptune
 # ---------------------------------------------------------------------------
 #

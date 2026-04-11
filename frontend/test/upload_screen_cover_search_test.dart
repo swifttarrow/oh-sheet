@@ -133,4 +133,64 @@ void main() {
       expect(find.textContaining('piano cover'), findsAtLeastNWidgets(1));
     });
   });
+
+  // PR #47 review, (Important) #2: toggle state must reset when the
+  // user switches away from YouTube mode. Otherwise the flag survives
+  // invisibly — toggle ON → switch to Audio → switch back to YouTube →
+  // the toggle control shows off but the underlying state is still on,
+  // so the submitted request carries prefer_clean_source=true without
+  // the user intending it.
+  group('Clean-source toggle state lifecycle', () {
+    testWidgets(
+        'toggle resets to OFF after switching modes away and back',
+        (tester) async {
+      Map<String, dynamic>? captured;
+      await tester.pumpWidget(_app(_mockApi((body) => captured = body)));
+
+      // 1. Enter YouTube mode and flip the toggle ON.
+      await _selectYoutubeMode(tester);
+      await tester.ensureVisible(find.byKey(_youtubeKey));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(_youtubeKey));
+      await tester.pumpAndSettle();
+
+      // 2. Switch away to Audio, then back to YouTube.
+      await tester.tap(find.text('Audio'));
+      await tester.pumpAndSettle();
+      await _selectYoutubeMode(tester);
+
+      // 3. The toggle should now be visually OFF and submit false.
+      await _enterYoutubeUrl(tester, 'https://youtu.be/dQw4w9WgXcQ');
+      await _submit(tester);
+
+      expect(captured, isNotNull);
+      expect(
+        captured!['prefer_clean_source'],
+        false,
+        reason: 'Toggle must reset to off when switching modes away and back',
+      );
+    });
+
+    // PR #47 review, (Minor) #4: title-lookup / audio / MIDI submissions
+    // should NOT serialize prefer_clean_source at all. It's meaningless
+    // for those modes — the backend ignores it — but shipping it anyway
+    // is semantic noise in request logs.
+    testWidgets(
+        'title-mode submission does not include prefer_clean_source',
+        (tester) async {
+      Map<String, dynamic>? captured;
+      await tester.pumpWidget(_app(_mockApi((body) => captured = body)));
+      await tester.tap(find.text('Title'));
+      await tester.pumpAndSettle();
+      await tester.enterText(
+        find.widgetWithText(TextField, 'Song title (required)'),
+        'Yesterday',
+      );
+      await tester.pumpAndSettle();
+      await _submit(tester);
+
+      expect(captured, isNotNull);
+      expect(captured!.containsKey('prefer_clean_source'), false);
+    });
+  });
 }

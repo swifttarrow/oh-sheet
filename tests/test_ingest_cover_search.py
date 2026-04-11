@@ -95,7 +95,7 @@ class TestCoverSearchSwapsUrl:
 
     def test_swaps_to_cover_url_when_match_clears_threshold(self, service):
         bundle = _make_bundle(prefer_clean_source=True)
-        cover_url = "https://youtube.com/watch?v=ROUSSEAU_COVER"
+        cover_url = "https://youtube.com/watch?v=rouss12cvr1"
 
         with (
             patch("backend.services.ingest.probe_youtube_metadata") as mock_probe,
@@ -157,7 +157,7 @@ class TestCoverSearchFallsBackToOriginal:
     URL in place — the silent-failure contract."""
 
     def test_falls_back_when_find_clean_source_returns_none(self, service):
-        original_url = "https://youtube.com/watch?v=originalVID"
+        original_url = "https://youtube.com/watch?v=origvid1111"
         bundle = _make_bundle(original_url, prefer_clean_source=True)
 
         with (
@@ -176,7 +176,7 @@ class TestCoverSearchFallsBackToOriginal:
         assert called_url == original_url
 
     def test_falls_back_when_probe_returns_none(self, service):
-        original_url = "https://youtube.com/watch?v=originalVID"
+        original_url = "https://youtube.com/watch?v=origvid1111"
         bundle = _make_bundle(original_url, prefer_clean_source=True)
 
         with (
@@ -198,7 +198,7 @@ class TestCoverSearchFallsBackToOriginal:
     def test_falls_back_when_find_clean_source_raises(self, service):
         # find_clean_source is documented as silent-failure, but defensive
         # depth: if it somehow does raise, ingest still must not crash.
-        original_url = "https://youtube.com/watch?v=originalVID"
+        original_url = "https://youtube.com/watch?v=origvid1111"
         bundle = _make_bundle(original_url, prefer_clean_source=True)
 
         with (
@@ -216,6 +216,38 @@ class TestCoverSearchFallsBackToOriginal:
         called_url = mock_dl.call_args.args[0]
         assert called_url == original_url
         assert result.audio is not None
+
+    def test_falls_back_when_cover_result_has_non_youtube_parseable_url(self, service):
+        # Defense-in-depth for the (Critical) PR #47 review finding: even
+        # if _yt_dlp_search's URL normalization misses a pathological entry
+        # and cover_search returns a CoverSearchResult with a bare video ID
+        # (or any other string that urlparse can't turn into a YouTube URL),
+        # _maybe_swap_for_cover_sync must refuse to propagate it downstream.
+        # Otherwise _download_youtube_sync raises ValueError and crashes
+        # the whole ingest job — exactly what the silent-failure contract
+        # is meant to prevent.
+        original_url = "https://youtube.com/watch?v=origvid1111"
+        bundle = _make_bundle(original_url, prefer_clean_source=True)
+
+        with (
+            patch("backend.services.ingest.probe_youtube_metadata") as mock_probe,
+            patch("backend.services.ingest.find_clean_source") as mock_find,
+            patch("backend.services.ingest._download_youtube_sync") as mock_dl,
+        ):
+            mock_probe.return_value = ("bohemian rhapsody", "Queen")
+            mock_find.return_value = CoverSearchResult(
+                url="dQw4w9WgXcQ",  # ← bare video ID — extract_youtube_id rejects it
+                score=110,
+                channel="Rousseau",
+                title="Bohemian Rhapsody (Piano Cover)",
+            )
+            mock_dl.side_effect = lambda url, _bs: _fake_downloaded_audio(url)
+
+            # Must not crash — the bad URL is rejected and we fall back.
+            asyncio.run(service.run(bundle))
+
+        called_url = mock_dl.call_args.args[0]
+        assert called_url == original_url
 
 
 # ---------------------------------------------------------------------------
@@ -345,3 +377,37 @@ class TestCoverSearchSkipsNonYoutubeInputs:
 
         mock_probe.assert_not_called()
         mock_find.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# Static bundle builder: from_title_lookup must accept prefer_clean_source
+# ---------------------------------------------------------------------------
+
+
+class TestFromTitleLookupBuilder:
+    """PR #47 review (Important) #3: the static
+    IngestService.from_title_lookup builder is used by scripts, tests,
+    and any future caller that doesn't hit the API. Before the fix it
+    silently dropped the prefer_clean_source flag because the builder
+    didn't accept it, so any non-API caller would see the cover_search
+    fast path skipped without knowing why. The live API route
+    constructs InputBundle directly, so production is unaffected."""
+
+    def test_from_title_lookup_defaults_to_prefer_clean_source_false(self):
+        bundle = IngestService.from_title_lookup("Yesterday", artist="The Beatles")
+        assert bundle.metadata.prefer_clean_source is False
+
+    def test_from_title_lookup_accepts_prefer_clean_source_true(self):
+        bundle = IngestService.from_title_lookup(
+            "Yesterday",
+            artist="The Beatles",
+            prefer_clean_source=True,
+        )
+        assert bundle.metadata.prefer_clean_source is True
+
+    def test_from_title_lookup_prefer_clean_source_is_keyword_only(self):
+        # prefer_clean_source must be keyword-only to prevent positional
+        # shadowing of artist (a common mistake with a 2-arg signature).
+        import pytest
+        with pytest.raises(TypeError):
+            IngestService.from_title_lookup("Yesterday", "The Beatles", True)  # type: ignore[misc]

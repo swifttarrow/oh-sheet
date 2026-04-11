@@ -190,6 +190,19 @@ def _maybe_swap_for_cover_sync(url: str) -> str:
         )
         return url
 
+    # Defense-in-depth (PR #47 review, Critical): even with the
+    # _normalize_entry_url fix upstream in _yt_dlp_search, we refuse
+    # to propagate any cover_search result whose URL we can't parse as
+    # YouTube. A bad URL here would reach _download_youtube_sync and
+    # crash the job with ValueError, violating the silent-failure
+    # contract. Falling back to the original URL is always safe.
+    if not is_youtube_url(match.url):
+        log.warning(
+            "ingest: cover_search returned non-YouTube URL %r — falling back to original",
+            match.url,
+        )
+        return url
+
     log.info(
         "ingest: cover_search SWAP url=%r → %r (channel=%r score=%d)",
         url, match.url, match.channel, match.score,
@@ -362,10 +375,25 @@ class IngestService:
         )
 
     @staticmethod
-    def from_title_lookup(title: str, artist: str | None = None) -> InputBundle:
+    def from_title_lookup(
+        title: str,
+        artist: str | None = None,
+        *,
+        prefer_clean_source: bool = False,
+    ) -> InputBundle:
+        # prefer_clean_source is keyword-only so callers can't shadow
+        # artist positionally. Tests, scripts, and any non-API caller
+        # that wants to exercise the cover_search fast path must pass
+        # this flag through; the live API route constructs InputBundle
+        # directly, so production is unaffected. PR #47 review #3.
         return InputBundle(
             schema_version=SCHEMA_VERSION,
             audio=None,
             midi=None,
-            metadata=InputMetadata(title=title, artist=artist, source="title_lookup"),
+            metadata=InputMetadata(
+                title=title,
+                artist=artist,
+                source="title_lookup",
+                prefer_clean_source=prefer_clean_source,
+            ),
         )

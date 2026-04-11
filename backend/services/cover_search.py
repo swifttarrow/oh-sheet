@@ -564,6 +564,46 @@ def find_piano_cover(
     )
 
 
+def _normalize_entry_url(entry: dict[str, Any]) -> str:
+    """Resolve a yt-dlp entry into a canonical ``https://www.youtube.com/watch?v=...`` URL.
+
+    yt-dlp's ``extract_flat=True`` mode is inconsistent about where the
+    watch URL ends up. In practice we see three variants:
+
+      1. ``url`` field holds a full ``http(s)://...`` URL (most common)
+      2. ``url`` field holds the bare 11-char video ID (observed on
+         recent yt-dlp builds — "flat" is literal there)
+      3. ``url`` field is missing and ``webpage_url`` carries the URL
+
+    Variant #2 is the dangerous one: a bare ID flows unchecked through
+    CoverSearchResult → _maybe_swap_for_cover_sync → _download_youtube_sync,
+    where ``urlparse`` returns an empty hostname and _download_youtube_sync
+    raises ValueError — crashing the ingest job (PR #47 review, Critical).
+
+    Preference order, highest to lowest:
+      1. ``webpage_url`` if it's a valid ``http(s)://`` URL
+      2. ``url`` if it's a valid ``http(s)://`` URL
+      3. Constructed ``https://www.youtube.com/watch?v={id}`` from ``id``
+      4. ``""`` — caller must drop this entry
+
+    webpage_url wins over url because when yt-dlp populates it at all,
+    it's always the full canonical form; url may be bare.
+    """
+    webpage_url = (entry.get("webpage_url") or "").strip()
+    if webpage_url.startswith(("http://", "https://")):
+        return webpage_url
+
+    existing_url = (entry.get("url") or "").strip()
+    if existing_url.startswith(("http://", "https://")):
+        return existing_url
+
+    video_id = (entry.get("id") or "").strip()
+    if video_id:
+        return f"https://www.youtube.com/watch?v={video_id}"
+
+    return ""
+
+
 def _yt_dlp_search(query: str, *, top_k: int = 5) -> list[dict[str, Any]]:
     """Run yt-dlp in search mode and return up to ``top_k`` entries.
 
@@ -586,12 +626,18 @@ def _yt_dlp_search(query: str, *, top_k: int = 5) -> list[dict[str, Any]]:
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
         result = ydl.extract_info(f"ytsearch{top_k}:{query}", download=False)
 
-    entries = (result or {}).get("entries", []) or []
-    # Normalize the URL field — extract_flat returns it as "url" but some
-    # entries use "webpage_url" instead.
-    for e in entries:
-        if "url" not in e and "webpage_url" in e:
-            e["url"] = e["webpage_url"]
+    raw_entries = (result or {}).get("entries", []) or []
+    # Normalize each entry's URL through _normalize_entry_url, which
+    # handles the extract_flat quirks (bare IDs, webpage_url fallback,
+    # id-based reconstruction). Drop any entry we can't resolve at all;
+    # passing a bad URL downstream crashes _download_youtube_sync.
+    entries: list[dict[str, Any]] = []
+    for e in raw_entries:
+        normalized = _normalize_entry_url(e)
+        if not normalized:
+            continue
+        e["url"] = normalized
+        entries.append(e)
     return entries
 
 
