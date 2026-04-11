@@ -105,9 +105,16 @@ def _entry(
     channel: str = "Random Channel",
     duration: int = 240,
     view_count: int = 10_000,
+    uploader_id: str | None = None,
 ) -> dict:
-    """Build a yt-dlp search result entry for testing."""
-    return {
+    """Build a yt-dlp search result entry for testing.
+
+    ``uploader_id`` is the ``@handle`` string yt-dlp returns for the
+    channel (e.g. ``@keshpianomusic``). Optional — most tests don't
+    care about it, but the trusted-tutorial exemption path reads it
+    for unambiguous channel identification.
+    """
+    entry = {
         "id": "abc123",
         "title": title,
         "channel": channel,
@@ -115,6 +122,9 @@ def _entry(
         "view_count": view_count,
         "url": "https://www.youtube.com/watch?v=abc123",
     }
+    if uploader_id is not None:
+        entry["uploader_id"] = uploader_id
+    return entry
 
 
 class TestScoreCandidate:
@@ -650,6 +660,135 @@ class TestPianoTierPreference:
         assert set(COVER_CHANNEL_ALLOWLIST) == (
             set(PIANO_EASY_CHANNELS) | set(PIANO_MODERATE_CHANNELS)
         )
+
+
+# ---------------------------------------------------------------------------
+# Layer 7b: trusted tutorial channels
+# ---------------------------------------------------------------------------
+#
+# Some channels brand themselves as "tutorial" but produce clean,
+# transcription-quality audio — Synthesia-style rendered piano with no
+# voiceover or backing track. For those channels the ``-20`` tutorial
+# keyword penalty is the wrong signal: it marks them down for what they
+# call themselves rather than what they actually sound like.
+#
+# We maintain a small ``TRUSTED_TUTORIAL_CHANNELS`` exemption list.
+# Channels in it score the normal allowlist + title + artist bonuses
+# without the tutorial penalty deducted. Matches against yt-dlp's
+# ``uploader_id`` (the ``@handle`` form) so the identifier is unique
+# even for channels whose display names are common words.
+#
+# First entry: Kesh Piano Music (``@keshpianomusic``) — their entire
+# catalog is "Piano Tutorial + MIDI" but the audio is pure rendered
+# piano which Basic Pitch transcribes beautifully.
+
+
+class TestTrustedTutorialChannels:
+    """Trusted-tutorial channels bypass the ``-20`` tutorial penalty.
+
+    The canonical first member is Kesh (``@keshpianomusic``) whose
+    catalog is all "Piano Tutorial" videos but whose audio is
+    transcription-quality piano synthesis.
+    """
+
+    def test_trusted_tutorial_list_exists_and_contains_kesh(self):
+        from backend.services.cover_search import TRUSTED_TUTORIAL_CHANNELS
+        assert isinstance(TRUSTED_TUTORIAL_CHANNELS, (list, tuple, frozenset, set))
+        assert any("kesh" in entry.lower() for entry in TRUSTED_TUTORIAL_CHANNELS), (
+            f"Kesh should seed the trusted-tutorial list: {TRUSTED_TUTORIAL_CHANNELS}"
+        )
+
+    def test_trusted_tutorial_entries_are_lowercase(self):
+        from backend.services.cover_search import TRUSTED_TUTORIAL_CHANNELS
+        for entry in TRUSTED_TUTORIAL_CHANNELS:
+            assert entry == entry.lower(), f"{entry!r} should be lowercase"
+
+    def test_kesh_in_piano_moderate_allowlist(self):
+        # Kesh is on the piano moderate tier (not easy — his tutorials
+        # are for learners but aren't "beginner" simplified).
+        from backend.services.cover_search import PIANO_MODERATE_CHANNELS
+        assert any(
+            "kesh" in entry.lower() for entry in PIANO_MODERATE_CHANNELS
+        ), f"Kesh should be in PIANO_MODERATE_CHANNELS: {PIANO_MODERATE_CHANNELS}"
+
+    def test_kesh_match_via_uploader_id_handle(self):
+        # yt-dlp returns channel="Kesh" (too broad for substring match
+        # because of the "Kesha" collision risk) but also exposes
+        # uploader_id="@keshpianomusic" which is unambiguous. The
+        # scorer must check uploader_id alongside channel so matching
+        # on the handle works.
+        from backend.services.cover_search import score_candidate
+        entry = _entry(
+            title="River Flows In You - Yiruma - Piano Tutorial + MIDI",
+            channel="Kesh",
+            uploader_id="@keshpianomusic",
+        )
+        score = score_candidate(
+            entry, wanted_title="River Flows In You", wanted_artist="Yiruma",
+        )
+        # allowlist +50 (via uploader_id match) + title match +20 +
+        # artist match +10 - tutorial penalty (SKIPPED for trusted
+        # tutorial) = 80
+        assert score == 80, (
+            f"Kesh + title + artist should score 80 with tutorial penalty "
+            f"exempted; got {score}"
+        )
+
+    def test_kesh_tutorial_penalty_exempt(self):
+        # Specific regression: the -20 tutorial penalty must NOT apply
+        # when the channel is trusted, even though "tutorial" appears
+        # in the title.
+        from backend.services.cover_search import score_candidate
+        entry = _entry(
+            title="Some Song - Piano Tutorial",
+            channel="Kesh",
+            uploader_id="@keshpianomusic",
+        )
+        # allowlist +50 only; no title/artist match; tutorial penalty
+        # skipped because trusted. Should score 50.
+        score = score_candidate(
+            entry, wanted_title="unrelated song", wanted_artist=None,
+        )
+        assert score == 50
+
+    def test_non_trusted_tutorial_still_penalized(self):
+        # Regression: the exemption must be SPECIFIC to the trusted list.
+        # A random channel with "tutorial" in the title still gets -20.
+        from backend.services.cover_search import score_candidate
+        entry = _entry(
+            title="River Flows In You - Piano Tutorial",
+            channel="Random Piano Channel",
+            uploader_id="@randomchannel",
+        )
+        # No allowlist, no piano-cover keyword ("piano tutorial"
+        # doesn't match), title match +20, no artist, tutorial -20.
+        # Net: 0.
+        score = score_candidate(
+            entry, wanted_title="River Flows In You", wanted_artist=None,
+        )
+        assert score == 0
+
+    def test_kesh_allowlist_does_not_false_match_kesha_pop_channel(self):
+        # Defensive regression: the pop artist "Kesha" must not trip
+        # the Kesh allowlist. We match on uploader_id handle, not on
+        # channel name substring, so a Kesha-named channel without
+        # the @keshpianomusic handle should score 0.
+        from backend.services.cover_search import score_candidate
+        entry = _entry(
+            title="Kesha Tik Tok Piano Cover",
+            channel="Kesha Fan Covers",
+            uploader_id="@keshafancovers",
+        )
+        # No allowlist match (Kesha != keshpianomusic), piano cover
+        # keyword +30, title/artist +10 (if matched). Should NOT get
+        # the +50 allowlist bonus.
+        score = score_candidate(
+            entry, wanted_title="Tik Tok", wanted_artist="Kesha",
+        )
+        # piano cover keyword +30, title +20, artist +10 = 60 (no
+        # allowlist match = no +50). Confirms the handle-based lookup
+        # is specific enough.
+        assert score == 60
 
 
 class TestChiptuneChannelAllowlist:
