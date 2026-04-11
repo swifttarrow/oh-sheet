@@ -25,7 +25,7 @@ from backend.contracts import (
     RemoteAudioFile,
     RemoteMidiFile,
 )
-from backend.services.cover_search import find_piano_cover, probe_youtube_metadata
+from backend.services.cover_search import find_clean_source, probe_youtube_metadata
 
 log = logging.getLogger(__name__)
 
@@ -139,21 +139,26 @@ def _download_youtube_sync(url: str, blob_store) -> tuple[RemoteAudioFile, str |
 
 
 def _maybe_swap_for_cover_sync(url: str) -> str:
-    """If a high-scoring piano cover of ``url`` exists, return its URL;
+    """If a high-scoring clean source for ``url`` exists, return its URL;
     otherwise return ``url`` unchanged.
 
     This is the ingest stage's "fast path" router (see
     ``backend/services/cover_search.py``). The rationale: Basic Pitch
     transcribes every audible pitch as a piano note, so feeding it a
     polyphonic pop mix produces dense, unplayable sheet music. A clean
-    piano cover is monophonic or piano-only, which is exactly what
-    Basic Pitch is good at.
+    piano cover (easy / moderate tier) is already piano-shaped, which
+    is exactly what Basic Pitch is good at. An 8-bit / chiptune cover
+    is even cleaner — monophonic channels, no reverb, no drums mixed
+    into pitched content — so when one exists it often outscores any
+    piano cover in the same search.
 
-    Silent-failure contract: ANY exception or non-match falls back to
-    the original URL. Job continues, user gets the direct transcription
-    they implicitly asked for. This function is called via
-    ``asyncio.to_thread`` because both probe and search are blocking
-    network I/O.
+    ``find_clean_source`` runs both variants and returns the single
+    highest-scoring result across piano+chiptune. This function is the
+    thin async wrapper that enforces the silent-failure contract: ANY
+    exception or non-match falls back to the original URL. Job
+    continues, user gets the direct transcription they implicitly
+    asked for. Called via ``asyncio.to_thread`` because both probe and
+    search are blocking network I/O.
     """
     try:
         probed = probe_youtube_metadata(url)
@@ -167,12 +172,12 @@ def _maybe_swap_for_cover_sync(url: str) -> str:
 
     title, artist = probed
     try:
-        match = find_piano_cover(
+        match = find_clean_source(
             title,
             artist,
             min_score=settings.cover_search_min_score,
         )
-    except Exception as exc:  # noqa: BLE001 — defensive depth; find_piano_cover
+    except Exception as exc:  # noqa: BLE001 — defensive depth; find_clean_source
                               # is documented silent-failure but we must never
                               # crash the job on a cover-search bug.
         log.warning("ingest: cover_search find crashed for %r: %s", title, exc)
