@@ -22,6 +22,13 @@ router = APIRouter()
 AUDIO_FORMATS = {"mp3", "wav", "flac", "m4a"}
 MIDI_FORMATS = {"mid", "midi"}
 
+# Standard MIDI File magic header. Every SMF (regardless of format 0/1/2)
+# begins with the 4-byte "MThd" chunk type. Checking these four bytes
+# is a cheap content-integrity gate — it blocks the "rename anything
+# to .mid and upload" attack without pulling in a MIDI parser at the
+# HTTP layer. Deeper structural validation is ingest's job.
+_MIDI_MAGIC = b"MThd"
+
 
 def _ext(filename: str) -> str:
     return filename.rsplit(".", 1)[-1].lower() if "." in filename else ""
@@ -67,6 +74,20 @@ async def upload_midi(
         )
 
     data = await file.read()
+
+    # Content-integrity check: the .mid/.midi extension is a hint, not
+    # a guarantee. Reject anything that doesn't begin with the Standard
+    # MIDI File magic header so garbage bytes can't land in blob
+    # storage and get passed to the ingest stage.
+    if not data.startswith(_MIDI_MAGIC):
+        raise HTTPException(
+            status_code=415,
+            detail=(
+                "Uploaded bytes are not a valid MIDI file "
+                "(missing 'MThd' header). Please upload a Standard MIDI File."
+            ),
+        )
+
     digest = hashlib.sha256(data).hexdigest()
     uri = blob.put_bytes(f"uploads/midi/{digest}.mid", data)
 

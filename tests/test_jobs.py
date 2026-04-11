@@ -79,6 +79,43 @@ def test_create_job_rejects_both_audio_and_midi(client):
     assert response.status_code == 400
 
 
+def test_create_job_rejects_audio_with_nonexistent_uri(client):
+    # Integrity: clients must not be able to forge a RemoteAudioFile
+    # pointing at a blob URI that was never uploaded. Without this
+    # check the route accepted the request, pushed it through stub
+    # stages, and reported a successful job — the user only saw the
+    # problem when they tried to play the resulting "audio" (which
+    # was nothing at all).
+    bogus_audio = {
+        "uri": "file:///tmp/this-blob-was-never-uploaded.wav",
+        "format": "wav",
+        "sample_rate": 44100,
+        "duration_sec": 1.0,
+        "channels": 2,
+        "content_hash": "0" * 64,
+    }
+    response = client.post(
+        "/v1/jobs",
+        json={"audio": bogus_audio, "title": "Forged", "artist": "Ghost"},
+    )
+    assert response.status_code == 400
+    assert "uri" in response.json()["detail"].lower()
+
+
+def test_create_job_rejects_midi_with_nonexistent_uri(client):
+    bogus_midi = {
+        "uri": "file:///tmp/never-uploaded.mid",
+        "ticks_per_beat": 480,
+        "content_hash": "0" * 64,
+    }
+    response = client.post(
+        "/v1/jobs",
+        json={"midi": bogus_midi, "title": "Forged", "artist": "Ghost"},
+    )
+    assert response.status_code == 400
+    assert "uri" in response.json()["detail"].lower()
+
+
 def test_create_job_title_lookup_only(client):
     response = client.post("/v1/jobs", json={"title": "Yesterday", "artist": "The Beatles"})
     assert response.status_code == 202

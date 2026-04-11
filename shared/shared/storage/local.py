@@ -46,6 +46,24 @@ class LocalBlobStore:
     def get_bytes(self, uri: str) -> bytes:
         return self._path_from_uri(uri).read_bytes()
 
+    def exists(self, uri: str) -> bool:
+        """Return True iff ``uri`` points to a readable blob in this store.
+
+        Safely handles:
+          * Non-``file://`` schemes (returns False)
+          * URIs whose resolved path escapes the blob root (returns False)
+          * Paths that simply don't exist (returns False)
+
+        Any ``ValueError`` from ``_path_from_uri`` is treated as "not in
+        this store" rather than re-raised, so callers can use this as a
+        simple truthy existence check without catching exceptions.
+        """
+        try:
+            path = self._path_from_uri(uri)
+        except ValueError:
+            return False
+        return path.is_file()
+
     # ---- json convenience ------------------------------------------------
 
     def put_json(self, key: str, payload: dict[str, Any]) -> str:
