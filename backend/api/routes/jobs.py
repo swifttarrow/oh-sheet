@@ -6,7 +6,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
-from backend.api.deps import get_job_manager
+from backend.api.deps import get_blob_store, get_job_manager
 from backend.config import settings
 from backend.contracts import (
     SCHEMA_VERSION,
@@ -21,6 +21,7 @@ from backend.contracts import (
 )
 from backend.jobs.events import JobEvent
 from backend.jobs.manager import JobManager, JobRecord
+from backend.storage.local import LocalBlobStore
 
 router = APIRouter()
 
@@ -82,6 +83,7 @@ def _record_to_summary(record: JobRecord) -> JobSummary:
 async def create_job(
     body: JobCreateRequest,
     manager: Annotated[JobManager, Depends(get_job_manager)],
+    blob: Annotated[LocalBlobStore, Depends(get_blob_store)],
 ) -> JobSummary:
     # Source signal: audio xor midi; if neither, fall back to title-lookup.
     if body.audio is not None and body.midi is not None:
@@ -93,6 +95,22 @@ async def create_job(
         raise HTTPException(
             status_code=400,
             detail="Provide one of: audio, midi, or title (for title-lookup).",
+        )
+
+    # Integrity: the audio / midi URI must point to a real blob in
+    # storage. Without this check a client could forge a Remote*File
+    # with an arbitrary URI and the pipeline would "succeed" by
+    # running stub stages over nothing — a silent failure mode that
+    # masked real upload bugs during development.
+    if body.audio is not None and not blob.exists(body.audio.uri):
+        raise HTTPException(
+            status_code=400,
+            detail=f"Audio URI does not resolve to a stored blob: {body.audio.uri!r}",
+        )
+    if body.midi is not None and not blob.exists(body.midi.uri):
+        raise HTTPException(
+            status_code=400,
+            detail=f"MIDI URI does not resolve to a stored blob: {body.midi.uri!r}",
         )
 
     # Build InputMetadata once — prefer_clean_source is threaded through
