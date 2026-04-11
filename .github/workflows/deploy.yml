@@ -2,12 +2,12 @@ name: Deploy to VM
 
 on:
   push:
-    branches: [main]
+    branches: [qa, main]
   workflow_dispatch:
 
 concurrency:
   group: deploy-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 env:
   PROJECT_ID: ${{ vars.GCP_PROJECT_ID }}
@@ -18,8 +18,13 @@ env:
 
 jobs:
   deploy:
-    name: Build & Deploy
+    name: Build & Deploy (${{ github.ref_name }})
     runs-on: ubuntu-latest
+    # Route qa pushes → qa environment, main pushes → prod environment.
+    # Environment-scoped vars/secrets (VM_HOST, PUBLIC_URL) determine the target.
+    environment:
+      name: ${{ github.ref_name == 'main' && 'prod' || 'qa' }}
+      url: ${{ vars.PUBLIC_URL }}
     permissions:
       contents: read
       id-token: write
@@ -74,11 +79,12 @@ jobs:
           SSH="ssh -i ~/.ssh/deploy_key ${VM_USER}@${VM_HOST}"
           SCP="scp -i ~/.ssh/deploy_key"
 
-          # Write .env with the image tag and commit SHA for docker compose
+          # Write .env with image tags, commit SHA, and domain for docker compose
           echo "IMAGE=${{ env.IMAGE }}:${{ github.sha }}" > /tmp/.env
           echo "IMAGE_DECOMPOSER=${{ env.IMAGE_DECOMPOSER }}:${{ github.sha }}" >> /tmp/.env
           echo "IMAGE_ASSEMBLER=${{ env.IMAGE_ASSEMBLER }}:${{ github.sha }}" >> /tmp/.env
           echo "COMMIT_SHA=${{ github.sha }}" >> /tmp/.env
+          echo "DOMAIN=${{ vars.DOMAIN }}" >> /tmp/.env
 
           # Copy compose files to VM (SCP .env to temp name, then atomic mv)
           $SCP docker-compose.prod.yml Caddyfile "${VM_USER}@${VM_HOST}:~/oh-sheet/"
@@ -90,20 +96,21 @@ jobs:
 
       - name: Verify deployment
         env:
-          VM_HOST: ${{ vars.VM_HOST }}
+          PUBLIC_URL: ${{ vars.PUBLIC_URL }}
         run: |
           sleep 15
-          curl -sf --retry 5 --retry-delay 5 "https://oh-sheet.duckdns.org/v1/health" && echo "Health check passed" || echo "::warning::Health check did not pass yet"
+          curl -sf --retry 5 --retry-delay 5 "${PUBLIC_URL}/v1/health" && echo "Health check passed" || echo "::warning::Health check did not pass yet"
 
       - name: Notify Slack on success
         if: success()
         run: |
           COMMIT_SHORT="${{ github.sha }}"
           COMMIT_SHORT="${COMMIT_SHORT:0:7}"
+          ENV_NAME="${{ github.ref_name == 'main' && 'PROD' || 'QA' }}"
           curl -sf -X POST "${{ secrets.SLACK_WEBHOOK_URL }}" \
             -H 'Content-type: application/json' \
             -d "{
-              \"text\": \":white_check_mark: *oh-sheet deployed* v${{ steps.version.outputs.version }} (\`${COMMIT_SHORT}\`) to <https://oh-sheet.duckdns.org> — <${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|View run>\"
+              \"text\": \":white_check_mark: *oh-sheet [${ENV_NAME}] deployed* v${{ steps.version.outputs.version }} (\`${COMMIT_SHORT}\`) to <${{ vars.PUBLIC_URL }}> — <${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|View run>\"
             }"
 
       - name: Notify Slack on failure
@@ -111,8 +118,9 @@ jobs:
         run: |
           COMMIT_SHORT="${{ github.sha }}"
           COMMIT_SHORT="${COMMIT_SHORT:0:7}"
+          ENV_NAME="${{ github.ref_name == 'main' && 'PROD' || 'QA' }}"
           curl -sf -X POST "${{ secrets.SLACK_WEBHOOK_URL }}" \
             -H 'Content-type: application/json' \
             -d "{
-              \"text\": \":x: *oh-sheet deploy failed* \`${COMMIT_SHORT}\` — <${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|View run>\"
+              \"text\": \":x: *oh-sheet [${ENV_NAME}] deploy failed* \`${COMMIT_SHORT}\` — <${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|View run>\"
             }"
