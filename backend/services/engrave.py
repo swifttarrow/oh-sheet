@@ -112,8 +112,13 @@ def _render_midi_bytes(perf: HumanizedPerformance) -> bytes:
             continue
         piano.notes.append(pretty_midi.Note(velocity=vel, pitch=pitch, start=start, end=end))
 
+    # Pedal events → GM control changes. Sustain = CC64, sostenuto = CC66,
+    # una corda = CC67. All three use the standard on=127 / off=0 encoding
+    # (below 64 disengages on most synths, but 0 is the unambiguous convention).
+    _PEDAL_CC = {"sustain": 64, "sostenuto": 66, "una_corda": 67}
     for pedal in perf.expression.pedal_events:
-        if pedal.type != "sustain":
+        cc_num = _PEDAL_CC.get(pedal.type)
+        if cc_num is None:
             continue
         try:
             on_sec = beat_to_sec(pedal.onset_beat, tempo_map) - midi_time_offset
@@ -121,10 +126,10 @@ def _render_midi_bytes(perf: HumanizedPerformance) -> bytes:
         except ValueError:
             continue
         piano.control_changes.append(
-            pretty_midi.ControlChange(number=64, value=127, time=max(0.0, on_sec))
+            pretty_midi.ControlChange(number=cc_num, value=127, time=max(0.0, on_sec))
         )
         piano.control_changes.append(
-            pretty_midi.ControlChange(number=64, value=0, time=max(0.0, off_sec))
+            pretty_midi.ControlChange(number=cc_num, value=0, time=max(0.0, off_sec))
         )
 
     midi.instruments.append(piano)
@@ -144,6 +149,54 @@ def _render_midi_bytes(perf: HumanizedPerformance) -> bytes:
 # ---------------------------------------------------------------------------
 # MusicXML rendering
 # ---------------------------------------------------------------------------
+
+# Human-readable labels for non-sustain pedals. Sustain uses the standard
+# "Ped." / "*" pair; MusicXML doesn't reserve glyphs for sostenuto / una
+# corda, so text directions are the portable choice across renderers.
+_PEDAL_TEXT = {
+    "sustain":    ("Ped.", "*"),
+    "sostenuto":  ("Sost. Ped.", "*"),
+    "una_corda":  ("una corda", "tre corde"),
+}
+
+
+def _attach_dynamics(part, dynamics, music21) -> None:  # noqa: ANN001 — music21 is untyped
+    """Insert ``DynamicMarking`` events into a music21 part.
+
+    Static marks (pp..ff) become ``music21.dynamics.Dynamic`` objects at
+    ``dyn.beat``. Hairpins (crescendo/decrescendo) become italic text
+    directions — ``music21.dynamics.Crescendo`` spanners need referenced
+    note endpoints that may have been quantized away, so text is the
+    more portable choice across OSMD / LilyPond / MuseScore.
+    """
+    for dyn in dynamics:
+        beat = max(0.0, float(dyn.beat))
+        if dyn.type in ("pp", "p", "mp", "mf", "f", "ff"):
+            part.insert(beat, music21.dynamics.Dynamic(dyn.type))
+        elif dyn.type == "crescendo":
+            part.insert(beat, music21.expressions.TextExpression("cresc."))
+        elif dyn.type == "decrescendo":
+            part.insert(beat, music21.expressions.TextExpression("dim."))
+
+
+def _attach_pedal_marks(part, pedal_events, music21) -> None:  # noqa: ANN001
+    """Insert pedal text directions into a music21 part.
+
+    Uses ``TextExpression`` rather than ``music21.expressions.PedalMark``
+    because the latter has inconsistent MusicXML export across music21
+    versions. Sustain emits the standard ``Ped.`` / ``*`` pair; sostenuto
+    and una corda use descriptive labels.
+    """
+    for pedal in pedal_events:
+        labels = _PEDAL_TEXT.get(pedal.type)
+        if labels is None:
+            continue
+        on_label, off_label = labels
+        on_beat = max(0.0, float(pedal.onset_beat))
+        off_beat = max(on_beat, float(pedal.offset_beat))
+        part.insert(on_beat, music21.expressions.TextExpression(on_label))
+        part.insert(off_beat, music21.expressions.TextExpression(off_label))
+
 
 def _render_musicxml_bytes(
     score: PianoScore,
@@ -210,7 +263,22 @@ def _render_musicxml_bytes(
                     n.articulations.append(music21.articulations.Accent())
                 elif art_type == "tenuto":
                     n.articulations.append(music21.articulations.Tenuto())
+                elif art_type == "fermata":
+                    # Fermata lives on n.expressions in music21, not
+                    # n.articulations — MusicXML emits it as a <fermata/>
+                    # inside <notations> either way, but only the
+                    # expressions placement round-trips through makeNotation.
+                    n.expressions.append(music21.expressions.Fermata())
                 part.insert(sn.onset_beat, n)
+
+            # Dynamics + pedal marks are attached to the RH and LH parts
+            # respectively so the markings sit between the staves where
+            # pianists expect them. Skipped on the engrave-from-score path
+            # (perf is never None there, but the expression map is empty).
+            if hand_name == "Right Hand" and perf is not None:
+                _attach_dynamics(part, perf.expression.dynamics, music21)
+            if hand_name == "Left Hand" and perf is not None:
+                _attach_pedal_marks(part, perf.expression.pedal_events, music21)
 
             # Chord symbols disabled for now — the harmonic analysis from
             # audio transcription produces noisy labels (G5, E5, etc.) that
@@ -516,16 +584,16 @@ class EngraveService:
             chord_count,
         )
 
-        # NOTE: these flags describe what was *actually rendered*, not what
-        # the input contained. Dynamics and pedal marks are still
-        # unimplemented in the MusicXML render path (plan phase 1.3/1.4),
-        # so both stay False until those PRs land — even when the humanized
-        # input has dynamics or pedal events populated.
+        # These flags describe what was *actually rendered*. As of PR-5
+        # (plan phase 1.3–1.6) engrave renders dynamics and pedal marks
+        # when the humanized input populates them, so we surface that
+        # state directly from the expression map instead of hardcoding.
+        perf_for_flags = payload if isinstance(payload, HumanizedPerformance) else None
         return EngravedOutput(
             schema_version=SCHEMA_VERSION,
             metadata=EngravedScoreData(
-                includes_dynamics=False,
-                includes_pedal_marks=False,
+                includes_dynamics=bool(perf_for_flags and perf_for_flags.expression.dynamics),
+                includes_pedal_marks=bool(perf_for_flags and perf_for_flags.expression.pedal_events),
                 includes_fingering=False,
                 includes_chord_symbols=chord_count > 0,
                 title=title,

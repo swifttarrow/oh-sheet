@@ -23,6 +23,8 @@ from typing import Callable
 
 from backend.contracts import (
     SCHEMA_VERSION,
+    Articulation,
+    DynamicMarking,
     ExpressionMap,
     ExpressiveNote,
     HumanizedPerformance,
@@ -342,6 +344,75 @@ def build_humanized_with_offsets() -> HumanizedPerformance:
     )
 
 
+def build_humanized_with_expression() -> HumanizedPerformance:
+    """The "stop dropping data" fixture — dynamics, pedal variants, fermata.
+
+    Exercises every branch of plan PR-5 (phase 1.3–1.6): a static
+    dynamic (``p``) at bar 1 and a hairpin (``crescendo``) spanning bar
+    2, sustain + sostenuto + una_corda pedal events on the LH, and a
+    fermata articulation on the last RH note.
+    """
+    base = build_c_major_scale()
+
+    expressive_notes = [
+        ExpressiveNote(
+            score_note_id=n.id,
+            pitch=n.pitch,
+            onset_beat=n.onset_beat,
+            duration_beat=n.duration_beat,
+            velocity=n.velocity,
+            hand="rh",
+            voice=n.voice,
+            timing_offset_ms=0.0,
+            velocity_offset=0,
+        )
+        for n in base.right_hand
+    ]
+    expressive_notes.extend(
+        ExpressiveNote(
+            score_note_id=n.id,
+            pitch=n.pitch,
+            onset_beat=n.onset_beat,
+            duration_beat=n.duration_beat,
+            velocity=n.velocity,
+            hand="lh",
+            voice=n.voice,
+            timing_offset_ms=0.0,
+            velocity_offset=0,
+        )
+        for n in base.left_hand
+    )
+
+    # Pedal offsets are pulled just inside the final beat. music21 drops
+    # direction elements inserted at the exact barline past the last note,
+    # so "Ped. / *" lifts at the very end of the piece never reach MusicXML.
+    # A ~16th-note release is still audible in the MIDI output.
+    last_rh_id = base.right_hand[-1].id
+    expression = ExpressionMap(
+        dynamics=[
+            DynamicMarking(beat=0.0, type="p"),
+            DynamicMarking(beat=4.0, type="crescendo", span_beats=3.5),
+        ],
+        articulations=[
+            Articulation(beat=7.0, hand="rh", score_note_id=last_rh_id, type="fermata"),
+        ],
+        pedal_events=[
+            PedalEvent(onset_beat=0.0, offset_beat=3.5, type="sustain"),
+            PedalEvent(onset_beat=4.0, offset_beat=7.5, type="sostenuto"),
+            PedalEvent(onset_beat=0.0, offset_beat=7.5, type="una_corda"),
+        ],
+        tempo_changes=[],
+    )
+
+    return HumanizedPerformance(
+        schema_version=SCHEMA_VERSION,
+        expressive_notes=expressive_notes,
+        expression=expression,
+        score=base,
+        quality=QualitySignal(overall_confidence=0.9, warnings=[]),
+    )
+
+
 # ---------------------------------------------------------------------------
 # Registry + load + regenerate
 # ---------------------------------------------------------------------------
@@ -355,6 +426,7 @@ _BUILDERS: dict[str, Callable[[], PianoScore | HumanizedPerformance]] = {
     "seven_eight": build_seven_eight,
     "tempo_change": build_tempo_change,
     "humanized_with_offsets": build_humanized_with_offsets,
+    "humanized_with_expression": build_humanized_with_expression,
     "empty_left_hand": build_empty_left_hand,
     "overlapping_same_pitch": build_overlapping_same_pitch,
 }
@@ -362,7 +434,10 @@ _BUILDERS: dict[str, Callable[[], PianoScore | HumanizedPerformance]] = {
 FIXTURE_NAMES: tuple[str, ...] = tuple(_BUILDERS.keys())
 
 # Fixtures that build a HumanizedPerformance rather than a raw PianoScore.
-_HUMANIZED_FIXTURES: frozenset[str] = frozenset({"humanized_with_offsets"})
+_HUMANIZED_FIXTURES: frozenset[str] = frozenset({
+    "humanized_with_offsets",
+    "humanized_with_expression",
+})
 
 
 def load_score_fixture(name: str) -> PianoScore | HumanizedPerformance:

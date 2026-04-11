@@ -169,6 +169,28 @@ def test_l1_humanized_pedal_reaches_midi(engraved_artifacts):
     assert any(cc.value < 64 for cc in cc64), "no sustain pedal OFF (CC64 < 64)"
 
 
+def test_l1_humanized_expression_emits_all_pedal_ccs(engraved_artifacts):
+    """Plan phase 1.5 — sostenuto → CC66, una corda → CC67 in addition to sustain → CC64.
+
+    The ``humanized_with_expression`` fixture carries one of each pedal
+    type; the engraver must write on/off edges for all three controllers.
+    """
+    import pretty_midi
+
+    _, midi_bytes = engraved_artifacts["humanized_with_expression"]
+    midi = pretty_midi.PrettyMIDI(io.BytesIO(midi_bytes))
+    by_cc: dict[int, list[int]] = {}
+    for inst in midi.instruments:
+        for cc in inst.control_changes:
+            by_cc.setdefault(cc.number, []).append(cc.value)
+
+    for cc_num, label in ((64, "sustain"), (66, "sostenuto"), (67, "una_corda")):
+        assert cc_num in by_cc, f"{label}: no CC{cc_num} events in MIDI"
+        values = by_cc[cc_num]
+        assert any(v >= 64 for v in values), f"{label}: no CC{cc_num} ON edge"
+        assert any(v < 64 for v in values), f"{label}: no CC{cc_num} OFF edge"
+
+
 # ---------------------------------------------------------------------------
 # L2 — Notation quality lints
 # ---------------------------------------------------------------------------
@@ -251,3 +273,86 @@ def test_l2_note_count_matches_fixture(name: str, engraved_artifacts):
     assert attack_count == expected, (
         f"{name}: MusicXML has {attack_count} note attacks, fixture has {expected}"
     )
+
+
+# ---------------------------------------------------------------------------
+# L2 — "Stop dropping data" lints (plan phase 1.3–1.6 / PR-5)
+# ---------------------------------------------------------------------------
+
+
+def test_l2_humanized_dynamics_rendered(engraved_artifacts):
+    """Static dynamic + hairpin from the expression map reach MusicXML.
+
+    The ``humanized_with_expression`` fixture carries a ``p`` at beat 0
+    and a ``crescendo`` at beat 4. The static mark becomes a
+    ``<dynamics>`` element; the hairpin becomes a ``<words>cresc.</words>``
+    text direction.
+    """
+    from lxml import etree
+
+    musicxml, _ = engraved_artifacts["humanized_with_expression"]
+    root = etree.fromstring(musicxml)
+
+    dyn_children = [c.tag for dyn in root.iter("dynamics") for c in dyn]
+    assert "p" in dyn_children, (
+        f"expected <dynamics><p/></dynamics>; got dynamics children {dyn_children}"
+    )
+
+    words = [w.text for w in root.iter("words")]
+    assert "cresc." in words, f"expected 'cresc.' text direction; got {words}"
+
+
+def test_l2_humanized_pedal_text_rendered(engraved_artifacts):
+    """Sustain / sostenuto / una corda all surface as MusicXML text directions.
+
+    Sustain uses the standard "Ped." / "*" pair; sostenuto and una corda
+    use descriptive labels because MusicXML has no dedicated glyphs.
+    """
+    from lxml import etree
+
+    musicxml, _ = engraved_artifacts["humanized_with_expression"]
+    root = etree.fromstring(musicxml)
+    words = [w.text for w in root.iter("words")]
+
+    for expected in ("Ped.", "*", "Sost. Ped.", "una corda", "tre corde"):
+        assert expected in words, (
+            f"expected pedal word {expected!r} in MusicXML; got {words}"
+        )
+
+
+def test_l2_humanized_fermata_rendered(engraved_artifacts):
+    """A ``fermata`` articulation emits a ``<fermata>`` element in <notations>."""
+    from lxml import etree
+
+    musicxml, _ = engraved_artifacts["humanized_with_expression"]
+    root = etree.fromstring(musicxml)
+    fermatas = list(root.iter("fermata"))
+    assert fermatas, "no <fermata> element in rendered MusicXML"
+
+
+def test_l2_engraved_flags_reflect_rendered_content(engraved_artifacts):
+    """``EngravedScoreData.includes_dynamics / includes_pedal_marks`` must
+    now report True when the humanized input populates them.
+
+    The flag flip is the PR-5 counterpart to the phase 1.1 "truthful
+    flags" change — phase 1.1 could only flip the flags to False because
+    engrave wasn't rendering those markings yet.
+    """
+    import asyncio
+    import tempfile
+    from pathlib import Path
+
+    from backend.services.engrave import EngraveService
+    from backend.storage.local import LocalBlobStore
+    from tests.fixtures import load_score_fixture
+
+    # EngraveService writes artifacts to a blob store before returning,
+    # so stand up a throwaway local store rooted in a tmp dir.
+    with tempfile.TemporaryDirectory() as tmpdir:
+        svc = EngraveService(LocalBlobStore(Path(tmpdir)))
+        fixture = load_score_fixture("humanized_with_expression")
+        out = asyncio.run(
+            svc.run(fixture, job_id="test-pr5-flags", title="t", composer="c")
+        )
+        assert out.metadata.includes_dynamics is True
+        assert out.metadata.includes_pedal_marks is True
