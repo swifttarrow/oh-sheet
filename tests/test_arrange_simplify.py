@@ -6,8 +6,6 @@ and returns a simplified copy suitable for sheet-music engraving.
 """
 from __future__ import annotations
 
-import pytest
-
 from shared.contracts import (
     PianoScore,
     ScoreMetadata,
