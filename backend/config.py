@@ -411,6 +411,16 @@ class Settings(BaseSettings):
     # "auto" tries madmom first, falls back to librosa.
     beat_tracker: Literal["madmom", "librosa", "auto"] = "madmom"
 
+    # ---- Lyria transform (optional reference-arrangement generation) -------
+    # The transform stage can call Google's Lyria 3 Pro model to generate a
+    # solo-piano reference arrangement from the incoming PianoScore metadata.
+    # Lyria currently returns audio/text, not symbolic score notes, so the
+    # pipeline contract stays ``PianoScore`` and the generated media is treated
+    # as an optional sidecar artifact rather than the stage output itself.
+    transform_lyria_enabled: bool = False
+    transform_lyria_model: str = "lyria-3-pro-preview"
+    transform_lyria_api_key: str | None = None
+
     # ---- Adaptive quantization grid (arrange stage) --------------------------
     # Instead of a rigid 1/16th-note grid, estimate the best-fit grid per
     # piece from candidates. Improves triplet-feel and swing music.

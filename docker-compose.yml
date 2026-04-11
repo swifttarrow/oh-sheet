@@ -1,8 +1,11 @@
 services:
   redis:
     image: redis:7-alpine
-    ports:
-      - "127.0.0.1:6379:6379"
+    # Redis is only used by other Compose services over the internal
+    # Docker network, so keep it off the host to avoid colliding with a
+    # locally running Redis on 127.0.0.1:6379.
+    expose:
+      - "6379"
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s

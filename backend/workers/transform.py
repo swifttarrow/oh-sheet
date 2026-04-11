@@ -15,8 +15,8 @@ def run(job_id: str, payload_uri: str) -> str:
     raw = blob.get_json(payload_uri)
     score = PianoScore.model_validate(raw)
 
-    service = TransformService()
-    result = asyncio.run(service.run(score))
+    service = TransformService(blob_store=blob)
+    result = asyncio.run(service.run(score, job_id=job_id))
 
     output_uri = blob.put_json(
         f"jobs/{job_id}/transform/output.json",

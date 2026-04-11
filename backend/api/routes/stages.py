@@ -185,10 +185,10 @@ async def stage_transform(
     cmd: OrchestratorCommand,
     blob: Annotated[LocalBlobStore, Depends(get_blob_store)],
 ) -> WorkerResponse:
-    transform = TransformService()
+    transform = TransformService(blob_store=blob)
 
     async def coro(payload: PianoScore) -> PianoScore:
-        return await transform.run(payload)
+        return await transform.run(payload, job_id=cmd.job_id)
 
     return await _run_stage(
         cmd,

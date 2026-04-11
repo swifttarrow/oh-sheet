@@ -187,6 +187,9 @@ docker compose up -d
 # Or use the GitHub Actions workflow (auto-deploys on push to main)
 ```
 
+The dev Compose stack keeps Redis on Docker's internal network only, so it
+won't conflict with a Redis server already running on your host's port `6379`.
+
 See `.github/workflows/deploy.yml` and `docker-compose.yml` for deployment details.
 
 `make help` lists every target. Useful overrides:
