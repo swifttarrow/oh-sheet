@@ -131,8 +131,12 @@ class TestScoreCandidate:
 
     def test_allowlist_channel_adds_50(self):
         from backend.services.cover_search import score_candidate
-        # "rousseau" is in the allowlist — channel bonus only, nothing else matches.
-        entry = _entry(title="My Song", channel="Rousseau")
+        # "jacob's piano" is in the moderate tier of the piano allowlist.
+        # Channel bonus only, nothing else matches. Moderate tier gets
+        # exactly +50 (no easy-tier bonus), which is the "baseline" we
+        # test here. Easy-tier channels get +60 — covered by
+        # TestPianoTierPreference below.
+        entry = _entry(title="My Song", channel="Jacob's Piano")
         assert score_candidate(entry, wanted_title="unrelated song", wanted_artist=None) == 50
 
     def test_piano_keyword_adds_30(self):
@@ -194,9 +198,11 @@ class TestScoreCandidate:
         from backend.services.cover_search import score_candidate
         entry = _entry(
             title="Bohemian Rhapsody - Queen (Piano Cover)",
-            channel="Rousseau",
+            channel="Jacob's Piano",
         )
-        # allowlist +50, piano cover +30, title match +20, artist match +10 = 110
+        # Moderate-tier allowlist +50, piano cover +30, title match +20,
+        # artist match +10 = 110. Easy-tier would add +10 more (see
+        # TestPianoTierPreference::test_easy_tier_perfect_match_scores_120).
         assert score_candidate(
             entry, wanted_title="Bohemian Rhapsody", wanted_artist="Queen"
         ) == 110
@@ -216,12 +222,16 @@ class TestScoreCandidate:
             entry, wanted_title="Bohemian Rhapsody", wanted_artist="Queen"
         ) == 60
 
-    def test_rousseau_with_title_only_clears_70(self):
+    def test_moderate_tier_with_title_only_scores_70(self):
         from backend.services.cover_search import score_candidate
-        # Rousseau channel (+50) + title substring (+20) = 70, exactly at threshold.
+        # Moderate-tier channel (+50) + title substring (+20) = 70.
+        # This is the minimum "clearly a hit" shape: allowlisted channel
+        # posts a video that mentions the target song in its title but
+        # doesn't say "piano cover" in the title. Exactly clears the
+        # legacy 70 threshold and sits above the current 60 threshold.
         entry = _entry(
             title="Bohemian Rhapsody",
-            channel="Rousseau",
+            channel="Jacob's Piano",
         )
         assert score_candidate(
             entry, wanted_title="Bohemian Rhapsody", wanted_artist=None
@@ -241,7 +251,7 @@ class TestFindPianoCover:
 
         search_results = [
             _entry(title="Bohemian Rhapsody Tutorial", channel="Other"),  # 0
-            _entry(title="Bohemian Rhapsody Piano Cover", channel="Rousseau"),  # 100
+            _entry(title="Bohemian Rhapsody Piano Cover", channel="Jacob's Piano"),  # 100
             _entry(title="Bohemian Rhapsody Karaoke", channel="Other"),  # 0
         ]
 
@@ -254,7 +264,7 @@ class TestFindPianoCover:
         assert result is not None
         assert result.url == search_results[1]["url"]
         assert result.score == 100
-        assert result.channel == "Rousseau"
+        assert result.channel == "Jacob's Piano"
 
     def test_returns_none_when_all_candidates_below_threshold(self):
         from backend.services.cover_search import find_piano_cover
@@ -509,3 +519,379 @@ class TestCoverSearchSettings:
         s = Settings()
         assert s.cover_search_enabled is False
         assert s.cover_search_min_score == 80
+
+
+# ---------------------------------------------------------------------------
+# Layer 7: multi-variant search — piano + chiptune
+# ---------------------------------------------------------------------------
+#
+# The scorer was originally piano-only. Full-band pop mixes are a nightmare
+# for Basic Pitch, but so are many "piano covers" on YouTube — the non-
+# allowlist ones cap at 60 and half the time there IS a cleaner alternative:
+# 8-bit / chiptune covers. Chiptune audio is dramatically easier to transcribe
+# (monophonic channels, pure square/triangle waves, no reverb, no drums
+# mixed into pitched content) so when a chiptune cover of a song exists,
+# it's a BETTER source than a piano cover for our pipeline.
+#
+# The multi-variant refactor: ``find_clean_source`` runs the search once per
+# variant (piano + chiptune by default), scores each variant's candidates
+# against its own channel allowlist + keywords, and returns the single
+# highest-scoring result across all variants. Backward compatibility:
+# ``find_piano_cover`` stays as a thin wrapper that runs the piano variant
+# only so existing callers keep their narrow behavior.
+
+
+class TestPianoTierPreference:
+    """The piano allowlist is tiered: easy beats moderate beats (disabled)
+    advanced. Advanced channels score 0 from channel alone — they only get
+    points from title/artist matches and keywords, which caps them below
+    the 60 threshold unless a chiptune variant rescues the song."""
+
+    def test_easy_tier_channel_gets_60(self):
+        # Easy-tier gets +50 base + +10 tier bonus = 60.
+        from backend.services.cover_search import score_candidate
+        entry = _entry(title="My Song", channel="Pianote")
+        assert score_candidate(entry, wanted_title="unrelated", wanted_artist=None) == 60
+
+    def test_moderate_tier_channel_gets_50(self):
+        # Moderate-tier gets +50 base, no tier bonus.
+        from backend.services.cover_search import score_candidate
+        entry = _entry(title="My Song", channel="Jacob's Piano")
+        assert score_candidate(entry, wanted_title="unrelated", wanted_artist=None) == 50
+
+    def test_advanced_tier_channel_gets_zero_from_channel(self):
+        # Advanced channels (Rousseau, Pietschmann, Kyle Landry, etc.) are
+        # defined but NOT in the active allowlist. They get no channel
+        # bonus — title/artist/keyword matches only.
+        from backend.services.cover_search import score_candidate
+        for channel in ("Rousseau", "Patrik Pietschmann", "Kyle Landry"):
+            entry = _entry(title="My Song", channel=channel)
+            score = score_candidate(
+                entry, wanted_title="unrelated", wanted_artist=None,
+            )
+            assert score == 0, f"{channel!r} should score 0 from channel alone"
+
+    def test_advanced_channel_scores_below_threshold_for_typical_match(self):
+        # A Rousseau Bohemian Rhapsody Piano Cover match under the
+        # CURRENT active allowlist scores: 0 (advanced not active) +
+        # 30 (piano cover keyword) + 20 (title) + 10 (artist) = 60.
+        # Exactly at the default threshold. One bad keyword (live
+        # recording, karaoke) would drop it. Title-only (no "piano
+        # cover" keyword in the title) would drop it below. This
+        # documents the intended "advanced rarely wins" behavior.
+        from backend.services.cover_search import score_candidate
+        entry = _entry(
+            title="Bohemian Rhapsody - Queen (Piano Cover)",
+            channel="Rousseau",
+        )
+        score = score_candidate(
+            entry, wanted_title="Bohemian Rhapsody", wanted_artist="Queen",
+        )
+        assert score == 60
+
+    def test_easy_tier_perfect_match_scores_120(self):
+        # Easy-tier gets the full stack: 50 + 10 easy bonus + 30 piano
+        # cover keyword + 20 title + 10 artist = 120. This is the new
+        # ceiling for scoring under the easy/moderate-only active
+        # allowlist.
+        from backend.services.cover_search import score_candidate
+        entry = _entry(
+            title="Bohemian Rhapsody - Queen (Easy Piano Cover)",
+            channel="Pianote",
+        )
+        score = score_candidate(
+            entry, wanted_title="Bohemian Rhapsody", wanted_artist="Queen",
+        )
+        assert score == 120
+
+    def test_easy_beats_moderate_when_tied_elsewhere(self):
+        # Two candidates with identical title/artist/keyword scoring:
+        # the easy-tier one wins because of the +10 easy bonus.
+        from backend.services.cover_search import find_piano_cover
+
+        search_results = [
+            _entry(
+                title="Song X - Piano Cover",
+                channel="Jacob's Piano",   # moderate: 50 + 30 + 20 = 100
+            ),
+            _entry(
+                title="Song X - Piano Cover",
+                channel="Pianote",          # easy: 50 + 10 + 30 + 20 = 110
+            ),
+        ]
+
+        with patch("backend.services.cover_search._yt_dlp_search") as mock_search:
+            mock_search.return_value = search_results
+            result = find_piano_cover(title="Song X", artist=None)
+
+        assert result is not None
+        assert result.channel == "Pianote"
+        assert result.score == 110
+
+    def test_advanced_tier_exported_for_future_reactivation(self):
+        # PIANO_ADVANCED_CHANNELS should remain defined in the module so
+        # a future PR can reactivate the tier by adding it to the active
+        # allowlist. This test locks in the contract and catches a
+        # silent deletion of the tier data.
+        from backend.services.cover_search import (
+            COVER_CHANNEL_ALLOWLIST,
+            PIANO_ADVANCED_CHANNELS,
+            PIANO_EASY_CHANNELS,
+            PIANO_MODERATE_CHANNELS,
+        )
+        # Advanced list is defined and nonempty.
+        assert len(PIANO_ADVANCED_CHANNELS) >= 3
+        # But it is NOT in the active allowlist.
+        for ch in PIANO_ADVANCED_CHANNELS:
+            assert ch not in COVER_CHANNEL_ALLOWLIST, (
+                f"{ch!r} should not be in the active allowlist"
+            )
+        # The active allowlist equals easy + moderate, nothing else.
+        assert set(COVER_CHANNEL_ALLOWLIST) == (
+            set(PIANO_EASY_CHANNELS) | set(PIANO_MODERATE_CHANNELS)
+        )
+
+
+class TestChiptuneChannelAllowlist:
+    """Companion to the piano allowlist — a lowercase list of YouTube
+    channels that reliably post clean 8-bit covers of popular songs."""
+
+    def test_chiptune_allowlist_exists_and_nonempty(self):
+        from backend.services.cover_search import CHIPTUNE_CHANNEL_ALLOWLIST
+        assert isinstance(CHIPTUNE_CHANNEL_ALLOWLIST, (list, tuple, frozenset, set))
+        assert len(CHIPTUNE_CHANNEL_ALLOWLIST) >= 3  # Seeded with a few handpicked channels.
+
+    def test_chiptune_allowlist_entries_are_lowercase(self):
+        from backend.services.cover_search import CHIPTUNE_CHANNEL_ALLOWLIST
+        for channel in CHIPTUNE_CHANNEL_ALLOWLIST:
+            assert channel == channel.lower(), f"{channel!r} should be lowercase"
+
+    def test_chiptune_allowlist_disjoint_from_piano_allowlist(self):
+        # Same channel should never be in both lists — it would confuse
+        # the scoring (which variant did the match come from?).
+        from backend.services.cover_search import (
+            CHIPTUNE_CHANNEL_ALLOWLIST,
+            COVER_CHANNEL_ALLOWLIST,
+        )
+        overlap = set(CHIPTUNE_CHANNEL_ALLOWLIST) & set(COVER_CHANNEL_ALLOWLIST)
+        assert overlap == set(), f"channels in both lists: {overlap}"
+
+
+class TestScoreCandidateChiptuneVariant:
+    """When scoring for the chiptune variant, the +50 / +30 weights come
+    from CHIPTUNE_CHANNEL_ALLOWLIST and chiptune keywords instead of the
+    piano defaults."""
+
+    def test_chiptune_allowlist_channel_adds_50(self):
+        from backend.services.cover_search import (
+            CHIPTUNE_VARIANT,
+            score_candidate_for_variant,
+        )
+        entry = _entry(title="Bohemian Rhapsody", channel="8-Bit Universe")
+        score = score_candidate_for_variant(
+            entry,
+            wanted_title="unrelated song",
+            wanted_artist=None,
+            variant=CHIPTUNE_VARIANT,
+        )
+        assert score == 50
+
+    def test_chiptune_keyword_adds_30(self):
+        from backend.services.cover_search import (
+            CHIPTUNE_VARIANT,
+            score_candidate_for_variant,
+        )
+        entry = _entry(title="Bohemian Rhapsody (8 Bit Cover)", channel="Random")
+        score = score_candidate_for_variant(
+            entry,
+            wanted_title="unrelated",
+            wanted_artist=None,
+            variant=CHIPTUNE_VARIANT,
+        )
+        assert score == 30
+
+    def test_chiptune_chiptune_keyword_also_counts(self):
+        from backend.services.cover_search import (
+            CHIPTUNE_VARIANT,
+            score_candidate_for_variant,
+        )
+        entry = _entry(title="Some Song - Chiptune Version", channel="Random")
+        score = score_candidate_for_variant(
+            entry,
+            wanted_title="unrelated",
+            wanted_artist=None,
+            variant=CHIPTUNE_VARIANT,
+        )
+        assert score == 30
+
+    def test_chiptune_scoring_ignores_piano_keywords(self):
+        # A "piano cover" result should NOT get the +30 boost when scored
+        # against the chiptune variant — the variants are independent.
+        from backend.services.cover_search import (
+            CHIPTUNE_VARIANT,
+            score_candidate_for_variant,
+        )
+        entry = _entry(title="Bohemian Rhapsody Piano Cover", channel="Random")
+        score = score_candidate_for_variant(
+            entry,
+            wanted_title="Bohemian Rhapsody",
+            wanted_artist=None,
+            variant=CHIPTUNE_VARIANT,
+        )
+        # +20 title match only. No chiptune keywords, no chiptune allowlist.
+        assert score == 20
+
+    def test_chiptune_allowlist_does_not_score_piano_variant(self):
+        from backend.services.cover_search import (
+            PIANO_VARIANT,
+            score_candidate_for_variant,
+        )
+        entry = _entry(title="Bohemian Rhapsody", channel="8-Bit Universe")
+        score = score_candidate_for_variant(
+            entry,
+            wanted_title="Bohemian Rhapsody",
+            wanted_artist=None,
+            variant=PIANO_VARIANT,
+        )
+        # Only +20 title match — 8-Bit Universe isn't in the piano allowlist
+        # and the title has no piano keywords.
+        assert score == 20
+
+    def test_chiptune_perfect_match_max_score(self):
+        from backend.services.cover_search import (
+            CHIPTUNE_VARIANT,
+            score_candidate_for_variant,
+        )
+        entry = _entry(
+            title="Bohemian Rhapsody - Queen (8 Bit Cover)",
+            channel="8-Bit Universe",
+        )
+        score = score_candidate_for_variant(
+            entry,
+            wanted_title="Bohemian Rhapsody",
+            wanted_artist="Queen",
+            variant=CHIPTUNE_VARIANT,
+        )
+        # allowlist +50, chiptune keyword +30, title match +20, artist +10 = 110
+        assert score == 110
+
+
+class TestFindCleanSource:
+    """The multi-variant orchestrator. Runs the search once per variant
+    and returns the highest-scoring candidate across all of them."""
+
+    def test_returns_piano_match_when_it_outscores_chiptune(self):
+        from backend.services.cover_search import find_clean_source
+
+        # piano query returns a Jacob's Piano (moderate tier) match → score 110
+        # chiptune query returns a Random channel with only title+keyword → 50
+        def _search(query, *, top_k=5):
+            if "piano cover" in query:
+                return [_entry(
+                    title="Bohemian Rhapsody - Queen (Piano Cover)",
+                    channel="Jacob's Piano",
+                )]
+            if "8 bit" in query:
+                return [_entry(
+                    title="Bohemian Rhapsody 8 bit cover",
+                    channel="Random Chip Channel",
+                )]
+            return []
+
+        with patch("backend.services.cover_search._yt_dlp_search", side_effect=_search):
+            result = find_clean_source("Bohemian Rhapsody", "Queen")
+
+        assert result is not None
+        assert result.channel == "Jacob's Piano"
+        assert result.score == 110
+
+    def test_returns_chiptune_match_when_it_outscores_piano(self):
+        from backend.services.cover_search import find_clean_source
+
+        # piano query returns a non-allowlist result with weak match → 20
+        # chiptune query returns a strong allowlist match → 110
+        def _search(query, *, top_k=5):
+            if "piano cover" in query:
+                return [_entry(title="Bohemian Rhapsody weak", channel="Random")]
+            if "8 bit" in query:
+                return [_entry(
+                    title="Bohemian Rhapsody - Queen (8 Bit Cover)",
+                    channel="8-Bit Universe",
+                )]
+            return []
+
+        with patch("backend.services.cover_search._yt_dlp_search", side_effect=_search):
+            result = find_clean_source("Bohemian Rhapsody", "Queen")
+
+        assert result is not None
+        assert result.channel == "8-Bit Universe"
+        assert result.score == 110
+
+    def test_returns_none_when_both_variants_below_threshold(self):
+        from backend.services.cover_search import find_clean_source
+
+        def _search(query, *, top_k=5):
+            return [_entry(title="Unrelated", channel="Random")]
+
+        with patch("backend.services.cover_search._yt_dlp_search", side_effect=_search):
+            result = find_clean_source("Bohemian Rhapsody", "Queen", min_score=60)
+
+        assert result is None
+
+    def test_one_variant_failing_does_not_block_the_other(self):
+        # If piano search crashes but chiptune succeeds, we should still
+        # return the chiptune result instead of silently returning None.
+        from backend.services.cover_search import find_clean_source
+
+        def _search(query, *, top_k=5):
+            if "piano cover" in query:
+                raise RuntimeError("piano search hiccup")
+            return [_entry(
+                title="Bohemian Rhapsody - Queen 8 bit cover",
+                channel="8-Bit Universe",
+            )]
+
+        with patch("backend.services.cover_search._yt_dlp_search", side_effect=_search):
+            result = find_clean_source("Bohemian Rhapsody", "Queen")
+
+        assert result is not None
+        assert result.channel == "8-Bit Universe"
+
+    def test_queries_every_variant_even_when_first_yields_match(self):
+        # We don't short-circuit: every variant runs so the scorer can
+        # pick the absolute best across all of them. This test guards
+        # against a "first-match-wins" regression.
+        from backend.services.cover_search import find_clean_source
+
+        calls: list[str] = []
+
+        def _search(query, *, top_k=5):
+            calls.append(query)
+            return [_entry(title="Generic", channel="Random")]
+
+        with patch("backend.services.cover_search._yt_dlp_search", side_effect=_search):
+            find_clean_source("Bohemian Rhapsody", "Queen")
+
+        # Both "piano cover" and "8 bit cover" queries should have fired.
+        assert any("piano cover" in q for q in calls), calls
+        assert any("8 bit" in q for q in calls), calls
+
+    def test_find_piano_cover_remains_piano_only_for_backward_compat(self):
+        # Explicit regression test: find_piano_cover MUST keep running
+        # the piano variant only. Downstream mocks (test_ingest_cover_search)
+        # still patch this name and count on the narrow semantics.
+        from backend.services.cover_search import find_piano_cover
+
+        calls: list[str] = []
+
+        def _search(query, *, top_k=5):
+            calls.append(query)
+            return []
+
+        with patch("backend.services.cover_search._yt_dlp_search", side_effect=_search):
+            find_piano_cover("Bohemian Rhapsody", "Queen")
+
+        # Only the piano query should have fired.
+        assert len(calls) == 1
+        assert "piano cover" in calls[0]
+        assert "8 bit" not in calls[0]
