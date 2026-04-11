@@ -472,6 +472,109 @@ def test_engrave_does_not_leak_music21_defaults():
 
 
 # ---------------------------------------------------------------------------
+# L2 — Key signature verification (plan phase 3.3 / PR-12)
+# ---------------------------------------------------------------------------
+
+
+def test_l2_key_signature_override_on_mislabel(engraved_artifacts):
+    """Plan phase 3.3 — Krumhansl-Schmuckler overrides a mislabeled key.
+
+    The ``mislabeled_key`` fixture is an unambiguous F# minor piece
+    tagged as ``C:major``. After the KS analyzer runs in
+    ``_resolve_key_signature``, the MusicXML ``<key><fifths>`` element
+    should show ``3`` (F# minor / A major — three sharps) instead of
+    ``0`` (C major — no accidentals).
+
+    Without the override, every F#/G#/C# in the piece would render as
+    an explicit accidental on each note head — unreadable.
+    """
+    from lxml import etree
+
+    musicxml, _ = engraved_artifacts["mislabeled_key"]
+    root = etree.fromstring(musicxml)
+    fifths = [int(e.text) for e in root.iter("fifths")]
+    assert fifths, "no <fifths> element in mislabeled_key MusicXML"
+    assert set(fifths) == {3}, (
+        f"expected <fifths>3</fifths> (F# minor override), got {sorted(set(fifths))}"
+    )
+    modes = [e.text for e in root.iter("mode")]
+    assert modes and all(m == "minor" for m in modes), (
+        f"expected <mode>minor</mode>, got {modes}"
+    )
+
+
+def test_l2_key_signature_low_correlation_trusts_label():
+    """Plan phase 3.3 — low KS correlation leaves the declared key alone.
+
+    Builds a throwaway score out of a highly chromatic tone row so the
+    Krumhansl-Schmuckler correlation lands well below the 0.80 override
+    floor. Even if the analyzer's tonic guess disagrees with the
+    declared key, the override must **not** fire — the histogram is too
+    ambiguous to trust.
+    """
+    import music21
+
+    from backend.contracts import (
+        SCHEMA_VERSION,
+        PianoScore,
+        ScoreMetadata,
+        ScoreNote,
+        TempoMapEntry,
+    )
+    from backend.services.engrave import _resolve_key_signature
+
+    # All 12 pitch classes once each — maximum chromatic, no tonal
+    # center, correlation should collapse.
+    row = [60, 61, 62, 63, 64, 65, 66, 67, 68, 69, 70, 71]
+    score = PianoScore(
+        schema_version=SCHEMA_VERSION,
+        right_hand=[
+            ScoreNote(id=f"rh-{i:04d}", pitch=p, onset_beat=float(i),
+                      duration_beat=1.0, velocity=80, voice=1)
+            for i, p in enumerate(row)
+        ],
+        left_hand=[],
+        metadata=ScoreMetadata(
+            key="C:major",
+            time_signature=(4, 4),
+            tempo_map=[TempoMapEntry(time_sec=0.0, beat=0.0, bpm=120.0)],
+            difficulty="intermediate",
+            sections=[],
+            chord_symbols=[],
+        ),
+    )
+
+    root, mode, overridden = _resolve_key_signature(score, music21)
+    assert not overridden, (
+        f"chromatic tone row should not trigger override; got {root}:{mode}"
+    )
+    assert (root, mode) == ("C", "major"), (
+        f"expected declared C:major to survive, got {root}:{mode}"
+    )
+
+
+def test_l2_key_signature_trusts_correct_label(engraved_artifacts):
+    """Plan phase 3.3 — KS does **not** override when the label agrees.
+
+    Every existing fixture except ``mislabeled_key`` is honestly
+    labeled as C:major. The override must keep quiet on all of them so
+    we don't drift the declared key based on analyzer noise.
+    """
+    from lxml import etree
+
+    for name in FIXTURE_NAMES:
+        if name == "mislabeled_key":
+            continue
+        musicxml, _ = engraved_artifacts[name]
+        root = etree.fromstring(musicxml)
+        fifths = [int(e.text) for e in root.iter("fifths")]
+        assert set(fifths) == {0}, (
+            f"{name}: unexpected key-signature override — expected <fifths>0</fifths>, "
+            f"got {sorted(set(fifths))}"
+        )
+
+
+# ---------------------------------------------------------------------------
 # L2 — Chord symbol filter gate (plan phase 3.2 / PR-11)
 # ---------------------------------------------------------------------------
 

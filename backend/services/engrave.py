@@ -162,6 +162,91 @@ _CHORD_MIN_CONFIDENCE = 0.5
 _PITCH_OCTAVE_RE = re.compile(r"^[A-G][#b]?\d+$")
 
 
+# Minimum Krumhansl-Schmuckler correlation coefficient for an override
+# to fire. Empirically the KS analyzer reports ~0.90+ on clean tonal
+# material (e.g. two_hand_chordal at 0.965), ~0.78 on a bare diatonic
+# scale, and drops below 0.4 on highly chromatic content (jazz_voicings
+# at 0.35). 0.80 is the floor for a clearly-tonal excerpt — above this,
+# disagreements with the declared key almost always indicate upstream
+# mis-labeling rather than a confused analyzer. Below this we trust
+# the declared key and skip the override.
+_KEY_OVERRIDE_MIN_CORRELATION = 0.80
+
+
+def _resolve_key_signature(score: PianoScore, music21) -> tuple[str, str, bool]:  # noqa: ANN001
+    """Resolve the effective key signature using Krumhansl-Schmuckler.
+
+    Audio transcription / arrange can label a piece with the wrong key
+    — e.g. tagging an F# minor piece as "C:major" — and every accidental
+    downstream explodes because music21 emits sharps/flats for every
+    non-diatonic note. KS is the canonical pitch-histogram tonic finder
+    and ships with music21; five lines of analyzer gate + one override
+    fix the bug before makeNotation ever sees it.
+
+    Returns ``(root_name, mode, overridden)``. The override fires only
+    when **both** conditions hold:
+
+    1. Analyzer correlation ≥ ``_KEY_OVERRIDE_MIN_CORRELATION``. Low
+       correlations mean the pitch histogram is ambiguous (short
+       excerpts, highly chromatic jazz) — trust the upstream label.
+    2. The analyzer's (tonic, mode) disagrees with the declared key.
+       If KS agrees, the declared key is already correct and we skip
+       the override to keep logs quiet.
+
+    Any exception from the analyzer (empty stream, pitch-less notes,
+    library internals) falls back to the declared key so this never
+    blocks engrave.
+    """
+    declared = score.metadata.key or "C:major"
+    declared_root = declared.split(":")[0] if ":" in declared else "C"
+    declared_mode = "minor" if "minor" in declared else "major"
+
+    # Build a throwaway Stream from every note so the pitch histogram
+    # is the whole piece, not one hand or one measure. Velocity /
+    # duration / voice are irrelevant for KS — it only reads pitch
+    # classes.
+    all_notes = list(score.right_hand) + list(score.left_hand)
+    if not all_notes:
+        return declared_root, declared_mode, False
+
+    try:
+        # Pin every note to quarterLength=1 so the KS pitch-class histogram
+        # is duration-independent. Raw score durations can over-weight
+        # sustained LH pedal tones (a 4-beat F#2 gets 8× the histogram
+        # mass of a 0.5-beat RH note), which looks to KS like a single-
+        # pitch stream rather than a real key. Note-count weighting is
+        # what we actually want — the question is "what scale are these
+        # notes drawn from", not "which note is longest".
+        analysis_stream = music21.stream.Stream()
+        for sn in all_notes:
+            n = music21.note.Note(sn.pitch)
+            n.quarterLength = 1.0
+            analysis_stream.append(n)
+        analyzer = music21.analysis.discrete.KrumhanslSchmuckler()
+        result = analyzer.process(analysis_stream)
+    except Exception as exc:  # noqa: BLE001 — analyzer errors must not crash engrave
+        log.debug("key-signature analyzer failed; trusting declared %r: %s", declared, exc)
+        return declared_root, declared_mode, False
+
+    try:
+        tonic_pitch, analyzer_mode, correlation = result[0]
+    except (TypeError, IndexError, ValueError) as exc:
+        log.debug("unexpected KS result shape %r: %s", result, exc)
+        return declared_root, declared_mode, False
+
+    analyzer_root = tonic_pitch.name
+    if correlation < _KEY_OVERRIDE_MIN_CORRELATION:
+        return declared_root, declared_mode, False
+    if analyzer_root == declared_root and analyzer_mode == declared_mode:
+        return declared_root, declared_mode, False
+
+    log.info(
+        "engrave: KS key override — declared=%s:%s analyzer=%s:%s correlation=%.3f",
+        declared_root, declared_mode, analyzer_root, analyzer_mode, correlation,
+    )
+    return analyzer_root, analyzer_mode, True
+
+
 def _attach_chord_symbols(part, chord_symbols, music21) -> int:  # noqa: ANN001
     """Insert chord symbols onto a music21 part, returning the count rendered.
 
@@ -281,8 +366,13 @@ def _render_musicxml_bytes(
     ts = music21.meter.TimeSignature(
         f"{score.metadata.time_signature[0]}/{score.metadata.time_signature[1]}"
     )
-    key_root = score.metadata.key.split(":")[0] if ":" in score.metadata.key else "C"
-    mode = "major" if "minor" not in score.metadata.key else "minor"
+    # Verify the declared key against a KS pitch-histogram analysis
+    # before trusting it. Audio transcription can mis-label a piece and
+    # every accidental downstream turns into a sharp/flat explosion.
+    # ``_resolve_key_signature`` only overrides when the analyzer is
+    # confident (correlation ≥ 0.85) AND disagrees with the upstream
+    # label — otherwise the declared key wins.
+    key_root, mode, _key_overridden = _resolve_key_signature(score, music21)
     ks = music21.key.Key(key_root, mode)
     # Round BPM to a whole number so the metronome mark reads cleanly
     # (e.g., ♩ = 99 instead of ♩ = 99.38401442307693). The tempo map

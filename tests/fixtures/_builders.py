@@ -284,6 +284,57 @@ def build_overlapping_same_pitch() -> PianoScore:
     )
 
 
+def build_mislabeled_key() -> PianoScore:
+    """F# minor piece mislabeled as C major — the PR-12 KS override fixture.
+
+    Every RH note is drawn from the F# natural minor scale
+    (F#, G#, A, B, C#, D, E) with F# as the tonal center. The LH
+    reinforces F# as bass. The metadata key lies: it claims
+    ``C:major``. The Krumhansl-Schmuckler analyzer in
+    ``_resolve_key_signature`` should detect the real F# minor tonic,
+    report correlation ≥0.85, and override to F# minor before the key
+    signature reaches ``<key><fifths>`` in MusicXML.
+
+    Expected MusicXML ``<fifths>`` value after override: ``3``
+    (F# minor has three sharps). Without the override it would be ``0``
+    (C major, no sharps or flats), and every F#/G#/C# in the piece
+    would come out as an explicit accidental.
+    """
+    # F# minor scale + tonic arpeggios, thick enough that KS returns
+    # a solid correlation well above the 0.80 override floor. Tonic
+    # F#4 = pitch 66; scale is F#, G#, A, B, C#, D, E (natural minor).
+    scale = [66, 68, 69, 71, 73, 74, 76]  # F#4..E5
+    tonic_arp = [66, 69, 73, 78]          # F# A C# F# (i triad, emphasize tonic)
+    # Repeat scale up+down twice, separated by i-chord arpeggios, so
+    # the pitch histogram is emphatically weighted toward the F# minor
+    # scale degrees. Also rules out the "relative major" (A:major)
+    # trap — plain scale notes alone can correlate just as well with
+    # the parallel major.
+    pattern = (
+        scale + list(reversed(scale))
+        + tonic_arp + tonic_arp
+        + scale + list(reversed(scale))
+        + tonic_arp + [66, 66, 66, 66]     # hammer the tonic home
+    )
+    rh = [
+        _rh(i, pitch=p, onset=float(i) * 0.5, duration=0.5)
+        for i, p in enumerate(pattern)
+    ]
+    # LH reinforces F# as bass — F#2 pedal tones under every phrase so
+    # the analyzer sees the real tonic loud and clear.
+    lh_beats = 4
+    lh = [
+        _lh(i, pitch=42, onset=float(i * lh_beats), duration=float(lh_beats))
+        for i in range(len(rh) // (lh_beats * 2))
+    ] or [_lh(0, pitch=42, onset=0.0, duration=float(lh_beats))]
+    return PianoScore(
+        schema_version=SCHEMA_VERSION,
+        right_hand=rh,
+        left_hand=lh,
+        metadata=_meta(key="C:major"),  # the lie
+    )
+
+
 def build_chord_symbols() -> PianoScore:
     """Mixed-quality chord symbols — the PR-11 filter-gate fixture.
 
@@ -482,6 +533,7 @@ _BUILDERS: dict[str, Callable[[], PianoScore | HumanizedPerformance]] = {
     "empty_left_hand": build_empty_left_hand,
     "overlapping_same_pitch": build_overlapping_same_pitch,
     "chord_symbols": build_chord_symbols,
+    "mislabeled_key": build_mislabeled_key,
 }
 
 FIXTURE_NAMES: tuple[str, ...] = tuple(_BUILDERS.keys())
