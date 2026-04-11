@@ -429,11 +429,14 @@ def _engrave_sync(
     payload: HumanizedPerformance | PianoScore,
     title: str,
     composer: str,
-) -> tuple[bytes, bytes, bytes, bool]:
-    """Render all three artifacts. Returns (pdf, musicxml, midi, is_humanized)."""
-    is_humanized = isinstance(payload, HumanizedPerformance)
-    score = payload.score if is_humanized else payload  # type: ignore[union-attr]
-    perf = payload if is_humanized else None  # type: ignore[assignment]
+) -> tuple[bytes, bytes, bytes]:
+    """Render all three artifacts. Returns (pdf, musicxml, midi)."""
+    if isinstance(payload, HumanizedPerformance):
+        score = payload.score
+        perf: HumanizedPerformance | None = payload
+    else:
+        score = payload
+        perf = None
 
     if perf is None:
         # Engrave-from-score: synthesize a zero-deviation performance shell so
@@ -465,7 +468,7 @@ def _engrave_sync(
     midi_bytes = _render_midi_bytes(perf)
     musicxml_bytes = _render_musicxml_bytes(score, perf, title, composer)
     pdf_bytes = _render_pdf_bytes(musicxml_bytes)
-    return pdf_bytes, musicxml_bytes, midi_bytes, is_humanized
+    return pdf_bytes, musicxml_bytes, midi_bytes
 
 
 class EngraveService:
@@ -488,7 +491,7 @@ class EngraveService:
             title,
             isinstance(payload, HumanizedPerformance),
         )
-        pdf_bytes, musicxml_bytes, midi_bytes, is_humanized = await asyncio.to_thread(
+        pdf_bytes, musicxml_bytes, midi_bytes = await asyncio.to_thread(
             _engrave_sync, payload, title, composer,
         )
 
@@ -509,11 +512,16 @@ class EngraveService:
             chord_count,
         )
 
+        # NOTE: these flags describe what was *actually rendered*, not what
+        # the input contained. Dynamics and pedal marks are still
+        # unimplemented in the MusicXML render path (plan phase 1.3/1.4),
+        # so both stay False until those PRs land — even when the humanized
+        # input has dynamics or pedal events populated.
         return EngravedOutput(
             schema_version=SCHEMA_VERSION,
             metadata=EngravedScoreData(
-                includes_dynamics=is_humanized,
-                includes_pedal_marks=is_humanized,
+                includes_dynamics=False,
+                includes_pedal_marks=False,
                 includes_fingering=False,
                 includes_chord_symbols=chord_count > 0,
                 title=title,

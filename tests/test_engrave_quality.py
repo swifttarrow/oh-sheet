@@ -74,7 +74,7 @@ def engraved_artifacts() -> dict[str, tuple[bytes, bytes]]:
     cache: dict[str, tuple[bytes, bytes]] = {}
     for name in FIXTURE_NAMES:
         fixture = load_score_fixture(name)
-        _pdf, musicxml, midi, _ = _engrave_sync(fixture, title=name, composer="test")
+        _pdf, musicxml, midi = _engrave_sync(fixture, title=name, composer="test")
         cache[name] = (musicxml, midi)
     return cache
 
