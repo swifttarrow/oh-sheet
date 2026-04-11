@@ -465,3 +465,50 @@ class TestPreferCleanSourceField:
         original = InputMetadata(source="title_lookup", prefer_clean_source=True)
         roundtripped = InputMetadata.model_validate(original.model_dump(mode="json"))
         assert roundtripped.prefer_clean_source is True
+
+
+# ---------------------------------------------------------------------------
+# Layer 6: Settings — feature toggle + tunable threshold
+# ---------------------------------------------------------------------------
+#
+# The cover search runs inside the ingest worker, so its behavior needs to
+# be controllable at deploy time via environment variables. Two knobs:
+#
+#   OHSHEET_COVER_SEARCH_ENABLED       — kill switch for the whole feature
+#   OHSHEET_COVER_SEARCH_MIN_SCORE     — per-env threshold override
+#
+# These let operators flip the feature off on a bad-release day without
+# touching code, and let them crank strictness up on quality-sensitive
+# environments while the default holds elsewhere.
+
+
+class TestCoverSearchSettings:
+    """Config must expose cover_search knobs so operators can tune the
+    feature without editing code."""
+
+    def test_cover_search_enabled_defaults_true(self):
+        # Feature-flag default: on. The user's per-job prefer_clean_source
+        # still gates whether the search runs per request, but operators
+        # need a global kill switch for emergency disablement.
+        from backend.config import Settings
+        s = Settings()
+        assert s.cover_search_enabled is True
+
+    def test_cover_search_min_score_defaults_to_60(self):
+        # Global default must match find_piano_cover's hardcoded default
+        # so tests and runtime agree. When this drifts from cover_search.py,
+        # one of them has been updated without the other and reviewers
+        # should catch it.
+        from backend.config import Settings
+        s = Settings()
+        assert s.cover_search_min_score == 60
+
+    def test_cover_search_settings_overridable_via_env(self, monkeypatch):
+        # pydantic-settings reads OHSHEET_* at Settings() construction,
+        # so each Settings() call reflects the current env.
+        from backend.config import Settings
+        monkeypatch.setenv("OHSHEET_COVER_SEARCH_ENABLED", "false")
+        monkeypatch.setenv("OHSHEET_COVER_SEARCH_MIN_SCORE", "80")
+        s = Settings()
+        assert s.cover_search_enabled is False
+        assert s.cover_search_min_score == 80

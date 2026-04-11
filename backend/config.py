@@ -434,6 +434,31 @@ class Settings(BaseSettings):
     duration_refine_min_duration_sec: float = 0.03
     duration_refine_hop_length: int = 256
 
+    # ---- Piano cover search (ingest fast path) ----------------------------
+    # When a job arrives with ``prefer_clean_source=True``, the ingest
+    # stage probes the user's YouTube URL for (title, artist), searches
+    # for a clean piano cover via yt-dlp + scoring, and swaps the URL
+    # for the cover's URL before transcription. Basic Pitch is a
+    # polyphonic tracker that transcribes every audible pitch — drums,
+    # vocals, bass — as piano notes, so feeding it a monophonic piano
+    # cover produces a dramatically cleaner result than a full-band mix.
+    # See backend/services/cover_search.py for the matching logic.
+    #
+    # ``cover_search_enabled`` is the operator kill switch. Leave it
+    # on by default so the per-job ``prefer_clean_source`` flag decides
+    # whether to run; flip to False in production to disable the whole
+    # feature without needing a code change (e.g. if yt-dlp search
+    # breaks or the allowlist is producing bad matches on a new corpus).
+    #
+    # ``cover_search_min_score`` is the scoring threshold that a
+    # candidate must clear to trigger a URL swap. See the module
+    # docstring in cover_search.py for the scoring rules; the default
+    # of 60 was chosen from dry-run testing against real YouTube.
+    # Raise to 70 for "allowlist-only" strict matching, lower to 50 if
+    # you're happy to accept weaker title-only matches.
+    cover_search_enabled: bool = True
+    cover_search_min_score: int = 60
+
     @field_validator(
         "cleanup_energy_gate_floor_ratio",
         "cleanup_octave_amp_ratio",
