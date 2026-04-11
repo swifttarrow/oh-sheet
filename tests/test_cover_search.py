@@ -17,10 +17,7 @@ Tested in three layers:
 """
 from __future__ import annotations
 
-from unittest.mock import MagicMock, patch
-
-import pytest
-
+from unittest.mock import patch
 
 # ---------------------------------------------------------------------------
 # Layer 1a: title normalization

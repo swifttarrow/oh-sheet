@@ -30,7 +30,6 @@ from backend.contracts import (
 from backend.services.cover_search import CoverSearchResult
 from backend.services.ingest import IngestService
 
-
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------

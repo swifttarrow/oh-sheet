@@ -3,9 +3,8 @@ from unittest.mock import patch
 
 import pytest
 
-from backend.contracts import RemoteAudioFile
-
 from backend.config import settings
+from backend.contracts import RemoteAudioFile
 
 
 def _upload_audio(client):

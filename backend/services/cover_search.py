@@ -174,9 +174,10 @@ def score_candidate(
         score += 20
 
     # +10 if the artist name appears in the title or channel.
-    if wanted_artist_norm:
-        if wanted_artist_norm in title_norm or wanted_artist_norm in channel_norm:
-            score += 10
+    if wanted_artist_norm and (
+        wanted_artist_norm in title_norm or wanted_artist_norm in channel_norm
+    ):
+        score += 10
 
     # -20 for any bad keyword — karaoke, tutorials, and lessons are not
     # cover recordings and will confuse Basic Pitch worse than the mix.
