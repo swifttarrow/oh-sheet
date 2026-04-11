@@ -30,10 +30,12 @@ from backend.contracts import (
     WorkerResponse,
 )
 from backend.services.arrange import ArrangeService
+from backend.services.condense import CondenseService
 from backend.services.engrave import EngraveService
 from backend.services.humanize import HumanizeService
 from backend.services.ingest import IngestService
 from backend.services.transcribe import TranscribeService
+from backend.services.transform import TransformService
 from backend.storage.local import LocalBlobStore
 
 log = logging.getLogger(__name__)
@@ -154,6 +156,44 @@ async def stage_arrange(
         cmd,
         blob,
         input_model=TranscriptionResult,
+        coro=coro,
+        output_key="score.json",
+    )
+
+
+@router.post("/stages/condense", response_model=WorkerResponse)
+async def stage_condense(
+    cmd: OrchestratorCommand,
+    blob: Annotated[LocalBlobStore, Depends(get_blob_store)],
+) -> WorkerResponse:
+    condense = CondenseService()
+
+    async def coro(payload: TranscriptionResult) -> PianoScore:
+        return await condense.run(payload)
+
+    return await _run_stage(
+        cmd,
+        blob,
+        input_model=TranscriptionResult,
+        coro=coro,
+        output_key="score_condensed.json",
+    )
+
+
+@router.post("/stages/transform", response_model=WorkerResponse)
+async def stage_transform(
+    cmd: OrchestratorCommand,
+    blob: Annotated[LocalBlobStore, Depends(get_blob_store)],
+) -> WorkerResponse:
+    transform = TransformService()
+
+    async def coro(payload: PianoScore) -> PianoScore:
+        return await transform.run(payload)
+
+    return await _run_stage(
+        cmd,
+        blob,
+        input_model=PianoScore,
         coro=coro,
         output_key="score.json",
     )

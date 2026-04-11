@@ -1,5 +1,7 @@
 import time
 
+from backend.config import settings
+
 
 def _upload_audio(client):
     return client.post(
@@ -65,7 +67,10 @@ def test_get_job_returns_404_for_unknown(client):
     assert response.status_code == 404
 
 
-def test_websocket_streams_events_to_completion(client):
+def test_websocket_streams_events_to_completion(monkeypatch, client):
+    # Default arrange path; local .env may set condense_transform for manual QA.
+    monkeypatch.setattr(settings, "score_pipeline", "arrange")
+
     midi = client.post(
         "/v1/uploads/midi",
         files={"file": ("a.mid", b"MThd\x00\x00\x00\x06\x00\x00\x00\x00\x00\x00", "audio/midi")},
@@ -93,3 +98,38 @@ def test_websocket_streams_events_to_completion(client):
     assert "humanize" in completed_stages
     assert "engrave" in completed_stages
     assert "transcribe" not in completed_stages
+
+
+def test_midi_job_condense_pipeline_emits_condense_and_transform(monkeypatch, client):
+    monkeypatch.setattr(settings, "score_pipeline", "condense_transform")
+
+    midi = client.post(
+        "/v1/uploads/midi",
+        files={"file": ("a.mid", b"MThd\x00\x00\x00\x06\x00\x00\x00\x00\x00\x00", "audio/midi")},
+    ).json()
+    create = client.post("/v1/jobs", json={"midi": midi, "title": "Condense path"}).json()
+    job_id = create["job_id"]
+
+    deadline = time.time() + 5
+    status = None
+    while time.time() < deadline:
+        status = client.get(f"/v1/jobs/{job_id}").json()
+        if status["status"] in ("succeeded", "failed"):
+            break
+        time.sleep(0.05)
+
+    assert status is not None
+    assert status["status"] == "succeeded", status
+
+    with client.websocket_connect(f"/v1/jobs/{job_id}/ws") as ws:
+        events = []
+        while True:
+            event = ws.receive_json()
+            events.append(event)
+            if event["type"] in ("job_succeeded", "job_failed"):
+                break
+
+    completed = [e["stage"] for e in events if e["type"] == "stage_completed"]
+    assert "condense" in completed
+    assert "transform" in completed
+    assert "arrange" not in completed

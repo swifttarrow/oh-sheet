@@ -56,6 +56,11 @@ DEFAULT_OCTAVE_ONSET_TOL_SEC = 0.05
 DEFAULT_GHOST_MAX_DURATION_SEC = 0.05
 DEFAULT_GHOST_AMP_MEDIAN_SCALE = 0.5
 
+# Pass 5 — energy gating
+DEFAULT_ENERGY_GATE_MAX_SUSTAIN_SEC = 2.0
+DEFAULT_ENERGY_GATE_FLOOR_RATIO = 0.1
+DEFAULT_ENERGY_GATE_TAIL_SEC = 0.05
+
 
 @dataclass
 class CleanupStats:
@@ -65,6 +70,7 @@ class CleanupStats:
     merged: int = 0                  # pairs merged (count reduction)
     octave_ghosts_dropped: int = 0
     ghost_tails_dropped: int = 0
+    energy_gated: int = 0            # notes trimmed by energy gating (Pass 5)
     warnings: list[str] = field(default_factory=list)
 
     def as_warnings(self) -> list[str]:
@@ -76,6 +82,8 @@ class CleanupStats:
             out.append(f"cleanup: dropped {self.octave_ghosts_dropped} octave ghosts")
         if self.ghost_tails_dropped:
             out.append(f"cleanup: dropped {self.ghost_tails_dropped} ghost-tail notes")
+        if self.energy_gated:
+            out.append(f"cleanup: energy-gated {self.energy_gated} note offsets")
         out.extend(self.warnings)
         return out
 
@@ -214,6 +222,213 @@ def _prune_ghost_tails(
 
 
 # ---------------------------------------------------------------------------
+# Pass 5 — amplitude envelope gating
+# ---------------------------------------------------------------------------
+
+# Type alias for the envelope: a sequence of (time_sec, rms_value) pairs
+# produced by _compute_amplitude_envelope() in transcribe.py.
+AmplitudeEnvelope = list[tuple[float, float]]
+
+
+def _gate_offsets_by_energy(
+    events: list[NoteEvent],
+    *,
+    max_sustain_sec: float,
+    floor_ratio: float,
+    tail_sec: float,
+    amplitude_envelope: AmplitudeEnvelope | None = None,
+) -> tuple[list[NoteEvent], int]:
+    """Tighten note offsets based on amplitude decay.
+
+    Basic Pitch's frame activation lingers past the real note end due to
+    reverb, sustain pedal, and hysteresis in the onset/offset model. This
+    pass trims suspiciously long notes to the point where energy drops
+    below a floor.
+
+    When ``amplitude_envelope`` is provided (list of ``(time, rms)``
+    tuples from the source waveform):
+
+      * For each note longer than ``max_sustain_sec``, look at the RMS
+        values during the note's time span.
+      * Find the peak RMS within the note and locate the first point
+        where RMS drops below ``floor_ratio * peak_rms``.
+      * Trim the offset to that decay point plus ``tail_sec`` allowance.
+
+    When ``amplitude_envelope`` is ``None`` (no waveform data), a simpler
+    heuristic fires:
+
+      * If a note is longer than ``max_sustain_sec`` **and** its
+        amplitude (from Basic Pitch) is below the median of all note
+        amplitudes, trim it to ``max_sustain_sec``.
+      * This catches the worst reverb-bleed offenders without waveform
+        data.
+
+    Returns the (possibly trimmed) event list and the count of notes
+    whose offsets were adjusted.
+    """
+    if not events:
+        return [], 0
+
+    gated = 0
+
+    if amplitude_envelope is not None and amplitude_envelope:
+        # Build a time-sorted copy for binary-search lookups.
+        env = sorted(amplitude_envelope, key=lambda p: p[0])
+        env_times = [p[0] for p in env]
+        env_rms = [p[1] for p in env]
+
+        result: list[NoteEvent] = []
+        for ev in events:
+            start, end, pitch, amp, bends = ev
+            duration = end - start
+            if duration <= max_sustain_sec:
+                result.append(ev)
+                continue
+
+            # Find envelope samples within the note's span.
+            lo = _bisect_left(env_times, start)
+            hi = _bisect_right(env_times, end)
+            if lo >= hi:
+                # No envelope data in this range — keep unchanged.
+                result.append(ev)
+                continue
+
+            peak_rms = max(env_rms[lo:hi])
+            if peak_rms <= 0.0:
+                result.append(ev)
+                continue
+
+            threshold = floor_ratio * peak_rms
+            # Scan for a sustained drop below the floor (3+ consecutive
+            # frames) to avoid false triggers from momentary dips like
+            # reverb flutter or transient noise.
+            decay_time: float | None = None
+            consecutive = 0
+            hysteresis = 3
+            for i in range(lo, hi):
+                if env_rms[i] < threshold and env_times[i] > start:
+                    consecutive += 1
+                    if consecutive >= hysteresis:
+                        # Mark decay at the first frame of the run.
+                        decay_time = env_times[i - hysteresis + 1]
+                        break
+                else:
+                    consecutive = 0
+
+            if decay_time is not None:
+                new_end = min(end, decay_time + tail_sec)
+                # Never shorten a note to less than its onset.
+                new_end = max(new_end, start + 0.01)
+                if new_end < end:
+                    result.append((start, new_end, pitch, amp, bends))
+                    gated += 1
+                else:
+                    result.append(ev)
+            else:
+                result.append(ev)
+        return result, gated
+
+    # Heuristic path — no envelope available.
+    amps = sorted(e[3] for e in events)
+    mid = len(amps) // 2
+    median_amp = amps[mid] if len(amps) % 2 else 0.5 * (amps[mid - 1] + amps[mid])
+
+    result_h: list[NoteEvent] = []
+    for ev in events:
+        start, end, pitch, amp, bends = ev
+        duration = end - start
+        if duration > max_sustain_sec and amp < median_amp:
+            new_end = start + max_sustain_sec
+            result_h.append((start, new_end, pitch, amp, bends))
+            gated += 1
+        else:
+            result_h.append(ev)
+    return result_h, gated
+
+
+def _bisect_left(a: list[float], x: float) -> int:
+    """Pure-Python bisect_left — no bisect import needed."""
+    lo, hi = 0, len(a)
+    while lo < hi:
+        mid = (lo + hi) // 2
+        if a[mid] < x:
+            lo = mid + 1
+        else:
+            hi = mid
+    return lo
+
+
+def _bisect_right(a: list[float], x: float) -> int:
+    """Pure-Python bisect_right — no bisect import needed."""
+    lo, hi = 0, len(a)
+    while lo < hi:
+        mid = (lo + hi) // 2
+        if a[mid] <= x:
+            lo = mid + 1
+        else:
+            hi = mid
+    return lo
+
+
+# ---------------------------------------------------------------------------
+# Per-role cleanup helper
+# ---------------------------------------------------------------------------
+
+def cleanup_for_role(
+    events: list[NoteEvent],
+    role: str,
+    settings: Any,
+    *,
+    amplitude_envelope: AmplitudeEnvelope | None = None,
+) -> tuple[list[NoteEvent], CleanupStats]:
+    """Run cleanup with role-specific thresholds.
+
+    ``role`` is one of ``"melody"``, ``"bass"``, ``"chords"``, or any
+    other string (falls back to global defaults). ``settings`` is the
+    application ``Settings`` instance.
+
+    Role-specific overrides are pulled from config attributes named
+    ``cleanup_{role}_{param}``; any that don't exist fall through to
+    the global ``cleanup_{param}`` default.
+    """
+    # Build kwargs from per-role config, falling back to globals.
+    def _get(role_key: str, global_key: str) -> float:
+        val = getattr(settings, role_key, None)
+        if val is not None:
+            return float(val)
+        return float(getattr(settings, global_key))
+
+    merge_gap = _get(f"cleanup_{role}_merge_gap_sec", "cleanup_merge_gap_sec")
+    octave_amp = _get(f"cleanup_{role}_octave_amp_ratio", "cleanup_octave_amp_ratio")
+    ghost_dur = _get(f"cleanup_{role}_ghost_max_duration_sec", "cleanup_ghost_max_duration_sec")
+
+    energy_enabled = getattr(settings, "cleanup_energy_gate_enabled", True)
+    max_sustain = float(getattr(settings, "cleanup_energy_gate_max_sustain_sec",
+                                DEFAULT_ENERGY_GATE_MAX_SUSTAIN_SEC))
+    floor_ratio = float(getattr(settings, "cleanup_energy_gate_floor_ratio",
+                                DEFAULT_ENERGY_GATE_FLOOR_RATIO))
+    tail_sec = float(getattr(settings, "cleanup_energy_gate_tail_sec",
+                             DEFAULT_ENERGY_GATE_TAIL_SEC))
+
+    cleaned, stats = cleanup_note_events(
+        events,
+        merge_gap_sec=merge_gap,
+        octave_amp_ratio=octave_amp,
+        octave_onset_tol_sec=float(getattr(settings, "cleanup_octave_onset_tol_sec",
+                                           DEFAULT_OCTAVE_ONSET_TOL_SEC)),
+        ghost_max_duration_sec=ghost_dur,
+        ghost_amp_median_scale=float(getattr(settings, "cleanup_ghost_amp_median_scale",
+                                             DEFAULT_GHOST_AMP_MEDIAN_SCALE)),
+        amplitude_envelope=amplitude_envelope if energy_enabled else None,
+        energy_gate_max_sustain_sec=max_sustain,
+        energy_gate_floor_ratio=floor_ratio,
+        energy_gate_tail_sec=tail_sec,
+        energy_gate_enabled=energy_enabled,
+    )
+    return cleaned, stats
+
+
+# ---------------------------------------------------------------------------
 # Public entry point
 # ---------------------------------------------------------------------------
 
@@ -225,6 +440,11 @@ def cleanup_note_events(
     octave_onset_tol_sec: float = DEFAULT_OCTAVE_ONSET_TOL_SEC,
     ghost_max_duration_sec: float = DEFAULT_GHOST_MAX_DURATION_SEC,
     ghost_amp_median_scale: float = DEFAULT_GHOST_AMP_MEDIAN_SCALE,
+    amplitude_envelope: AmplitudeEnvelope | None = None,
+    energy_gate_max_sustain_sec: float = DEFAULT_ENERGY_GATE_MAX_SUSTAIN_SEC,
+    energy_gate_floor_ratio: float = DEFAULT_ENERGY_GATE_FLOOR_RATIO,
+    energy_gate_tail_sec: float = DEFAULT_ENERGY_GATE_TAIL_SEC,
+    energy_gate_enabled: bool = True,
 ) -> tuple[list[NoteEvent], CleanupStats]:
     """Run the Phase 1 cleanup pipeline over Basic Pitch note events.
 
@@ -237,6 +457,11 @@ def cleanup_note_events(
        the real set of notes, not harmonic duplicates.
     3. **Ghost-tail prune** last, operating on an already-merged,
        already-dedup'd list.
+    4. **Trim overlapping offsets** — same-pitch overlap resolution
+       (placeholder for future implementation).
+    5. **Energy gating** — tighten offsets of suspiciously long notes
+       using amplitude envelope data (when available) or a
+       duration/amplitude heuristic (when not).
 
     Returns the cleaned events and a :class:`CleanupStats` summary for
     the caller to surface in ``QualitySignal.warnings``.
@@ -262,13 +487,28 @@ def cleanup_note_events(
     )
     stats.ghost_tails_dropped = tails_dropped
 
+    # Pass 5 — energy gating. Trim suspiciously long note offsets
+    # based on amplitude envelope decay (when available) or a simpler
+    # duration/amplitude heuristic (when not).
+    if energy_gate_enabled:
+        cleaned, energy_count = _gate_offsets_by_energy(
+            cleaned,
+            max_sustain_sec=energy_gate_max_sustain_sec,
+            floor_ratio=energy_gate_floor_ratio,
+            tail_sec=energy_gate_tail_sec,
+            amplitude_envelope=amplitude_envelope,
+        )
+        stats.energy_gated = energy_count
+
     stats.output_count = len(cleaned)
     log.debug(
-        "transcription cleanup: %d → %d (merged=%d, octaves=%d, ghosts=%d)",
+        "transcription cleanup: %d → %d "
+        "(merged=%d, octaves=%d, ghosts=%d, energy_gated=%d)",
         stats.input_count,
         stats.output_count,
         stats.merged,
         stats.octave_ghosts_dropped,
         stats.ghost_tails_dropped,
+        stats.energy_gated,
     )
     return cleaned, stats

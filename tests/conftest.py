@@ -6,12 +6,14 @@ import pytest
 from fastapi.testclient import TestClient
 
 import backend.workers.arrange  # noqa: F401
+import backend.workers.condense  # noqa: F401
 import backend.workers.engrave  # noqa: F401
 import backend.workers.humanize  # noqa: F401
 
 # Import monolith worker modules so their tasks are registered on the celery_app.
 import backend.workers.ingest  # noqa: F401
 import backend.workers.transcribe  # noqa: F401
+import backend.workers.transform  # noqa: F401
 from backend.api import deps
 from backend.config import settings
 from backend.main import create_app

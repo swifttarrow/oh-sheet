@@ -7,14 +7,16 @@ FRONTEND := frontend
 # Override on the command line, e.g.:
 #   make frontend DEVICE=ios
 #   make frontend API_BASE_URL=http://192.168.1.42:8000
+#   make frontend FLUTTER=/opt/flutter/bin/flutter
 DEVICE       ?= chrome
 API_BASE_URL ?=
 HOST         ?= 0.0.0.0
 PORT         ?= 8000
+FLUTTER      ?= flutter
 
 DART_DEFINE := $(if $(API_BASE_URL),--dart-define=API_BASE_URL=$(API_BASE_URL),)
 
-.PHONY: help install install-backend install-basic-pitch install-demucs install-eval install-frontend backend frontend test test-backend test-e2e eval lint typecheck clean
+.PHONY: help install install-backend install-basic-pitch install-demucs install-eval install-frontend backend frontend test test-backend test-e2e eval lint typecheck clean require-flutter require-port-free
 
 help:
 	@echo "Oh Sheet — make targets"
@@ -25,26 +27,44 @@ help:
 	@echo "  make install-basic-pitch  pip install -e .[basic-pitch]  (basic-pitch[onnx] + pretty_midi)"
 	@echo "  make install-demucs       pip install -e .[demucs]  (demucs + torch; opt-in stem split)"
 	@echo "  make install-eval         pip install -e .[eval]  (mir_eval for the offline eval harness)"
-	@echo "  make install-frontend     flutter pub get inside frontend/"
+	@echo "  make install-frontend     $(FLUTTER) pub get inside frontend/"
 	@echo ""
-	@echo "  make backend            docker-compose up (Redis + Celery workers + API on :8000)"
-	@echo "  make frontend           flutter run -d $(DEVICE) (override DEVICE=ios|android|macos|...)"
+	@echo "  make backend            docker compose up (Redis + Celery workers + API on :8000)"
+	@echo "  make frontend           $(FLUTTER) run -d $(DEVICE) (override DEVICE=ios|android|macos|...)"
 	@echo "                          set API_BASE_URL=http://host:port to point at a non-default backend"
+	@echo "                          set FLUTTER=/path/to/flutter if the SDK is not on your PATH"
 	@echo ""
 	@echo "  make test               run backend pytest suite"
 	@echo "  make eval               score TranscribeService on the eval/fixtures/clean_midi subset"
 	@echo "                          (requires .[basic-pitch] + .[eval] + fluidsynth on PATH)"
-	@echo "  make lint               flutter analyze"
+	@echo "  make lint               ruff + $(FLUTTER) analyze"
 	@echo "  make clean              remove build artifacts and the local blob store"
 
 # ---- install ----------------------------------------------------------------
 
 install: install-backend install-basic-pitch install-frontend
 
+require-flutter:
+	@if [ -x "$(FLUTTER)" ] || command -v "$(FLUTTER)" >/dev/null 2>&1; then \
+		:; \
+	else \
+		echo "Flutter SDK not found."; \
+		echo "Install Flutter and make sure its bin directory is on your PATH."; \
+		echo "Or rerun make with FLUTTER=/absolute/path/to/flutter."; \
+		echo "Example: make frontend FLUTTER=\$$HOME/flutter/bin/flutter"; \
+		exit 127; \
+	fi
+
 install-backend:
 	pip install -e ".[dev]"
 
 install-basic-pitch:
+	# madmom has no pre-built wheels and its setup.py requires Cython +
+	# setuptools at build time.  pip's default build-isolation doesn't
+	# expose packages already in the venv, so we pre-install the build
+	# deps and then build madmom without isolation.
+	pip install setuptools Cython numpy
+	pip install --no-build-isolation "madmom>=0.16"
 	pip install -e ".[basic-pitch]"
 	# basic-pitch 0.4.0 hard-codes tensorflow-macos as a base dep on
 	# Darwin+Python>3.11 (no wheels for 3.13), so install it with
@@ -65,16 +85,24 @@ install-eval:
 	# to score). Does not install fluidsynth; that's a system binary.
 	pip install -e ".[eval]"
 
-install-frontend:
-	cd $(FRONTEND) && flutter pub get
+install-frontend: require-flutter
+	cd $(FRONTEND) && $(FLUTTER) pub get
 
 # ---- run --------------------------------------------------------------------
+
+require-port-free:
+	@if command -v lsof >/dev/null 2>&1 && lsof -tiTCP:$(PORT) -sTCP:LISTEN >/dev/null 2>&1; then \
+		echo "Port $(PORT) is already in use."; \
+		echo "Stop the existing process or rerun with a different port, e.g. make backend PORT=8001"; \
+		lsof -nP -iTCP:$(PORT) -sTCP:LISTEN; \
+		exit 1; \
+	fi
 
 backend:
 	docker compose up --build
 
-frontend:
-	cd $(FRONTEND) && flutter run -d $(DEVICE) $(DART_DEFINE)
+frontend: require-flutter
+	cd $(FRONTEND) && $(FLUTTER) run -d $(DEVICE) $(DART_DEFINE)
 
 # ---- quality ----------------------------------------------------------------
 
@@ -97,7 +125,8 @@ eval:
 
 lint:
 	ruff check backend tests
-	cd $(FRONTEND) && flutter analyze
+	@$(MAKE) require-flutter
+	cd $(FRONTEND) && $(FLUTTER) analyze
 
 typecheck:
 	mypy
@@ -106,4 +135,6 @@ typecheck:
 
 clean:
 	rm -rf blob .pytest_cache backend/__pycache__ backend/**/__pycache__
-	cd $(FRONTEND) && flutter clean || true
+	@if [ -x "$(FLUTTER)" ] || command -v "$(FLUTTER)" >/dev/null 2>&1; then \
+		cd $(FRONTEND) && $(FLUTTER) clean; \
+	fi

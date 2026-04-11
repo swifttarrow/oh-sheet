@@ -41,6 +41,8 @@ STEP_TO_TASK: dict[str, str] = {
     "ingest": "ingest.run",
     "transcribe": "transcribe.run",
     "arrange": "arrange.run",
+    "condense": "condense.run",
+    "transform": "transform.run",
     "humanize": "humanize.run",
     "engrave": "engrave.run",
 }
@@ -316,6 +318,28 @@ class PipelineRunner:
                         txr_obj = _bundle_to_transcription(bundle_obj)
                         txr_dict = txr_obj.model_dump(mode="json")
                     payload_uri = self._serialize_stage_input(job_id, step, txr_dict)
+                    output_uri = await self._dispatch_task(task_name, job_id, payload_uri, config.stage_timeout_sec)
+                    score_dict = self.blob_store.get_json(output_uri)
+
+                elif step == "condense":
+                    if txr_dict is None:
+                        bundle_obj = InputBundle.model_validate(current_payload)
+                        log.info(
+                            "pipeline job_id=%s condense: using MIDI→TranscriptionResult passthrough",
+                            job_id,
+                        )
+                        txr_obj = _bundle_to_transcription(bundle_obj)
+                        txr_dict = txr_obj.model_dump(mode="json")
+                    payload_uri = self._serialize_stage_input(job_id, step, txr_dict)
+                    output_uri = await self._dispatch_task(task_name, job_id, payload_uri, config.stage_timeout_sec)
+                    score_dict = self.blob_store.get_json(output_uri)
+
+                elif step == "transform":
+                    if score_dict is None:
+                        raise RuntimeError(
+                            "transform stage requires a PianoScore — none was produced"
+                        )
+                    payload_uri = self._serialize_stage_input(job_id, step, score_dict)
                     output_uri = await self._dispatch_task(task_name, job_id, payload_uri, config.stage_timeout_sec)
                     score_dict = self.blob_store.get_json(output_uri)
 

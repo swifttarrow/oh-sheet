@@ -19,6 +19,8 @@ celery_app.conf.update(
         "ingest.run": {"queue": "ingest"},
         "transcribe.run": {"queue": "transcribe"},
         "arrange.run": {"queue": "arrange"},
+        "condense.run": {"queue": "arrange"},
+        "transform.run": {"queue": "arrange"},
         "humanize.run": {"queue": "humanize"},
         "engrave.run": {"queue": "engrave"},
     },

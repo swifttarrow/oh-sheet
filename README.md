@@ -187,7 +187,61 @@ docker compose up -d
 # Or use the GitHub Actions workflow (auto-deploys on push to main)
 ```
 
-See `.github/workflows/deploy.yml` and `docker-compose.yml` for details.
+See `.github/workflows/deploy.yml` and `docker-compose.yml` for deployment details.
+
+`make help` lists every target. Useful overrides:
+
+```bash
+make frontend DEVICE=ios                                  # run on a different device
+make frontend API_BASE_URL=http://192.168.1.42:8000       # point at a non-localhost backend
+make frontend FLUTTER=$HOME/flutter/bin/flutter           # use a specific Flutter binary
+```
+
+OpenAPI docs at <http://localhost:8000/docs>.
+
+> **First-time Flutter setup.** The `frontend/` directory ships with
+> `lib/`, `pubspec.yaml`, and `analysis_options.yaml` — but no platform
+> scaffolding (iOS / Android / web / macOS folders). Generate them with:
+>
+> ```bash
+> cd frontend && flutter create --platforms=web,ios,android,macos .
+> ```
+>
+> This is non-destructive: it only adds files and won't touch the existing Dart sources.
+
+## Submit a job (curl)
+
+```bash
+# 1. Upload an audio file → returns a RemoteAudioFile (Claim-Check URI)
+curl -F "file=@song.mp3" http://localhost:8000/v1/uploads/audio
+
+# 2. Submit a job referencing the upload
+curl -X POST http://localhost:8000/v1/jobs \
+  -H "content-type: application/json" \
+  -d '{"audio": <RemoteAudioFile from step 1>, "title": "My Song"}'
+
+# 3. Stream live updates over WebSocket
+wscat -c ws://localhost:8000/v1/jobs/<job_id>/ws
+
+# 4. Once the job has succeeded, download the artifacts
+curl -OJ http://localhost:8000/v1/artifacts/<job_id>/pdf
+curl -OJ http://localhost:8000/v1/artifacts/<job_id>/midi
+curl -OJ http://localhost:8000/v1/artifacts/<job_id>/musicxml
+```
+
+## Per-stage worker endpoints
+
+For Temporal / Step Functions style orchestration, each stage is also exposed
+as a stateless worker that takes an `OrchestratorCommand` and returns a
+`WorkerResponse` (see contracts §1):
+
+- `POST /v1/stages/ingest`
+- `POST /v1/stages/transcribe`
+- `POST /v1/stages/arrange`
+- `POST /v1/stages/condense`
+- `POST /v1/stages/transform`
+- `POST /v1/stages/humanize`
+- `POST /v1/stages/engrave`
 
 ## TuneChat Integration
 

@@ -82,15 +82,18 @@ DEFAULT_HOP_LENGTH_SAMPLES = 160
 DEFAULT_FMIN_HZ = 65.0
 DEFAULT_FMAX_HZ = 1100.0
 
-# Voicing gate. CREPE periodicity is noisy on consonants + breaths —
-# 0.5 rejects most of those while keeping confident sung frames. Tuned
-# against the eval harness; see ``scripts/eval_transcription.py``.
-DEFAULT_VOICING_THRESHOLD = 0.5
+# Voicing gate. CREPE periodicity is noisy on consonants + breaths.
+# 0.45 is the eval-validated sweet spot: low enough to recover legato
+# frames the 0.5 default gates out (boosting melody recall), high
+# enough to reject consonant/breath noise. Tuned against the 25-file
+# clean_midi baseline; see ``scripts/eval_transcription.py``.
+DEFAULT_VOICING_THRESHOLD = 0.45
 
-# 5-frame (50 ms) median filter is long enough to smooth normal vibrato
-# (4-6 Hz, ±50 cents) into a stable semitone-quantized track without
-# destroying fast melismatic runs.
-DEFAULT_MEDIAN_FILTER_FRAMES = 5
+# 7-frame (70 ms) median filter is long enough to smooth normal vibrato
+# (4-6 Hz, ±50 cents) into a stable semitone-quantized track while
+# preserving fast melismatic runs (tested: 5 → 7 gave cleaner pitch
+# tracks without destroying 16th-note ornaments at 240 BPM).
+DEFAULT_MEDIAN_FILTER_FRAMES = 7
 
 # Drop passing ornaments / CREPE artifacts shorter than this. 60 ms is
 # below a fast 16th-note at 240 BPM, so we don't clip real content.
@@ -98,8 +101,12 @@ DEFAULT_MIN_NOTE_DURATION_SEC = 0.06
 
 # Bridge short unvoiced gaps between two same-pitch runs. Captures
 # legato singing where the periodicity dips momentarily on a consonant
-# transition mid-word but the pitch doesn't actually move.
-DEFAULT_MERGE_GAP_SEC = 0.06
+# transition mid-word but the pitch doesn't actually move. 0.15s is
+# a compromise: the initial 0.06 was too conservative (missed legato
+# bridges), while the A/B sweep's 0.3 over-merged distinct notes and
+# regressed melody F1. 0.15 preserves note boundaries while still
+# bridging typical consonant-driven voicing dips.
+DEFAULT_MERGE_GAP_SEC = 0.15
 
 # Per-note amplitude → velocity proxy. CREPE periodicity is a "how sure
 # are we this is voiced" signal, not a loudness signal, but it correlates
@@ -109,6 +116,12 @@ DEFAULT_MERGE_GAP_SEC = 0.06
 # audible ghosts or max-velocity hammers in the arranged output.
 DEFAULT_AMP_MIN = 0.25
 DEFAULT_AMP_MAX = 0.85
+
+# Hybrid CREPE+BP fusion defaults — mirrored in backend/config.py.
+DEFAULT_HYBRID_ENABLED = True
+DEFAULT_HYBRID_BP_MIN_AMP = 0.3
+DEFAULT_HYBRID_OVERLAP_THRESHOLD = 0.5
+DEFAULT_MAX_PITCH_LEAP = 12
 
 
 @dataclass
@@ -175,6 +188,7 @@ def _f0_to_notes(
     merge_gap_sec: float,
     amp_min: float,
     amp_max: float,
+    max_pitch_leap: int = DEFAULT_MAX_PITCH_LEAP,
 ) -> list[NoteEvent]:
     """Segment a frame-level F0 stream into discrete ``NoteEvent`` tuples.
 
@@ -191,6 +205,12 @@ def _f0_to_notes(
        momentary consonant-driven voicing dips).
     4. Drop notes shorter than ``min_note_duration_sec`` (passing
        ornaments, CREPE attack artifacts).
+    5. Octave-snap filter: if a note's pitch differs from both its
+       predecessor and successor by exactly ``max_pitch_leap``
+       semitones (default 12 = one octave), and the predecessor
+       and successor are within 4 semitones of each other, snap
+       the note to the predecessor's octave. This catches CREPE's
+       octave-error mode on breathy onsets.
 
     Pure Python — no numpy — so this is easy to unit-test with
     hand-built synthetic frame streams. Performance is fine for our
@@ -258,7 +278,218 @@ def _f0_to_notes(
         merged.append(note)
 
     # Step 4 — drop runs shorter than the minimum musical duration.
-    return [n for n in merged if (n[1] - n[0]) >= min_note_duration_sec]
+    filtered = [n for n in merged if (n[1] - n[0]) >= min_note_duration_sec]
+
+    # Step 5 — octave-snap filter. CREPE sometimes jumps an octave on
+    # breathy onsets; if a note is exactly max_pitch_leap semitones away
+    # from both neighbors and the neighbors are close to each other,
+    # snap it back.
+    filtered = _octave_snap(filtered, max_pitch_leap=max_pitch_leap)
+
+    return filtered
+
+
+def _octave_snap(
+    notes: list[NoteEvent],
+    *,
+    max_pitch_leap: int = DEFAULT_MAX_PITCH_LEAP,
+) -> list[NoteEvent]:
+    """Correct isolated octave jumps in a note sequence.
+
+    If a note's pitch differs from both its predecessor and successor
+    by exactly ``max_pitch_leap`` semitones, and the predecessor and
+    successor are within 4 semitones of each other, the note is
+    snapped to the predecessor's octave. This fixes CREPE's
+    octave-error mode on breathy onsets without disturbing legitimate
+    large leaps.
+
+    Pure Python, operates on a list of ``NoteEvent`` tuples, returns
+    a new list (the input is not mutated).
+    """
+    if len(notes) < 3:
+        return list(notes)
+
+    result: list[NoteEvent] = [notes[0]]
+    for i in range(1, len(notes) - 1):
+        prev_pitch = result[-1][2]  # use already-snapped predecessor
+        curr = notes[i]
+        succ_pitch = notes[i + 1][2]
+        curr_pitch = curr[2]
+
+        diff_prev = abs(curr_pitch - prev_pitch)
+        diff_succ = abs(curr_pitch - succ_pitch)
+        neighbors_close = abs(prev_pitch - succ_pitch) <= 4
+
+        if (
+            diff_prev == max_pitch_leap
+            and diff_succ == max_pitch_leap
+            and neighbors_close
+        ):
+            # Snap: move curr to predecessor's octave.
+            # Determine the direction: if curr is above prev, subtract
+            # an octave; if below, add one.
+            if curr_pitch > prev_pitch:
+                snapped_pitch = curr_pitch - max_pitch_leap
+            else:
+                snapped_pitch = curr_pitch + max_pitch_leap
+            result.append((curr[0], curr[1], snapped_pitch, curr[3], curr[4]))
+        else:
+            result.append(curr)
+
+    result.append(notes[-1])
+    return result
+
+
+def fuse_crepe_and_bp_melody(
+    crepe_events: list[NoteEvent],
+    bp_events: list[NoteEvent],
+    *,
+    bp_min_amp: float = DEFAULT_HYBRID_BP_MIN_AMP,
+    overlap_threshold: float = DEFAULT_HYBRID_OVERLAP_THRESHOLD,
+) -> list[NoteEvent]:
+    """Fuse CREPE and Basic Pitch melody events into a single stream.
+
+    Pitch arbitration
+    -----------------
+    For each time region, if CREPE has a confident note, prefer CREPE's
+    pitch. If CREPE is silent but BP has a note with amplitude above
+    ``bp_min_amp``, keep the BP note — CREPE may have gated it out as
+    breath noise when it was actually a soft sung note.
+
+    Onset/offset timing
+    --------------------
+    When both CREPE and BP agree on a pitch (within +/- 1 semitone) in
+    the same time window (temporal overlap > ``overlap_threshold``), use
+    BP's onset time (BP has better onset detection from its
+    percussive-attack-tuned onset detector) but CREPE's pitch.
+
+    Algorithm
+    ---------
+    Walk both event lists (sorted by onset). For each time window,
+    check overlap, then fuse or pick the best source.
+
+    Pure Python — no numpy — for easy testing, like ``_f0_to_notes``.
+
+    Parameters
+    ----------
+    crepe_events:
+        Note events from CREPE (high pitch accuracy, may miss soft notes).
+    bp_events:
+        Note events from Basic Pitch on the vocals stem (better onsets,
+        over-emits ghost notes).
+    bp_min_amp:
+        BP notes below this amplitude are dropped during fusion
+        (likely ghost notes).
+    overlap_threshold:
+        Minimum temporal overlap fraction for two notes to be considered
+        overlapping and eligible for onset/offset fusion.
+
+    Returns
+    -------
+    list[NoteEvent]
+        Fused event list, sorted by onset time.
+    """
+    if not crepe_events and not bp_events:
+        return []
+    if not crepe_events:
+        # CREPE produced nothing — return BP events filtered by amp.
+        return [e for e in bp_events if e[3] >= bp_min_amp]
+    if not bp_events:
+        return list(crepe_events)
+
+    # Sort both inputs by onset for the merge walk.
+    crepe_sorted = sorted(crepe_events, key=lambda e: e[0])
+    bp_sorted = sorted(bp_events, key=lambda e: e[0])
+
+    # For each CREPE event, find the best-overlapping BP event (if any)
+    # and decide whether to fuse onset/offset timing.
+    fused: list[NoteEvent] = []
+    used_bp_indices: set[int] = set()
+
+    for ce in crepe_sorted:
+        c_start, c_end, c_pitch, c_amp, c_bends = ce
+        c_dur = c_end - c_start
+        if c_dur <= 0:
+            continue
+
+        best_bp_idx: int | None = None
+        best_overlap: float = 0.0
+
+        for bi, be in enumerate(bp_sorted):
+            if bi in used_bp_indices:
+                continue
+            b_start, b_end, b_pitch, b_amp, _b_bends = be
+            b_dur = b_end - b_start
+            if b_dur <= 0:
+                continue
+
+            # Quick skip: BP event is too far ahead or behind.
+            if b_start >= c_end or b_end <= c_start:
+                # If BP event starts past CREPE event end, all remaining
+                # BP events (sorted) are past it too.
+                if b_start >= c_end:
+                    break
+                continue
+
+            # Compute overlap fraction (relative to the shorter note).
+            overlap_start = max(c_start, b_start)
+            overlap_end = min(c_end, b_end)
+            overlap_dur = max(0.0, overlap_end - overlap_start)
+            min_dur = min(c_dur, b_dur)
+            overlap_frac = overlap_dur / min_dur if min_dur > 0 else 0.0
+
+            # Pitch agreement: within +/- 1 semitone.
+            pitch_close = abs(c_pitch - b_pitch) <= 1
+
+            if overlap_frac > best_overlap and pitch_close:
+                best_overlap = overlap_frac
+                best_bp_idx = bi
+
+        if best_bp_idx is not None and best_overlap >= overlap_threshold:
+            # Fuse: use BP's onset, CREPE's pitch, keep CREPE's amp
+            # and the longer of the two end times (CREPE is often
+            # conservative on offsets).
+            bp_match = bp_sorted[best_bp_idx]
+            used_bp_indices.add(best_bp_idx)
+            fused_start = bp_match[0]  # BP onset
+            fused_end = max(c_end, bp_match[1])  # longer offset
+            fused.append((fused_start, fused_end, c_pitch, c_amp, c_bends))
+        else:
+            # No good BP match — keep CREPE event as-is.
+            fused.append(ce)
+
+    # Pass 2: add BP-only notes that CREPE missed (soft notes that
+    # CREPE's voicing gate rejected). Only keep those above the amp
+    # threshold to avoid ghost notes.
+    for bi, be in enumerate(bp_sorted):
+        if bi in used_bp_indices:
+            continue
+        b_start, b_end, b_pitch, b_amp, b_bends = be
+        if b_amp < bp_min_amp:
+            continue
+
+        # Check that this BP note doesn't overlap substantially with
+        # any CREPE note (it's truly a gap fill, not a duplicate).
+        dominated = False
+        for fe in fused:
+            f_start, f_end = fe[0], fe[1]
+            if b_start >= f_end or b_end <= f_start:
+                continue
+            overlap_start = max(b_start, f_start)
+            overlap_end = min(b_end, f_end)
+            overlap_dur = max(0.0, overlap_end - overlap_start)
+            b_dur = b_end - b_start
+            f_dur = f_end - f_start
+            min_dur = min(b_dur, f_dur) if f_dur > 0 else b_dur
+            if min_dur > 0 and (overlap_dur / min_dur) > overlap_threshold:
+                dominated = True
+                break
+        if not dominated:
+            fused.append(be)
+
+    # Sort final output by onset.
+    fused.sort(key=lambda e: e[0])
+    return fused
 
 
 def extract_vocal_melody_crepe(
@@ -274,6 +505,7 @@ def extract_vocal_melody_crepe(
     merge_gap_sec: float = DEFAULT_MERGE_GAP_SEC,
     amp_min: float = DEFAULT_AMP_MIN,
     amp_max: float = DEFAULT_AMP_MAX,
+    max_pitch_leap: int = DEFAULT_MAX_PITCH_LEAP,
     device: str | None = None,
 ) -> tuple[list[NoteEvent], CrepeMelodyStats]:
     """Run CREPE on ``vocals_path`` and return cleaned-up ``NoteEvent`` list.
@@ -368,6 +600,7 @@ def extract_vocal_melody_crepe(
         merge_gap_sec=merge_gap_sec,
         amp_min=amp_min,
         amp_max=amp_max,
+        max_pitch_leap=max_pitch_leap,
     )
 
     stats.n_notes = len(notes)

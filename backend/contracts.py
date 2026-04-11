@@ -28,6 +28,7 @@ from shared.contracts import (
     ScoreChordEvent,
     ScoreMetadata,
     ScoreNote,
+    ScorePipelineMode,
     ScoreSection,
     Section,
     SectionLabel,

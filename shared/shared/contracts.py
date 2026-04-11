@@ -318,11 +318,18 @@ class EngravedOutput(BaseModel):
 
 PipelineVariant = Literal["full", "audio_upload", "midi_upload", "sheet_only"]
 
+# How seconds-domain transcription becomes a beat-domain PianoScore.
+# ``arrange`` — hand assignment, dedup, quantization (default).
+# ``condense_transform`` — merge all tracks into one piano stream (condense) then
+# transform (passthrough for now).
+ScorePipelineMode = Literal["arrange", "condense_transform"]
+
 
 class PipelineConfig(BaseModel):
     variant: PipelineVariant
     skip_humanizer: bool = False
     stage_timeout_sec: int = 600
+    score_pipeline: ScorePipelineMode = "arrange"
 
     def get_execution_plan(self) -> list[str]:
         """Return the list of stages to invoke in order, per the variant."""
@@ -335,4 +342,11 @@ class PipelineConfig(BaseModel):
         plan = list(routing[self.variant])
         if self.skip_humanizer and "humanize" in plan:
             plan.remove("humanize")
+        if self.score_pipeline == "condense_transform":
+            try:
+                idx = plan.index("arrange")
+            except ValueError:
+                pass
+            else:
+                plan[idx : idx + 1] = ["condense", "transform"]
         return plan

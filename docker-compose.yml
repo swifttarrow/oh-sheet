@@ -17,6 +17,7 @@ services:
     ports:
       - "8000:8000"
     environment:
+      PYTHONDONTWRITEBYTECODE: "1"
       OHSHEET_BLOB_ROOT: /app/blob
       OHSHEET_REDIS_URL: redis://redis:6379/0
     volumes:
@@ -32,6 +33,7 @@ services:
       dockerfile: Dockerfile.dev
     command: celery -A backend.workers.celery_app worker -Q ingest -c 1 --loglevel=info
     environment:
+      PYTHONDONTWRITEBYTECODE: "1"
       OHSHEET_BLOB_ROOT: /app/blob
       OHSHEET_REDIS_URL: redis://redis:6379/0
     volumes:
@@ -47,6 +49,7 @@ services:
       dockerfile: Dockerfile.dev
     command: celery -A backend.workers.celery_app worker -Q transcribe -c 1 --loglevel=info
     environment:
+      PYTHONDONTWRITEBYTECODE: "1"
       OHSHEET_BLOB_ROOT: /app/blob
       OHSHEET_REDIS_URL: redis://redis:6379/0
     volumes:
@@ -62,6 +65,7 @@ services:
       dockerfile: Dockerfile.dev
     command: celery -A backend.workers.celery_app worker -Q arrange -c 1 --loglevel=info
     environment:
+      PYTHONDONTWRITEBYTECODE: "1"
       OHSHEET_BLOB_ROOT: /app/blob
       OHSHEET_REDIS_URL: redis://redis:6379/0
     volumes:
@@ -77,6 +81,7 @@ services:
       dockerfile: Dockerfile.dev
     command: celery -A backend.workers.celery_app worker -Q humanize -c 1 --loglevel=info
     environment:
+      PYTHONDONTWRITEBYTECODE: "1"
       OHSHEET_BLOB_ROOT: /app/blob
       OHSHEET_REDIS_URL: redis://redis:6379/0
     volumes:
@@ -92,6 +97,7 @@ services:
       dockerfile: Dockerfile.dev
     command: celery -A backend.workers.celery_app worker -Q engrave -c 1 --loglevel=info
     environment:
+      PYTHONDONTWRITEBYTECODE: "1"
       OHSHEET_BLOB_ROOT: /app/blob
       OHSHEET_REDIS_URL: redis://redis:6379/0
     volumes:

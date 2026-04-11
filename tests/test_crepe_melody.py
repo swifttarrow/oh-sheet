@@ -171,13 +171,14 @@ def test_empty_input_returns_empty_list():
 # ---------------------------------------------------------------------------
 
 def test_config_defaults_match_crepe_module_defaults():
-    """``Settings.crepe_model`` must stay in lockstep with the module's
-    ``DEFAULT_MODEL`` constant — otherwise a future rename on one side
+    """``Settings.crepe_*`` must stay in lockstep with the module's
+    ``DEFAULT_*`` constants — otherwise a future change on one side
     would silently drift from the other and the stems pipeline would
-    run a different weights bag than the config docstring claims.
+    run different parameters than the config docstring claims.
     """
     from backend.config import Settings
-    from backend.services.crepe_melody import DEFAULT_MODEL
+    from backend.services.crepe_melody import DEFAULT_MEDIAN_FILTER_FRAMES, DEFAULT_MODEL
 
     s = Settings()
     assert s.crepe_model == DEFAULT_MODEL
+    assert s.crepe_median_filter_frames == DEFAULT_MEDIAN_FILTER_FRAMES

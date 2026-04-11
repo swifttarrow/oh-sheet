@@ -69,7 +69,7 @@ G3, B3, D5 = 196.00, 246.94, 587.33
 # ---------------------------------------------------------------------------
 
 def test_triad_templates_shape_and_labels():
-    templates, labels, roots = _build_triad_templates()
+    templates, labels, roots = _build_triad_templates(seventh_enabled=False)
     assert templates.shape == (24, 12)
     assert len(labels) == 24
     assert len(roots) == 24
@@ -100,11 +100,18 @@ def test_recognize_chord_progression_c_then_g():
     # Two chords back-to-back: 4 beats of C major, 4 beats of G major.
     # Repetition + per-beat attack envelopes give the beat tracker
     # something real to segment on.
+    #
+    # Run with HMM disabled and 7ths disabled so that this test exercises
+    # the basic template-matching path unchanged from the original v1
+    # implementation.  HMM smoothing is tested separately in
+    # tests/test_chord_hmm.py.
     y = np.concatenate([
         _repeated([C4, E4, G4], beat_sec=0.5, n_beats=4),
         _repeated([G3, B3, D5], beat_sec=0.5, n_beats=4),
     ]).astype(np.float32)
-    labels, stats = recognize_chords_from_waveform(y, SR)
+    labels, stats = recognize_chords_from_waveform(
+        y, SR, hmm_enabled=False, seventh_enabled=False,
+    )
     assert not stats.skipped
     # Both C:maj and G:maj should show up in the label stream.
     found = {lbl.label for lbl in labels}
@@ -172,7 +179,17 @@ def test_recognize_returns_empty_for_silence():
 
 def test_config_defaults_match_chord_module_defaults():
     from backend.config import Settings
+    from backend.services.chord_recognition import (
+        DEFAULT_CHORD_HMM_ENABLED,
+        DEFAULT_CHORD_HMM_SELF_TRANSITION,
+        DEFAULT_CHORD_HMM_TEMPERATURE,
+        DEFAULT_CHORD_SEVENTH_TEMPLATES_ENABLED,
+    )
 
     s = Settings()
     assert s.chord_recognition_enabled is True
     assert s.chord_min_template_score == DEFAULT_CHORD_MIN_SCORE
+    assert s.chord_seventh_templates_enabled == DEFAULT_CHORD_SEVENTH_TEMPLATES_ENABLED
+    assert s.chord_hmm_enabled == DEFAULT_CHORD_HMM_ENABLED
+    assert s.chord_hmm_self_transition == DEFAULT_CHORD_HMM_SELF_TRANSITION
+    assert s.chord_hmm_temperature == DEFAULT_CHORD_HMM_TEMPERATURE
