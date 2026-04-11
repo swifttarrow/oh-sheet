@@ -391,6 +391,52 @@ def test_l2_grand_staff_single_part(engraved_artifacts):
     assert _count_staff(musicxml, 2) == 8
 
 
+def test_l2_two_voices_preserved_on_same_staff(engraved_artifacts):
+    """Plan phase 3.1 / PR-10: two-voice RH content keeps both voices.
+
+    The ``bach_invention_excerpt`` fixture carries 8 RH notes on
+    ``voice=1`` (upper line, quarters) and 4 RH notes on ``voice=2``
+    (lower line, half notes). Before PR-10 the engrave sanitizer
+    collapsed every ``<voice>`` tag to 1, destroying music21's
+    stems-up-melody / stems-down-accompaniment separation. The fix is
+    explicit music21 ``Voice`` sub-streams + a post-``makeNotation``
+    id-rename from the 0-indexed integers music21 stamps during
+    measure construction back to the MusicXML-valid ``1``/``2``.
+
+    What we check: (a) both voice numbers are present, (b) at least
+    one ``<backup>`` element exists (music21 emits ``<backup>`` before
+    switching from voice 1 to voice 2 within a measure), and (c) the
+    note counts per voice match the fixture — allowing one extra
+    voice-2 attack for the tie-continuation music21 inserts where a
+    half note bridges the barline.
+    """
+    from lxml import etree
+
+    musicxml, _ = engraved_artifacts["bach_invention_excerpt"]
+    root = etree.fromstring(musicxml)
+
+    voice_counts: dict[str, int] = {}
+    for note in root.iter("note"):
+        if note.find("rest") is not None:
+            continue
+        v = note.findtext("voice")
+        if v is not None:
+            voice_counts[v] = voice_counts.get(v, 0) + 1
+
+    assert "1" in voice_counts and "2" in voice_counts, (
+        f"expected both <voice>1</voice> and <voice>2</voice>; got {voice_counts}"
+    )
+    assert voice_counts["1"] == 8, f"voice 1 count {voice_counts['1']} != 8"
+    # Voice 2 = 4 half notes in the fixture; expect 4 or 5 (tie split at barline).
+    assert voice_counts["2"] in (4, 5), f"voice 2 count {voice_counts['2']} not in (4, 5)"
+    assert "0" not in voice_counts, (
+        "<voice>0</voice> is invalid MusicXML; sanitizer should have remapped it"
+    )
+
+    backups = list(root.iter("backup"))
+    assert backups, "expected <backup> elements separating voice 1 from voice 2"
+
+
 def test_l2_rh_only_fixture_still_single_part(engraved_artifacts):
     """An empty-LH fixture still emits a grand staff — just with an empty
     bass stave. This catches the regression where dropping LH content

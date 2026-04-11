@@ -118,6 +118,13 @@ def test_arrange_dedups_same_pitch_across_tracks_keep_loudest() -> None:
 
 
 def test_arrange_beginner_reduces_max_polyphony() -> None:
+    """Voice caps: intermediate=2 RH voices, beginner=1. PR-10 / plan 3.1.
+
+    Three overlapping notes at beat 0 force the voice allocator up to
+    three concurrent voices. Intermediate keeps voices 1 and 2 (the
+    piano cap) and drops the third; beginner keeps only voice 1 and
+    drops both extras.
+    """
     payload = _payload(
         tracks=[
             MidiTrack(
@@ -136,9 +143,10 @@ def test_arrange_beginner_reduces_max_polyphony() -> None:
     beginner = _arrange_sync(payload, "beginner")
     intermediate = _arrange_sync(payload, "intermediate")
 
-    assert len(beginner.right_hand) == 2
-    assert len(intermediate.right_hand) == 3
-    assert max(n.voice for n in beginner.right_hand) <= 2
+    assert len(beginner.right_hand) == 1
+    assert len(intermediate.right_hand) == 2
+    assert max(n.voice for n in intermediate.right_hand) <= 2
+    assert max(n.voice for n in beginner.right_hand) == 1
 
 
 def test_arrange_falls_back_to_all_tracks_when_all_are_other() -> None:

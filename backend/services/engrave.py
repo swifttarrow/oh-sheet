@@ -245,6 +245,19 @@ def _render_musicxml_bytes(
             part.append(tempo_mark)
         part.append(clef)
 
+        # Group notes by voice so music21 emits <voice>1</voice> /
+        # <voice>2</voice> instead of collapsing everything to a single
+        # stream. Arrange now caps at 2 voices per hand (PR-10 / plan
+        # phase 3.1), but the older condense pipeline can still produce
+        # voice numbers up to 16 — for that high-voice path we fall back
+        # to a single stream on the staff, matching the pre-PR-10
+        # collapse-to-voice-1 behavior. Piano notation is *defined* by
+        # ≤2 voices per staff, so clamping here matches the physical
+        # reality of stems-up melody + stems-down accompaniment.
+        max_voice_in_hand = max((sn.voice for sn in notes), default=1)
+        use_explicit_voices = 1 < max_voice_in_hand <= 2
+
+        notes_by_voice: dict[int, list] = {}
         for sn in sorted(notes, key=lambda n: n.onset_beat):
             n = music21.note.Note(sn.pitch)
             n.quarterLength = sn.duration_beat
@@ -262,7 +275,26 @@ def _render_musicxml_bytes(
                 # inside <notations> either way, but only the
                 # expressions placement round-trips through makeNotation.
                 n.expressions.append(music21.expressions.Fermata())
-            part.insert(sn.onset_beat, n)
+            voice_num = sn.voice if use_explicit_voices else 1
+            notes_by_voice.setdefault(voice_num, []).append((sn.onset_beat, n))
+
+        if use_explicit_voices:
+            # Insert voice 1 before voice 2 so music21's internal
+            # enumeration (0-indexed, in insertion order) maps
+            # deterministically back to 1/2 after makeNotation. The
+            # string ``id`` we set here is discarded by ``makeMeasures``
+            # — it re-creates per-measure Voice streams with fresh
+            # integer ids — so the 1..N rename after ``makeNotation``
+            # is the authoritative step.
+            for voice_num in sorted(notes_by_voice.keys()):
+                v = music21.stream.Voice(id=str(voice_num))
+                for onset, n in notes_by_voice[voice_num]:
+                    v.insert(onset, n)
+                part.insert(0, v)
+        else:
+            for _, nlist in notes_by_voice.items():
+                for onset, n in nlist:
+                    part.insert(onset, n)
 
         # Dynamics + pedal marks are attached to the RH and LH parts
         # respectively so the markings sit between the staves where
@@ -291,6 +323,18 @@ def _render_musicxml_bytes(
         # post-hoc rescaling.
         part.quantize(quarterLengthDivisors=(4, 3), inPlace=True)
         part.makeNotation(inPlace=True)
+
+        # makeMeasures rebuilds per-measure Voice sub-streams with fresh
+        # integer ids (music21 treats large ints as memory locations and
+        # re-numbers them starting from 0), so the original "1"/"2"
+        # string ids we set before makeNotation are gone. Rename them
+        # back to the MusicXML-valid 1..N range. Enumeration order
+        # matches our insertion order on the part, so voice 0 → "1" and
+        # voice 1 → "2" — consistent across every measure.
+        for meas in part.getElementsByClass(music21.stream.Measure):
+            for idx, v in enumerate(meas.voices):
+                v.id = str(idx + 1)
+
         s.insert(0, part)
         piano_parts.append(part)
 
@@ -335,22 +379,32 @@ def _render_musicxml_bytes(
 def _sanitize_musicxml_for_osmd(raw: bytes) -> bytes:
     """Post-process music21 MusicXML to fix OSMD compatibility issues.
 
-    As of PR-9, ``<divisions>`` is now controlled at the source via
-    ``music21.defaults.divisionsPerQuarter = 12`` (see
-    ``_render_musicxml_bytes``), so the old post-hoc divisions-and-duration
-    rescaling is gone — durations are correct by construction.
+    Two mechanical fixups remain after PR-9 (source-level ``divisions=12``)
+    and PR-10 (Voice sub-streams for 2-voice preservation):
 
-    The remaining fix is voice collapse: OSMD's VexFlow backend crashes
-    (``parentVoiceEntry`` undefined) on 3+ voices per part, so we flatten
-    everything to voice 1. This destroys music21's voice separation
-    (stems-up melody / stems-down accompaniment) and will be replaced
-    with a 2-voice-preserving clamp in PR-10.
+    1. ``<voice>0</voice>`` → ``<voice>1</voice>`` — music21 emits 0 when
+       a note isn't wrapped in a ``Voice`` sub-stream and the part has
+       multiple voices elsewhere. MusicXML requires voice numbers ≥ 1,
+       and OSMD rejects zero outright.
+    2. ``<voice>N</voice>`` with N ≥ 3 → ``<voice>2</voice>`` — defense-in-
+       depth for any upstream stage (e.g. the condense path) that
+       produces more than two voices per hand. OSMD's VexFlow backend
+       crashes (``parentVoiceEntry undefined``) on 3+ voices per part;
+       clamping to 2 is the minimum-damage fallback.
     """
     import re
 
     text = raw.decode("utf-8")
-    # Collapse all voices to voice 1 (OSMD chokes on 3+ voices per part).
-    text = re.sub(r"<voice>\d+</voice>", "<voice>1</voice>", text)
+
+    def _clamp(match: re.Match[str]) -> str:
+        n = int(match.group(1))
+        if n == 0:
+            return "<voice>1</voice>"
+        if n > 2:
+            return "<voice>2</voice>"
+        return match.group(0)
+
+    text = re.sub(r"<voice>(\d+)</voice>", _clamp, text)
     return text.encode("utf-8")
 
 
