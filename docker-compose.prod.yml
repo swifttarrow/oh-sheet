@@ -15,8 +15,14 @@ services:
       retries: 5
 
   orchestrator:
+    # JobManager stores jobs in an in-process dict (see
+    # backend/jobs/manager.py — "Single-process v1"), so running more
+    # than one uvicorn worker splits job state across processes: POST
+    # /v1/jobs lands on one worker, the subsequent GET / WS lands on
+    # another and returns "Job not found" (GAU-100). Keep --workers 1
+    # until JobManager is backed by Redis / Postgres.
     image: ${IMAGE}
-    command: uvicorn backend.main:app --host 0.0.0.0 --port 8000 --workers 2
+    command: uvicorn backend.main:app --host 0.0.0.0 --port 8000 --workers 1
     restart: unless-stopped
     ports:
       - "8000:8000"
