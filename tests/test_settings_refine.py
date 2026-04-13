@@ -150,3 +150,32 @@ def test_anthropic_api_key_default_is_none() -> None:
     """CFG-03: anthropic_api_key defaults to None — the CFG-04 400-on-missing-key case."""
     s = Settings()
     assert s.anthropic_api_key is None
+
+
+# ---------------------------------------------------------------------------
+# D-13 — refine_ghost_velocity_max field (Phase 2, Plan 01)
+# ---------------------------------------------------------------------------
+
+
+def test_refine_ghost_velocity_max_default_is_40(monkeypatch: pytest.MonkeyPatch) -> None:
+    """D-13: default 40 — configurable via OHSHEET_REFINE_GHOST_VELOCITY_MAX."""
+    monkeypatch.delenv("OHSHEET_REFINE_GHOST_VELOCITY_MAX", raising=False)
+    s = Settings(_env_file=None)  # _env_file=None prevents .env pollution
+    assert s.refine_ghost_velocity_max == 40
+
+
+def test_refine_ghost_velocity_max_env_override(monkeypatch: pytest.MonkeyPatch) -> None:
+    """D-13: env var overrides default — Phase-4 A/B tuning hook."""
+    monkeypatch.setenv("OHSHEET_REFINE_GHOST_VELOCITY_MAX", "25")
+    s = Settings(_env_file=None)
+    assert s.refine_ghost_velocity_max == 25
+
+
+@pytest.mark.parametrize("bad", ["-1", "128", "256"])
+def test_refine_ghost_velocity_max_rejects_out_of_range(
+    monkeypatch: pytest.MonkeyPatch, bad: str
+) -> None:
+    """D-13: bounds [0, 127] enforced at Settings() instantiation."""
+    monkeypatch.setenv("OHSHEET_REFINE_GHOST_VELOCITY_MAX", bad)
+    with pytest.raises(ValidationError):
+        Settings(_env_file=None)

@@ -17,6 +17,8 @@ dependencies = [
     "celery[redis]>=5.3",
     "pretty_midi>=0.2.10",
     "music21>=9.1",
+    "anthropic>=0.94.0,<1.0",
+    "tenacity>=8.2,<10",
 ]
 
 [project.optional-dependencies]
