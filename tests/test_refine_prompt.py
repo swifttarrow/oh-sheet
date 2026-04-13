@@ -2,15 +2,6 @@
 from __future__ import annotations
 
 import pytest
-
-from backend.services.refine_prompt import (
-    ID_PATTERN,
-    REFINE_PROMPT_VERSION,
-    SYSTEM_PROMPT,
-    USER_PROMPT_TEMPLATE,
-    _derive_note_id_map,
-    build_prompt,
-)
 from shared.contracts import (
     ExpressionMap,
     ExpressiveNote,
@@ -20,6 +11,15 @@ from shared.contracts import (
     ScoreMetadata,
     ScoreNote,
     TempoMapEntry,
+)
+
+from backend.services.refine_prompt import (
+    ID_PATTERN,
+    REFINE_PROMPT_VERSION,
+    SYSTEM_PROMPT,
+    USER_PROMPT_TEMPLATE,
+    _derive_note_id_map,
+    build_prompt,
 )
 
 
