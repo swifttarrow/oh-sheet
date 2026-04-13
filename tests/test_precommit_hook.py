@@ -109,12 +109,16 @@ def test_detect_secrets_blocks_mock_anthropic_key(tmp_path: Path) -> None:
     HighEntropyString detector regardless of whether a named AnthropicDetector
     plugin exists in v1.5.0.
     """
+    # Mock Anthropic-style key: 70 chars, high entropy. The pragma keeps
+    # detect-secrets from flagging THIS test file (line below) while still
+    # letting the subprocess assertion flag the tmp file we build from it.
+    mock_key = "sk-ant-api03-AbCdEfGhIjKlMnOpQrStUvWxYz0123456789AbCdEfGhIjKlMnOpQrSt"  # pragma: allowlist secret
     mock_key_file = tmp_path / "leak.py"
     mock_key_file.write_text(
         textwrap.dedent(
-            """
+            f"""
             # Accidentally committed key for testing detect-secrets
-            ANTHROPIC_API_KEY = "sk-ant-api03-AbCdEfGhIjKlMnOpQrStUvWxYz0123456789AbCdEfGhIjKlMnOpQrSt"
+            ANTHROPIC_API_KEY = "{mock_key}"
             """
         ).lstrip()
     )
