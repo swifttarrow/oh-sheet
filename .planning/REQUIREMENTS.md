@@ -100,8 +100,51 @@ REQ-ID format: `[CATEGORY]-[NUMBER]`. Categories: CFG (config + plumbing), CTR (
 
 <!-- Filled by gsd-roadmapper; maps each REQ-ID to its phase. -->
 
-(Pending — populated by roadmap creation.)
+| Requirement | Phase | Status |
+|-------------|-------|--------|
+| CTR-01 | Phase 1 | Pending |
+| CTR-02 | Phase 1 | Pending |
+| CTR-03 | Phase 1 | Pending |
+| CTR-04 | Phase 1 | Pending |
+| CTR-05 | Phase 1 | Pending |
+| CFG-01 | Phase 1 | Pending |
+| CFG-02 | Phase 1 | Pending |
+| CFG-03 | Phase 1 | Pending |
+| CFG-04 | Phase 1 | Pending |
+| CFG-05 | Phase 1 | Pending |
+| CFG-06 | Phase 1 | Pending |
+| CFG-07 | Phase 1 | Pending |
+| CFG-08 | Phase 1 | Pending |
+| STG-01 | Phase 2 | Pending |
+| STG-02 | Phase 2 | Pending |
+| STG-03 | Phase 2 | Pending |
+| STG-04 | Phase 2 | Pending |
+| STG-05 | Phase 2 | Pending |
+| STG-06 | Phase 2 | Pending |
+| STG-07 | Phase 2 | Pending |
+| STG-08 | Phase 2 | Pending |
+| STG-09 | Phase 2 | Pending |
+| STG-10 | Phase 2 | Pending |
+| INT-01 | Phase 2 | Pending |
+| INT-02 | Phase 2 | Pending |
+| INT-03 | Phase 2 | Pending |
+| INT-04 | Phase 2 | Pending |
+| INT-05 | Phase 2 | Pending |
+| INT-06 | Phase 2 | Pending |
+| INT-07 | Phase 2 | Pending |
+| UX-01 | Phase 3 | Pending |
+| UX-02 | Phase 3 | Pending |
+| UX-03 | Phase 3 | Pending |
+| UX-04 | Phase 3 | Pending |
+| UX-05 | Phase 3 | Pending |
+| VAL-01 | Phase 4 | Pending |
+| VAL-02 | Phase 4 | Pending |
+| VAL-03 | Phase 4 | Pending |
+| VAL-04 | Phase 4 | Pending |
+| VAL-05 | Phase 4 | Pending |
+
+**Coverage:** 40/40 v1 REQ-IDs mapped to exactly one phase. No orphans.
 
 ---
 
-*Last updated: 2026-04-13 after research synthesis*
+*Last updated: 2026-04-13 after roadmap creation*

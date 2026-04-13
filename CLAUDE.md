@@ -65,3 +65,17 @@ Tests use `httpx.AsyncClient` via a pytest fixture (`client` in `tests/conftest.
 ### Deployment
 
 Multi-stage Dockerfile: Flutter web build → Python 3.12-slim runtime with ffmpeg. Deployed to GCP Cloud Run via GitHub Actions (`deploy.yml`, manual trigger). CI runs lint, typecheck, and test on PRs to main.
+
+<!-- GSD:workflow-start source:GSD defaults -->
+## GSD Workflow Enforcement
+
+Project planning lives in `.planning/` (PROJECT.md, REQUIREMENTS.md, ROADMAP.md, STATE.md, research/, codebase/). Before using Edit, Write, or other file-changing tools, start work through a GSD command so planning artifacts and execution context stay in sync.
+
+Use these entry points:
+- `/gsd-quick` for small fixes, doc updates, and ad-hoc tasks
+- `/gsd-debug` for investigation and bug fixing
+- `/gsd-plan-phase <n>` to plan a roadmap phase before execution
+- `/gsd-execute-phase <n>` for planned phase work
+
+Do not make direct repo edits outside a GSD workflow unless the user explicitly asks to bypass it.
+<!-- GSD:workflow-end -->
