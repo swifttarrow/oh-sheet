@@ -8,7 +8,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Literal
 
-from pydantic import SecretStr, field_validator, model_validator
+from pydantic import Field, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from backend.contracts import ScorePipelineMode
@@ -548,6 +548,15 @@ class Settings(BaseSettings):
     refine_max_tokens: int = 4096
     refine_web_search_max_uses: int = 5
     refine_max_retries: int = 3
+
+    # Refine validator threshold (D-13). Any RefineEditOp with
+    # rationale="harmony_correction" targeting a source note whose velocity
+    # is <= this value is rejected by RefineValidator (STG-05 ghost-note
+    # guard). Env-configurable because Phase-4 A/B harness data may show
+    # the default needs tuning per genre. Range [0, 127] matches MIDI
+    # velocity bounds so the knob can NEVER make the guard meaningless
+    # (ge=0) or reject every note (le=127).
+    refine_ghost_velocity_max: int = Field(40, ge=0, le=127)
 
     # Model allowlist enforcement (CFG-05). Runs after all fields are set,
     # so it can read both refine_model and refine_allow_opus. Raising here
