@@ -49,6 +49,7 @@ STEP_TO_TASK: dict[str, str] = {
     "condense": "condense.run",
     "transform": "transform.run",
     "humanize": "humanize.run",
+    "refine": "refine.run",
     "engrave": "engrave.run",
 }
 
@@ -302,6 +303,33 @@ class PipelineRunner:
                     payload_uri = self._serialize_stage_input(job_id, step, score_dict)
                     output_uri = await self._dispatch_task(task_name, job_id, payload_uri, config.stage_timeout_sec)
                     perf_dict = self.blob_store.get_json(output_uri)
+
+                elif step == "refine":
+                    if perf_dict is not None:
+                        refine_envelope = {
+                            "payload": perf_dict,
+                            "payload_type": "HumanizedPerformance",
+                            "title_hint": bundle.metadata.title,
+                            "artist_hint": bundle.metadata.artist,
+                        }
+                    elif score_dict is not None:
+                        refine_envelope = {
+                            "payload": score_dict,
+                            "payload_type": "PianoScore",
+                            "title_hint": bundle.metadata.title,
+                            "artist_hint": bundle.metadata.artist,
+                        }
+                    else:
+                        raise RuntimeError(
+                            "refine stage requires a score or performance — none was produced"
+                        )
+                    payload_uri = self._serialize_stage_input(job_id, step, refine_envelope)
+                    output_uri = await self._dispatch_task(task_name, job_id, payload_uri, config.stage_timeout_sec)
+                    refined = self.blob_store.get_json(output_uri)
+                    if refined["payload_type"] == "HumanizedPerformance":
+                        perf_dict = refined["payload"]
+                    else:
+                        score_dict = refined["payload"]
 
                 elif step == "engrave":
                     if perf_dict is not None:
