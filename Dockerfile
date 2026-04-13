@@ -30,10 +30,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY shared/ shared/
 RUN pip install --no-cache-dir ./shared
 
-# Install Python package (no ML deps to keep image small)
+# Install Python package with Pop2Piano transcription deps.
+# NOTE: essentia only ships x86_64 Linux wheels — build with
+# --platform linux/amd64 if targeting Apple Silicon hosts.
 COPY pyproject.toml .
 COPY backend/ backend/
-RUN pip install --no-cache-dir .
+RUN pip install --no-cache-dir ".[pop2piano]"
 
 # Copy Flutter web build into a directory the backend will serve
 COPY --from=flutter-build /app/frontend/build/web /app/static

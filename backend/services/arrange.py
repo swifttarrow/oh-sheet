@@ -120,6 +120,14 @@ def _notes_to_beats(
     for n in notes:
         onset = sec_to_beat(n.onset_sec, tempo_map)
         offset = sec_to_beat(n.offset_sec, tempo_map)
+        # Clamp to non-negative — notes before the first detected beat
+        # (e.g. Pop2Piano emitting from 0.0s when the beat tracker anchors
+        # beat 0 later in the audio) would otherwise produce negative beat
+        # positions that music21 cannot place in any measure.
+        if onset < 0.0:
+            onset = 0.0
+        if offset < 0.0:
+            continue  # entirely before the first beat — drop it
         out.append((n.pitch, onset, max(offset - onset, QUANT_GRID), n.velocity))
     return out
 

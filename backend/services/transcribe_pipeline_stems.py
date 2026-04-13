@@ -382,14 +382,39 @@ def _run_with_stems(
         stem_stats.warnings.append("all stems empty; fell back to single-mix")
         return _single_mod._run_without_stems(audio_path, stem_stats)
 
-    # Onset refinement — snap note onsets to spectral onset-strength peaks.
-    # On the stems path we refine each role's events using the corresponding
-    # stem's audio, which gives a cleaner ODF than the full mix.
+    # ── Pre-load stem + mix waveforms once ─────────────────────────────
+    # Onset refinement and duration refinement both load the same stem
+    # audio independently — 2 librosa.load() calls per stem.  Pre-loading
+    # each stem once and passing the waveform down eliminates ~6 redundant
+    # decodes on a 3-stem job.  The mix audio is pre-loaded for key/meter
+    # and chord recognition.
     _role_stem_map = {
         InstrumentRole.MELODY: getattr(stems, "vocals", None),
         InstrumentRole.BASS: getattr(stems, "bass", None),
         InstrumentRole.CHORDS: getattr(stems, "other", None),
     }
+
+    _preloaded_cache: dict[str, tuple | None] = {}
+
+    def _preload(path: Path | None) -> tuple | None:
+        if path is None:
+            return None
+        key = str(path)
+        if key in _preloaded_cache:
+            return _preloaded_cache[key]
+        try:
+            import librosa as _lib  # noqa: PLC0415
+            y, sr = _lib.load(str(path), sr=22050, mono=True)
+            _preloaded_cache[key] = (y, sr)
+            return (y, sr)
+        except Exception as exc:  # noqa: BLE001
+            log.debug("pre-load failed for %s: %s", path, exc)
+            _preloaded_cache[key] = None
+            return None
+
+    # Pre-load the mix for key/meter/chord analysis.
+    mix_audio = _preload(audio_path)
+
     per_stem_onset_stats: dict[str, OnsetRefineStats] = {}
     if settings.onset_refine_enabled:
         _role_label_map = {
@@ -401,6 +426,7 @@ def _run_with_stems(
             stem_audio = _role_stem_map.get(role)
             refine_audio = stem_audio if stem_audio is not None else audio_path
             label = _role_label_map.get(role, str(role))
+            preloaded = _preload(stem_audio) if stem_audio is not None else mix_audio
             try:
                 refined_events, role_or_stats = refine_onsets(
                     role_events,
@@ -408,6 +434,7 @@ def _run_with_stems(
                     sr=22050,
                     hop_length=settings.onset_refine_hop_length,
                     max_shift_sec=settings.onset_refine_max_shift_sec,
+                    preloaded_audio=preloaded,
                 )
             except Exception as exc:  # noqa: BLE001 — never let onset refine sink transcribe
                 log.warning("onset refinement raised for %s: %s", label, exc)
@@ -431,6 +458,7 @@ def _run_with_stems(
             stem_audio = _role_stem_map.get(role)
             refine_audio = stem_audio if stem_audio is not None else audio_path
             label = _dur_label_map.get(role, str(role))
+            preloaded = _preload(stem_audio) if stem_audio is not None else mix_audio
             try:
                 refined_dur_events, dur_stats = refine_durations(
                     role_events,
@@ -440,6 +468,7 @@ def _run_with_stems(
                     floor_ratio=settings.duration_refine_floor_ratio,
                     tail_sec=settings.duration_refine_tail_sec,
                     min_duration_sec=settings.duration_refine_min_duration_sec,
+                    preloaded_audio=preloaded,
                 )
             except Exception as exc:  # noqa: BLE001
                 log.warning("duration refinement raised for %s: %s", label, exc)
@@ -453,12 +482,18 @@ def _run_with_stems(
     # cappella / ambient material) falls back to the mix so the
     # downstream tempo_map is still waveform-derived.
     tempo_src: Path = audio_path
+    tempo_preloaded = mix_audio
     if settings.demucs_use_drums_for_beats and stems.drums is not None:
         tempo_src = stems.drums
-    audio_tempo_map = tempo_map_from_audio_path(tempo_src)
+        tempo_preloaded = _preload(stems.drums)
+    audio_tempo_map = tempo_map_from_audio_path(
+        tempo_src, preloaded_audio=tempo_preloaded,
+    )
     if audio_tempo_map is None and tempo_src != audio_path:
         log.debug("drums-stem beat tracking returned None, retrying with mix")
-        audio_tempo_map = tempo_map_from_audio_path(audio_path)
+        audio_tempo_map = tempo_map_from_audio_path(
+            audio_path, preloaded_audio=mix_audio,
+        )
 
     # Key + meter estimation — always run against the original mix
     # rather than any single stem. Vocals alone lose the harmonic
@@ -467,7 +502,7 @@ def _run_with_stems(
     # The mix sees all of it and is what downstream engrave will
     # render the key signature for anyway.
     key_label, time_signature, key_stats, meter_stats = _audio_mod._maybe_analyze_key_and_meter(
-        audio_path,
+        audio_path, preloaded_audio=mix_audio,
     )
 
     # Chord recognition — prefer the "other" stem when enabled and
@@ -478,8 +513,10 @@ def _run_with_stems(
     chord_stats: ChordRecognitionStats | None = None
     if settings.chord_recognition_enabled:
         chord_src: Path = audio_path
+        chord_preloaded = mix_audio
         if settings.demucs_use_other_for_chords and stems.other is not None:
             chord_src = stems.other
+            chord_preloaded = _preload(stems.other)
         try:
             chord_labels, chord_stats = recognize_chords(
                 chord_src,
@@ -490,6 +527,7 @@ def _run_with_stems(
                 hmm_self_transition=settings.chord_hmm_self_transition,
                 hmm_temperature=settings.chord_hmm_temperature,
                 key_label=key_label,
+                preloaded_audio=chord_preloaded,
             )
             if chord_stats.skipped and chord_src != audio_path:
                 log.debug(
@@ -504,6 +542,7 @@ def _run_with_stems(
                     hmm_self_transition=settings.chord_hmm_self_transition,
                     hmm_temperature=settings.chord_hmm_temperature,
                     key_label=key_label,
+                    preloaded_audio=mix_audio,
                 )
         except Exception as exc:  # noqa: BLE001 — chord recog must not sink transcribe
             log.warning("chord recognition raised: %s", exc)

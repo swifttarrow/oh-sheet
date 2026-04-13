@@ -183,6 +183,7 @@ def tempo_map_from_audio_path(
     path: Path,
     *,
     sr: int = 22_050,
+    preloaded_audio: tuple | None = None,
 ) -> list[TempoMapEntry] | None:
     """Run beat tracking on an audio file and return a piecewise tempo map.
 
@@ -191,6 +192,9 @@ def tempo_map_from_audio_path(
     * ``"madmom"`` (default) — use madmom, fall back to librosa if unavailable.
     * ``"librosa"`` — use librosa only (legacy behaviour).
     * ``"auto"`` — try madmom first, then librosa.
+
+    When ``preloaded_audio`` is a ``(y, sr)`` tuple the ``librosa.load``
+    call is skipped, reusing a waveform already in memory.
 
     Returns ``None`` on any failure so callers can fall back to the
     model-derived single-tempo map.
@@ -204,11 +208,14 @@ def tempo_map_from_audio_path(
         log.debug("librosa/numpy unavailable; skipping audio beat tracking")
         return None
 
-    try:
-        y, file_sr = _librosa.load(str(path), sr=sr, mono=True)
-    except Exception as exc:  # noqa: BLE001 — bad bytes shouldn't crash the worker
-        log.warning("librosa.load failed for %s: %s", path, exc)
-        return None
+    if preloaded_audio is not None:
+        y, file_sr = preloaded_audio
+    else:
+        try:
+            y, file_sr = _librosa.load(str(path), sr=sr, mono=True)
+        except Exception as exc:  # noqa: BLE001 — bad bytes shouldn't crash the worker
+            log.warning("librosa.load failed for %s: %s", path, exc)
+            return None
 
     duration = float(len(y) / file_sr) if file_sr else 0.0
     if duration < _MIN_DURATION_SEC:

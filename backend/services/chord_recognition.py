@@ -607,6 +607,7 @@ def recognize_chords(
     hmm_self_transition: float = DEFAULT_CHORD_HMM_SELF_TRANSITION,
     hmm_temperature: float = DEFAULT_CHORD_HMM_TEMPERATURE,
     key_label: str = "C:major",
+    preloaded_audio: tuple | None = None,
 ) -> tuple[list[RealtimeChordEvent], ChordRecognitionStats]:
     """Load ``audio_path`` and return a chord label stream.
 
@@ -615,6 +616,9 @@ def recognize_chords(
     audio, chroma failure, ...) returns an empty label list with
     ``stats.skipped = True`` so the caller can carry on with no chord
     annotations.
+
+    When ``preloaded_audio`` is a ``(y, sr)`` tuple the ``librosa.load``
+    call is skipped, reusing a waveform already in memory.
 
     Parameters ``key_label``, ``hmm_enabled``, ``hmm_self_transition``,
     and ``hmm_temperature`` control the optional HMM Viterbi smoothing
@@ -629,13 +633,16 @@ def recognize_chords(
         stats.skipped = True
         return [], stats
 
-    try:
-        y, file_sr = librosa.load(str(audio_path), sr=sample_rate, mono=True)
-    except Exception as exc:  # noqa: BLE001 — bad audio shouldn't crash worker
-        log.warning("librosa.load failed for chord recognition: %s", exc)
-        stats.warnings.append(f"librosa.load failed: {exc}")
-        stats.skipped = True
-        return [], stats
+    if preloaded_audio is not None:
+        y, file_sr = preloaded_audio
+    else:
+        try:
+            y, file_sr = librosa.load(str(audio_path), sr=sample_rate, mono=True)
+        except Exception as exc:  # noqa: BLE001 — bad audio shouldn't crash worker
+            log.warning("librosa.load failed for chord recognition: %s", exc)
+            stats.warnings.append(f"librosa.load failed: {exc}")
+            stats.skipped = True
+            return [], stats
 
     return recognize_chords_from_waveform(
         y, int(file_sr),

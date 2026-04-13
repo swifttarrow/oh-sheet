@@ -71,7 +71,7 @@ def _make_stems(tmp_path: Path) -> SeparatedStems:
 def stub_audio_helpers(monkeypatch):
     """Silence audio-only stages — tempo, chord recog, duration probe."""
     monkeypatch.setattr(
-        stems_mod, "tempo_map_from_audio_path", lambda _path: None
+        stems_mod, "tempo_map_from_audio_path", lambda _path, **_kw: None
     )
     monkeypatch.setattr(
         audio_mod, "_audio_duration_sec", lambda _path: None

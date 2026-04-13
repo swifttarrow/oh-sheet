@@ -16,7 +16,7 @@ FLUTTER      ?= flutter
 
 DART_DEFINE := $(if $(API_BASE_URL),--dart-define=API_BASE_URL=$(API_BASE_URL),)
 
-.PHONY: help install install-backend install-basic-pitch install-demucs install-eval install-frontend backend frontend test test-backend test-e2e eval lint typecheck clean require-flutter require-port-free
+.PHONY: help install install-backend install-basic-pitch install-pop2piano install-demucs install-eval install-frontend backend frontend test test-backend test-e2e eval lint typecheck clean require-flutter require-port-free
 
 help:
 	@echo "Oh Sheet — make targets"
@@ -25,7 +25,8 @@ help:
 	@echo "  make install-backend      pip install -e .[dev]  (API only — TranscribeService"
 	@echo "                            will fall back to a 4-note stub without Basic Pitch)"
 	@echo "  make install-basic-pitch  pip install -e .[basic-pitch]  (basic-pitch[onnx] + pretty_midi)"
-	@echo "  make install-demucs       pip install -e .[demucs]  (demucs + torch; opt-in stem split)"
+	@echo "  make install-pop2piano    pip install -e .[pop2piano]  (Pop2Piano transformer; preferred path)"
+	@echo "  make install-demucs       pip install -e .[demucs]  (demucs + torch; legacy stem split)"
 	@echo "  make install-eval         pip install -e .[eval]  (mir_eval for the offline eval harness)"
 	@echo "  make install-frontend     $(FLUTTER) pub get inside frontend/"
 	@echo ""
@@ -42,7 +43,7 @@ help:
 
 # ---- install ----------------------------------------------------------------
 
-install: install-backend install-basic-pitch install-frontend
+install: install-backend install-pop2piano install-basic-pitch install-frontend
 
 require-flutter:
 	@if [ -x "$(FLUTTER)" ] || command -v "$(FLUTTER)" >/dev/null 2>&1; then \
@@ -71,6 +72,13 @@ install-basic-pitch:
 	# --no-deps and rely on [basic-pitch] above for the actual runtime
 	# deps. See pyproject.toml comment for details.
 	pip install --no-deps "basic-pitch>=0.4"
+
+install-pop2piano:
+	# Pop2Piano audio-to-piano transformer. On by default when deps are
+	# installed (OHSHEET_POP2PIANO_ENABLED=1). Replaces Demucs + Basic
+	# Pitch with a single transformer pass. essentia only ships x86_64
+	# Linux + macOS wheels; Docker builds use platform: linux/amd64.
+	pip install -e ".[pop2piano]"
 
 install-demucs:
 	# Optional stem-separation stack (demucs + torch). Off by default;

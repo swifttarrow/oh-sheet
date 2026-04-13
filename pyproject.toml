@@ -108,6 +108,24 @@ eval = [
 # the two features installable as a single unit, which matches how
 # they're used at runtime. Model weights (~22 MB for ``full``) are
 # bundled inside the torchcrepe wheel so there's nothing to fetch.
+# Pop2Piano audio-to-piano transcription (sweetcocoa/pop2piano).
+# Replaces the Demucs + Basic Pitch pipeline with a single transformer
+# pass. Requires torch + transformers + essentia (the HF processor is
+# gated on essentia at load time).
+#
+# essentia only publishes x86_64 Linux wheels — Docker services that
+# install this extra must build with ``platform: linux/amd64`` (set in
+# docker-compose.yml). On Apple Silicon this runs under Rosetta, which
+# is transparent but ~10-20% slower for CPU-bound work.
+pop2piano = [
+    "torch>=2.0",
+    "transformers>=4.30",
+    "librosa>=0.10",
+    "resampy>=0.4",
+    "scipy>=1.10",
+    "pretty_midi>=0.2.10",
+    "essentia==2.1b6.dev1389",
+]
 demucs = [
     "demucs>=4.0",
     "torch>=2.0",
