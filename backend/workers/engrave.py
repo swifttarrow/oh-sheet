@@ -1,12 +1,15 @@
 """Celery task for the engrave pipeline stage.
 
-Engrave is unique: it accepts either HumanizedPerformance or PianoScore,
-plus extra args (job_id, title, composer). The task envelope wraps these
-as a JSON object with a `payload_type` discriminator.
+Engrave accepts HumanizedPerformance, PianoScore, or (Phase 1+)
+RefinedPerformance payloads plus extra args (job_id, title, composer).
+The task envelope wraps these as a JSON object with a ``payload_type``
+discriminator. For ``payload_type == "RefinedPerformance"`` the
+worker unwraps to the nested ``refined_performance`` (HumanizedPerformance)
+per D-07 in .planning/phases/01-contracts-and-plumbing/01-CONTEXT.md.
 """
 import asyncio
 
-from shared.contracts import HumanizedPerformance, PianoScore
+from shared.contracts import HumanizedPerformance, PianoScore, RefinedPerformance
 from shared.storage.local import LocalBlobStore
 
 from backend.config import settings
@@ -28,8 +31,19 @@ def run(job_id: str, payload_uri: str) -> str:
         payload = HumanizedPerformance.model_validate(payload_data)
     elif payload_type == "PianoScore":
         payload = PianoScore.model_validate(payload_data)
+    elif payload_type == "RefinedPerformance":
+        # D-07: unwrap to the inner HumanizedPerformance — engrave renders
+        # the POST-edit result exactly as if it had arrived on the
+        # HumanizedPerformance path. Edits, citations, model, and digest
+        # are preserved on the refined blob but not consumed by engrave;
+        # they are for observability (llm_trace.json artifact, Phase 2).
+        refined = RefinedPerformance.model_validate(payload_data)
+        payload = refined.refined_performance
     else:
-        raise ValueError(f"Unknown payload_type: {payload_type!r}. Expected 'HumanizedPerformance' or 'PianoScore'.")
+        raise ValueError(
+            f"Unknown payload_type: {payload_type!r}. "
+            f"Expected 'HumanizedPerformance', 'PianoScore', or 'RefinedPerformance'."
+        )
 
     service = EngraveService(blob_store=blob)
     # asyncio.run() is safe with Celery's default prefork pool; breaks with gevent/eventlet.
