@@ -118,6 +118,20 @@ services:
       redis:
         condition: service_healthy
 
+  worker-refine:
+    image: ${IMAGE}
+    command: celery -A backend.workers.celery_app worker -Q refine -c 1 --loglevel=warning
+    restart: unless-stopped
+    environment:
+      OHSHEET_BLOB_ROOT: /app/blob
+      OHSHEET_REDIS_URL: redis://redis:6379/0
+      OHSHEET_ANTHROPIC_API_KEY: ${OHSHEET_ANTHROPIC_API_KEY:-}
+    volumes:
+      - blob-data:/app/blob
+    depends_on:
+      redis:
+        condition: service_healthy
+
   worker-engrave:
     image: ${IMAGE}
     command: celery -A backend.workers.celery_app worker -Q engrave -c 1 --loglevel=warning

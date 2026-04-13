@@ -1,0 +1,28 @@
+{
+  "aggregate": {
+    "composer_exact_match_pct": 100.0,
+    "count": 1,
+    "key_match_pct": 100.0,
+    "repeat_f1_avg": 1.0,
+    "section_label_f1_avg": 0.8,
+    "tempo_tolerance_bpm": 10,
+    "tempo_within_10bpm_pct": 100.0,
+    "time_signature_exact_pct": 100.0,
+    "title_exact_match_pct": 100.0
+  },
+  "per_song": [
+    {
+      "composer_match": true,
+      "key_match": true,
+      "predicted_composer": "Claude Debussy",
+      "predicted_title": "Clair de lune",
+      "repeat_f1": 1.0,
+      "section_label_f1": 0.8,
+      "slug": "clair_de_lune",
+      "tempo_predicted_bpm": 72.0,
+      "tempo_within_10bpm": true,
+      "time_signature_exact": true,
+      "title_match": true
+    }
+  ]
+}

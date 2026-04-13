@@ -103,6 +103,23 @@ services:
       redis:
         condition: service_healthy
 
+  worker-refine:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    command: celery -A backend.workers.celery_app worker -Q refine -c 1 --loglevel=info
+    environment:
+      PYTHONDONTWRITEBYTECODE: "1"
+      OHSHEET_BLOB_ROOT: /app/blob
+      OHSHEET_REDIS_URL: redis://redis:6379/0
+      OHSHEET_ANTHROPIC_API_KEY: ${OHSHEET_ANTHROPIC_API_KEY:-}
+    volumes:
+      - ./blob:/app/blob
+      - ./backend:/app/backend
+    depends_on:
+      redis:
+        condition: service_healthy
+
   worker-engrave:
     platform: linux/amd64
     build:
