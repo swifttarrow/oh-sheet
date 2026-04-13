@@ -371,17 +371,31 @@ class RefineCitation(BaseModel):
 
 
 class RefinedPerformance(BaseModel):
-    """Wrapper around a HumanizedPerformance post-LLM refinement (D-05, D-06).
+    """Wrapper around a HumanizedPerformance or PianoScore post-LLM refinement.
 
-    Nested composition — NOT subclass (refined is not a humanized-in-place;
-    edits are a separate log). Engrave unwraps via ``refined.refined_performance``
-    per D-07. ``source_performance_digest`` is the SHA-256 (hexdigest, 64 chars)
-    of the pre-edit HumanizedPerformance — drift detection between refine
-    input and output.
+    Decision history:
+      * D-05 (original): ``refined_performance`` was typed ``HumanizedPerformance``
+        only — a refined *performance* is semantically not a humanized-in-place;
+        edits are a separate log. Nested composition, NOT subclass.
+      * Gap closure 01-09 (WR-02): type widened to
+        ``HumanizedPerformance | PianoScore``. The sheet_only execution plan
+        emits ``refine`` immediately after ``arrange`` with no humanize stage,
+        so refine's upstream payload on that path is a PianoScore. The
+        contract must represent both input shapes to be consistent with
+        ``PipelineConfig.get_execution_plan()``.
+
+    Engrave unwraps via ``refined.refined_performance`` per D-07. The
+    downstream ``EngraveService.run`` already accepts
+    ``HumanizedPerformance | PianoScore`` via ``isinstance`` dispatch, so the
+    widening is transparent at the service boundary.
+
+    ``source_performance_digest`` is the SHA-256 (hexdigest, 64 chars) of the
+    pre-edit payload (HumanizedPerformance or PianoScore) — drift detection
+    between refine input and output.
     """
 
     schema_version: str = SCHEMA_VERSION  # "3.1.0" post-bump
-    refined_performance: HumanizedPerformance  # POST-edit — what engrave renders
+    refined_performance: HumanizedPerformance | PianoScore  # POST-edit — what engrave renders (either a humanized performance for full/audio/midi variants, or a PianoScore for sheet_only)
     edits: list[RefineEditOp]
     citations: list[RefineCitation]
     model: str
