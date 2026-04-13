@@ -365,6 +365,7 @@ ScorePipelineMode = Literal["arrange", "condense_transform"]
 class PipelineConfig(BaseModel):
     variant: PipelineVariant
     skip_humanizer: bool = False
+    enable_refine: bool = True
     stage_timeout_sec: int = 600
     score_pipeline: ScorePipelineMode = "arrange"
 
@@ -386,4 +387,10 @@ class PipelineConfig(BaseModel):
                 pass
             else:
                 plan[idx : idx + 1] = ["condense", "transform"]
+        if self.enable_refine and "engrave" in plan:
+            # Refine always runs immediately before engrave, regardless of
+            # which upstream stages are present. Insert after all prior
+            # substitutions so we don't re-anchor on a stage that was
+            # already replaced.
+            plan.insert(plan.index("engrave"), "refine")
         return plan

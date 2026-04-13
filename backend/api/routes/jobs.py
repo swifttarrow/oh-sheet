@@ -54,6 +54,7 @@ class JobCreateRequest(BaseModel):
     prefer_clean_source: bool = False
 
     skip_humanizer: bool = False
+    enable_refine: bool = False  # TODO(GAU-105 Task 6): flip to True once refine worker exists
     difficulty: Difficulty = "intermediate"
 
 
@@ -151,6 +152,7 @@ async def create_job(
     config = PipelineConfig(
         variant=variant,
         skip_humanizer=body.skip_humanizer,
+        enable_refine=body.enable_refine,
         score_pipeline=settings.score_pipeline,
     )
     record = await manager.submit(bundle, config)

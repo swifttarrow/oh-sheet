@@ -46,7 +46,7 @@ async def test_full_pipeline_via_celery(runner):
         ),
         metadata=InputMetadata(title="Test", artist="Tester", source="audio_upload"),
     )
-    config = PipelineConfig(variant="audio_upload")
+    config = PipelineConfig(variant="audio_upload", enable_refine=False)
 
     result = await runner.run(
         job_id="test-celery-001",
@@ -76,7 +76,7 @@ async def test_transcription_midi_uri_survives_pipeline(runner):
         ),
         metadata=InputMetadata(title="MIDI URI Test", artist="Tester", source="audio_upload"),
     )
-    config = PipelineConfig(variant="audio_upload")
+    config = PipelineConfig(variant="audio_upload", enable_refine=False)
 
     result = await runner.run(
         job_id="test-midi-uri-001",
@@ -100,7 +100,7 @@ async def test_midi_upload_pipeline_via_celery(runner):
         ),
         metadata=InputMetadata(title="MIDI Test", artist="Tester", source="midi_upload"),
     )
-    config = PipelineConfig(variant="midi_upload")
+    config = PipelineConfig(variant="midi_upload", enable_refine=False)
 
     result = await runner.run(
         job_id="test-celery-midi-001",
@@ -132,7 +132,7 @@ async def test_sheet_only_pipeline_via_celery(runner):
         ),
         metadata=InputMetadata(title="Sheet Test", artist="Tester", source="audio_upload"),
     )
-    config = PipelineConfig(variant="sheet_only")
+    config = PipelineConfig(variant="sheet_only", enable_refine=False)
 
     result = await runner.run(
         job_id="test-celery-sheet-001",
