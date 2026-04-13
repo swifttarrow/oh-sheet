@@ -1,0 +1,24 @@
+{
+  "content": [
+    {
+      "type": "tool_use",
+      "name": "submit_refinements",
+      "input": {
+        "title": "Clair de Lune",
+        "composer": "Claude Debussy",
+        "arranger": null,
+        "key_signature": "Db:major",
+        "time_signature": [9, 8],
+        "tempo_bpm": 66,
+        "tempo_marking": "Andante très expressif",
+        "staff_split_hint": 60,
+        "sections": [
+          {"start_beat": 0.0, "end_beat": 32.0, "label": "intro", "custom_label": "A"},
+          {"start_beat": 32.0, "end_beat": 96.0, "label": "verse", "custom_label": "B"},
+          {"start_beat": 96.0, "end_beat": 128.0, "label": "outro", "custom_label": "A'"}
+        ],
+        "repeats": []
+      }
+    }
+  ]
+}
