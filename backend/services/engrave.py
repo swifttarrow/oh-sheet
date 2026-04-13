@@ -2,7 +2,8 @@
 
   * MIDI     — pretty_midi if installed, else a minimal MThd+MTrk file
   * MusicXML — music21 (hard dependency; errors propagate to the caller)
-  * PDF      — LilyPond (preferred) or MuseScore CLI if on $PATH, else a 1-line %PDF stub
+  * PDF      — LilyPond (preferred) or MuseScore CLI ($PATH, ``MUSESCORE_PATH``, or macOS
+    ``.app`` bundle), else a 1-line %PDF stub
 """
 from __future__ import annotations
 
@@ -13,6 +14,8 @@ import shutil
 import subprocess
 import tempfile
 from pathlib import Path
+
+from shared.musescore_cli import musescore_executable_paths
 
 from backend.contracts import (
     SCHEMA_VERSION,
@@ -582,16 +585,13 @@ def _render_pdf_bytes(musicxml_bytes: bytes) -> bytes:
     Tries LilyPond first (this is what production ships — ~250 MB apt
     package, musicxml2ly + lilypond binaries) and MuseScore as a
     higher-fidelity fallback for local dev machines that have it
-    installed. Returns the 60-byte stub PDF only when no renderer is
+    installed (including macOS ``.app`` bundles via ``musescore_executable_paths``).
+    Returns the 60-byte stub PDF only when no renderer is
     available or all renderers fail.
     """
+    ms_paths = musescore_executable_paths()
     has_lilypond = bool(shutil.which("musicxml2ly") and shutil.which("lilypond"))
-    mscore_bin = next(
-        (b for b in ("musescore4", "musescore3", "mscore", "MuseScore4") if shutil.which(b)),
-        None,
-    )
-
-    if not has_lilypond and mscore_bin is None:
+    if not has_lilypond and not ms_paths:
         log.warning(
             "No PDF renderer found — install lilypond (preferred) or MuseScore "
             "for real PDF output; emitting stub",
@@ -628,27 +628,27 @@ def _render_pdf_bytes(musicxml_bytes: bytes) -> bytes:
             except (FileNotFoundError, subprocess.TimeoutExpired) as exc:
                 log.warning("LilyPond PDF render failed: %s", exc)
 
-        if mscore_bin is not None:
+        for mscore in ms_paths:
             pdf_path = tmp / "sheet.pdf"
             try:
                 subprocess.run(
-                    [mscore_bin, "-o", str(pdf_path), str(xml_path)],
+                    [mscore, "-o", str(pdf_path), str(xml_path)],
                     check=True, capture_output=True, timeout=120,
                 )
                 if pdf_path.is_file():
                     log.info(
-                        "PDF rendered via %s (%d bytes)", mscore_bin, pdf_path.stat().st_size,
+                        "PDF rendered via %s (%d bytes)", mscore, pdf_path.stat().st_size,
                     )
                     return pdf_path.read_bytes()
-                log.warning("%s ran but produced no PDF at %s", mscore_bin, pdf_path)
+                log.warning("%s ran but produced no PDF at %s", mscore, pdf_path)
             except subprocess.CalledProcessError as exc:
                 log.warning(
                     "%s PDF render failed: %s",
-                    mscore_bin,
+                    mscore,
                     (exc.stderr or b"").decode("utf-8", "replace")[:500],
                 )
             except (FileNotFoundError, subprocess.TimeoutExpired) as exc:
-                log.warning("%s PDF render failed: %s", mscore_bin, exc)
+                log.warning("%s PDF render failed: %s", mscore, exc)
 
     return _STUB_PDF
 

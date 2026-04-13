@@ -502,5 +502,16 @@ class Settings(BaseSettings):
     # Env: ``OHSHEET_SCORE_PIPELINE`` — ``arrange`` (default) or ``condense_transform``.
     score_pipeline: ScorePipelineMode = "arrange"
 
+    # ---- Arrange backend (rules vs HF MIDI path) ---------------------------
+    # ``rules`` — existing hand assignment + quantization in arrange.
+    # ``hf_midi_identity`` — materialize MIDI → HF inference (see
+    # ``arrange_hf_inference_mode``) → parse output → same ``_arrange_sync``.
+    # Env: ``OHSHEET_ARRANGE_BACKEND``.
+    arrange_backend: Literal["rules", "hf_midi_identity"] = "rules"
+    # Sub-mode for ``hf_midi_identity`` (extensible when real weights ship).
+    arrange_hf_inference_mode: Literal["identity"] = "identity"
+    # On materialize/HF/parse failure, run classic arrange on the original txr.
+    arrange_hf_fallback_to_rules: bool = True
+
 
 settings = Settings()

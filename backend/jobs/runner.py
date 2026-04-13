@@ -8,6 +8,7 @@ the result URI, and deserialize the output for the next stage.
 from __future__ import annotations
 
 import asyncio
+import io
 import logging
 import time
 from collections.abc import Callable
@@ -30,6 +31,10 @@ from backend.contracts import (
     TranscriptionResult,
 )
 from backend.jobs.events import JobEvent
+from backend.services.pretty_midi_tracks import (
+    harmonic_analysis_from_pretty_midi,
+    midi_tracks_from_pretty_midi,
+)
 from backend.storage.base import BlobStore
 
 log = logging.getLogger(__name__)
@@ -46,18 +51,6 @@ STEP_TO_TASK: dict[str, str] = {
     "humanize": "humanize.run",
     "engrave": "engrave.run",
 }
-
-
-def _gm_program_to_role(program: int, is_drum: bool) -> InstrumentRole:
-    if is_drum:
-        return InstrumentRole.OTHER
-    if program < 8:
-        return InstrumentRole.PIANO
-    if 32 <= program <= 39:
-        return InstrumentRole.BASS
-    if 72 <= program <= 79:
-        return InstrumentRole.MELODY
-    return InstrumentRole.CHORDS
 
 
 def _stub_transcription(reason: str) -> TranscriptionResult:
@@ -88,11 +81,19 @@ def _stub_transcription(reason: str) -> TranscriptionResult:
     )
 
 
-def _bundle_to_transcription(bundle: InputBundle) -> TranscriptionResult:
+def _bundle_to_transcription(
+    bundle: InputBundle,
+    *,
+    blob_store: BlobStore | None = None,
+    job_id: str | None = None,
+) -> TranscriptionResult:
     """Build a TranscriptionResult from a midi_upload bundle.
 
     Real path: parse the MIDI file via pretty_midi, recover the tempo map,
     fold each instrument into a MidiTrack, infer key/time-signature.
+    When ``blob_store`` and ``job_id`` are provided, the upload bytes are
+    copied to ``jobs/{job_id}/transcription/upload.mid`` and
+    ``transcription_midi_uri`` is set (claim-check for arrange / HF).
     Fallback: a small shape-correct stub so downstream stages still run.
     """
     if bundle.midi is None:
@@ -110,63 +111,17 @@ def _bundle_to_transcription(bundle: InputBundle) -> TranscriptionResult:
     except ImportError:
         return _stub_transcription("pretty_midi not installed")
 
+    midi_bytes = midi_path.read_bytes()
     try:
-        pm = pretty_midi.PrettyMIDI(str(midi_path))
+        pm = pretty_midi.PrettyMIDI(io.BytesIO(midi_bytes))
     except Exception as exc:  # noqa: BLE001 — bad MIDI bytes shouldn't crash the worker
         return _stub_transcription(f"pretty_midi parse failed: {exc}")
 
-    midi_tracks: list[MidiTrack] = []
-    for instrument in pm.instruments:
-        notes = [
-            Note(
-                pitch=int(n.pitch),
-                onset_sec=float(n.start),
-                offset_sec=float(max(n.end, n.start + 0.01)),
-                velocity=int(max(1, min(127, n.velocity))),
-            )
-            for n in instrument.notes
-        ]
-        if not notes:
-            continue
-        midi_tracks.append(MidiTrack(
-            notes=notes,
-            instrument=_gm_program_to_role(int(instrument.program), bool(instrument.is_drum)),
-            program=None if instrument.is_drum else int(instrument.program),
-            confidence=0.9,
-        ))
-
+    midi_tracks = midi_tracks_from_pretty_midi(pm)
     if not midi_tracks:
         return _stub_transcription("midi file contained no notes")
 
-    # Tempo map: pretty_midi returns parallel arrays of (time, qpm).
-    tempo_times, tempo_bpms = pm.get_tempo_changes()
-    tempo_map: list[TempoMapEntry] = []
-    if len(tempo_times) > 0:
-        beat_cursor = 0.0
-        prev_time = 0.0
-        prev_bpm = float(tempo_bpms[0])
-        for t, bpm in zip(tempo_times, tempo_bpms):
-            t = float(t)
-            bpm = float(bpm)
-            beat_cursor += (t - prev_time) * (prev_bpm / 60.0)
-            tempo_map.append(TempoMapEntry(time_sec=t, beat=beat_cursor, bpm=bpm))
-            prev_time = t
-            prev_bpm = bpm
-    if not tempo_map:
-        tempo_map = [TempoMapEntry(time_sec=0.0, beat=0.0, bpm=120.0)]
-
-    time_signature: tuple[int, int] = (4, 4)
-    if pm.time_signature_changes:
-        first = pm.time_signature_changes[0]
-        time_signature = (int(first.numerator), int(first.denominator))
-
-    key = "C:major"
-    if pm.key_signature_changes:
-        try:
-            key_number = int(pm.key_signature_changes[0].key_number)
-            key = pretty_midi.key_number_to_key_name(key_number).replace(" ", ":")
-        except Exception:  # noqa: BLE001
-            pass
+    analysis = harmonic_analysis_from_pretty_midi(pm)
 
     total_notes = sum(len(t.notes) for t in midi_tracks)
     log.info(
@@ -174,21 +129,29 @@ def _bundle_to_transcription(bundle: InputBundle) -> TranscriptionResult:
         midi_path.name, len(midi_tracks), total_notes,
     )
 
-    return TranscriptionResult(
+    result = TranscriptionResult(
         schema_version=SCHEMA_VERSION,
         midi_tracks=midi_tracks,
-        analysis=HarmonicAnalysis(
-            key=key,
-            time_signature=time_signature,
-            tempo_map=tempo_map,
-            chords=[],
-            sections=[],
-        ),
+        analysis=analysis,
         quality=QualitySignal(
             overall_confidence=0.95,
             warnings=["MIDI input — no harmonic analysis"],
         ),
     )
+    if blob_store is not None and job_id is not None:
+        try:
+            upload_uri = blob_store.put_bytes(
+                f"jobs/{job_id}/transcription/upload.mid",
+                midi_bytes,
+            )
+            result = result.model_copy(update={"transcription_midi_uri": upload_uri})
+        except Exception as exc:  # noqa: BLE001
+            log.warning(
+                "Could not persist upload MIDI for job_id=%s (HF/arrange claim-check): %s",
+                job_id,
+                exc,
+            )
+    return result
 
 
 class PipelineRunner:
@@ -307,28 +270,18 @@ class PipelineRunner:
                     output_uri = await self._dispatch_task(task_name, job_id, payload_uri, config.stage_timeout_sec)
                     txr_dict = self.blob_store.get_json(output_uri)
 
-                elif step == "arrange":
-                    if txr_dict is None:
-                        # midi_upload variant: build transcription from bundle
-                        bundle_obj = InputBundle.model_validate(current_payload)
-                        log.info(
-                            "pipeline job_id=%s arrange: using MIDI→TranscriptionResult passthrough",
-                            job_id,
-                        )
-                        txr_obj = _bundle_to_transcription(bundle_obj)
-                        txr_dict = txr_obj.model_dump(mode="json")
-                    payload_uri = self._serialize_stage_input(job_id, step, txr_dict)
-                    output_uri = await self._dispatch_task(task_name, job_id, payload_uri, config.stage_timeout_sec)
-                    score_dict = self.blob_store.get_json(output_uri)
-
-                elif step == "condense":
+                elif step in ("arrange", "condense"):
                     if txr_dict is None:
                         bundle_obj = InputBundle.model_validate(current_payload)
                         log.info(
-                            "pipeline job_id=%s condense: using MIDI→TranscriptionResult passthrough",
-                            job_id,
+                            "pipeline job_id=%s %s: using MIDI→TranscriptionResult passthrough",
+                            job_id, step,
                         )
-                        txr_obj = _bundle_to_transcription(bundle_obj)
+                        txr_obj = _bundle_to_transcription(
+                            bundle_obj,
+                            blob_store=self.blob_store,
+                            job_id=job_id,
+                        )
                         txr_dict = txr_obj.model_dump(mode="json")
                     payload_uri = self._serialize_stage_input(job_id, step, txr_dict)
                     output_uri = await self._dispatch_task(task_name, job_id, payload_uri, config.stage_timeout_sec)

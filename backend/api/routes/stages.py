@@ -150,7 +150,7 @@ async def stage_arrange(
     arrange = ArrangeService()
 
     async def coro(payload: TranscriptionResult) -> PianoScore:
-        return await arrange.run(payload)
+        return await arrange.run(payload, blob_store=blob)
 
     return await _run_stage(
         cmd,
