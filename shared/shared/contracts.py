@@ -429,6 +429,14 @@ class PipelineConfig(BaseModel):
     skip_humanizer: bool = False
     stage_timeout_sec: int = 600
     score_pipeline: ScorePipelineMode = "arrange"
+    # Phase 1 (CFG-01): opt-in LLM refine stage. When True,
+    # get_execution_plan inserts "refine" after "humanize" (or after
+    # "arrange" / "transform" for sheet_only, which has no humanize).
+    # The kill switch (OHSHEET_REFINE_KILL_SWITCH) is NOT checked here —
+    # it is enforced at the HTTP boundary in create_job(), which coerces
+    # enable_refine to False before constructing PipelineConfig. This keeps
+    # get_execution_plan pure: same PipelineConfig produces same plan, always.
+    enable_refine: bool = False
 
     def get_execution_plan(self) -> list[str]:
         """Return the list of stages to invoke in order, per the variant."""
@@ -448,4 +456,15 @@ class PipelineConfig(BaseModel):
                 pass
             else:
                 plan[idx : idx + 1] = ["condense", "transform"]
+        # Phase 1 (CFG-01): refine insertion after humanize; for sheet_only
+        # (no humanize) refine goes after the last score-producing stage
+        # (transform if condense_transform is active, else arrange).
+        if self.enable_refine:
+            if "humanize" in plan:
+                plan.insert(plan.index("humanize") + 1, "refine")
+            else:
+                for anchor in ("transform", "arrange"):
+                    if anchor in plan:
+                        plan.insert(plan.index(anchor) + 1, "refine")
+                        break
         return plan
