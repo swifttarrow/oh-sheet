@@ -29,6 +29,62 @@ _KIND_INFO: dict[str, tuple[str, str, str]] = {
 }
 
 
+@router.get("/artifacts/{job_id}/lilypond")
+def download_lilypond_source(
+    job_id: str,
+    manager: Annotated[JobManager, Depends(get_job_manager)],
+    blob: Annotated[LocalBlobStore, Depends(get_blob_store)],
+    inline: bool = False,
+) -> Response:
+    """INT-07: return the LilyPond .ly source persisted by EngraveService.
+
+    Uses a convention-derived path (jobs/{job_id}/engrave/score.ly) rather
+    than a URI on EngravedOutput to avoid a schema bump. 404 semantics fall
+    out naturally when the blob is missing: the engrave stage only writes
+    this artifact when LilyPond rendering succeeded (MuseScore fallback
+    does NOT produce .ly; stub fallback does NOT produce .ly; refine-less
+    jobs DO produce .ly if LilyPond rendered successfully — .ly availability
+    is orthogonal to refine).
+
+    Registered BEFORE the catch-all /{kind} route so FastAPI matches
+    /lilypond here rather than handing it to download_artifact (which
+    would reject it as an unknown kind).
+    """
+    record = manager.get(job_id)
+    if record is None:
+        raise HTTPException(status_code=404, detail=f"Job not found: {job_id}")
+    if record.status != "succeeded":
+        raise HTTPException(
+            status_code=409,
+            detail=f"Job {job_id} is {record.status}; artifacts unavailable.",
+        )
+
+    # CRITICAL (B1 fix): LocalBlobStore.get_bytes REQUIRES a file:// URI.
+    # Passing a plain key raises ValueError. Construct the URI via
+    # (settings.blob_root / blob_key).as_uri() — this is the ONLY supported form.
+    from backend.config import settings  # local import avoids circular deps
+    blob_key = f"jobs/{job_id}/engrave/score.ly"
+    blob_uri = (settings.blob_root / blob_key).as_uri()
+    try:
+        data = blob.get_bytes(blob_uri)
+    except (FileNotFoundError, ValueError):
+        raise HTTPException(
+            status_code=404,
+            detail=(
+                f"Job {job_id} has no LilyPond source. LilyPond rendering "
+                "may have fallen back to MuseScore or the stub renderer."
+            ),
+        ) from None
+
+    filename = f"{job_id}-score.ly"
+    disposition = "inline" if inline else f'attachment; filename="{filename}"'
+    return Response(
+        content=data,
+        media_type="application/x-lilypond",
+        headers={"Content-Disposition": disposition},
+    )
+
+
 @router.get("/artifacts/{job_id}/{kind}")
 def download_artifact(
     job_id: str,

@@ -576,14 +576,20 @@ def _sanitize_musicxml_for_osmd(raw: bytes) -> bytes:
 # PDF rendering — best effort, falls back to a tiny stub.
 # ---------------------------------------------------------------------------
 
-def _render_pdf_bytes(musicxml_bytes: bytes) -> bytes:
-    """Render MusicXML to PDF bytes.
+def _render_pdf_bytes(musicxml_bytes: bytes) -> tuple[bytes, bytes | None]:
+    """Render MusicXML to PDF bytes (and LilyPond source when available).
 
     Tries LilyPond first (this is what production ships — ~250 MB apt
     package, musicxml2ly + lilypond binaries) and MuseScore as a
     higher-fidelity fallback for local dev machines that have it
     installed. Returns the 60-byte stub PDF only when no renderer is
     available or all renderers fail.
+
+    Returns ``(pdf_bytes, lilypond_src_bytes_or_None)``. The second element
+    is the bytes of the ``.ly`` source produced by ``musicxml2ly`` when the
+    LilyPond render path succeeded; ``None`` when the LilyPond path was not
+    taken (MuseScore fallback or stub). The caller persists ``.ly`` at a
+    convention blob path for INT-07 (GET /v1/artifacts/{id}/lilypond).
     """
     has_lilypond = bool(shutil.which("musicxml2ly") and shutil.which("lilypond"))
     mscore_bin = next(
@@ -596,7 +602,7 @@ def _render_pdf_bytes(musicxml_bytes: bytes) -> bytes:
             "No PDF renderer found — install lilypond (preferred) or MuseScore "
             "for real PDF output; emitting stub",
         )
-        return _STUB_PDF
+        return (_STUB_PDF, None)
 
     with tempfile.TemporaryDirectory() as tmpdir:
         tmp = Path(tmpdir)
@@ -617,7 +623,12 @@ def _render_pdf_bytes(musicxml_bytes: bytes) -> bytes:
                 )
                 if pdf_path.is_file():
                     log.info("PDF rendered via LilyPond (%d bytes)", pdf_path.stat().st_size)
-                    return pdf_path.read_bytes()
+                    # Phase 2 (INT-07): also persist the LilyPond source for
+                    # the A/B harness and /v1/artifacts/{id}/lilypond route.
+                    # Only returned when musicxml2ly + lilypond both succeeded;
+                    # caller writes to blob store at jobs/{job_id}/engrave/score.ly.
+                    lilypond_src = ly_path.read_bytes() if ly_path.is_file() else None
+                    return (pdf_path.read_bytes(), lilypond_src)
                 log.warning("LilyPond ran but produced no PDF at %s", pdf_path)
             except subprocess.CalledProcessError as exc:
                 log.warning(
@@ -639,7 +650,8 @@ def _render_pdf_bytes(musicxml_bytes: bytes) -> bytes:
                     log.info(
                         "PDF rendered via %s (%d bytes)", mscore_bin, pdf_path.stat().st_size,
                     )
-                    return pdf_path.read_bytes()
+                    # MuseScore path does NOT produce a .ly source.
+                    return (pdf_path.read_bytes(), None)
                 log.warning("%s ran but produced no PDF at %s", mscore_bin, pdf_path)
             except subprocess.CalledProcessError as exc:
                 log.warning(
@@ -650,7 +662,7 @@ def _render_pdf_bytes(musicxml_bytes: bytes) -> bytes:
             except (FileNotFoundError, subprocess.TimeoutExpired) as exc:
                 log.warning("%s PDF render failed: %s", mscore_bin, exc)
 
-    return _STUB_PDF
+    return (_STUB_PDF, None)
 
 
 # ---------------------------------------------------------------------------
@@ -661,11 +673,14 @@ def _engrave_sync(
     payload: HumanizedPerformance | PianoScore,
     title: str,
     composer: str,
-) -> tuple[bytes, bytes, bytes, int]:
-    """Render all three artifacts.
+) -> tuple[bytes, bytes, bytes, bytes | None, int]:
+    """Render all four artifacts (PDF, MusicXML, MIDI, optional LilyPond .ly).
 
-    Returns ``(pdf, musicxml, midi, chord_symbols_rendered)``. The trailing
-    count reflects chord symbols that *actually made it to the staff* after
+    Returns ``(pdf, musicxml, midi, lilypond_or_None, chord_symbols_rendered)``.
+    The ``lilypond`` element is the bytes of the ``.ly`` source when the
+    LilyPond renderer produced one (Phase 2 INT-07) and ``None`` otherwise
+    (MuseScore fallback, stub, or LilyPond failure). The trailing count
+    reflects chord symbols that *actually made it to the staff* after
     ``_attach_chord_symbols`` filtering — not the raw input count — so
     ``EngravedScoreData.includes_chord_symbols`` can tell the truth.
     """
@@ -707,8 +722,8 @@ def _engrave_sync(
     musicxml_bytes, chord_symbols_rendered = _render_musicxml_bytes(
         score, perf, title, composer,
     )
-    pdf_bytes = _render_pdf_bytes(musicxml_bytes)
-    return pdf_bytes, musicxml_bytes, midi_bytes, chord_symbols_rendered
+    pdf_bytes, lilypond_bytes = _render_pdf_bytes(musicxml_bytes)
+    return pdf_bytes, musicxml_bytes, midi_bytes, lilypond_bytes, chord_symbols_rendered
 
 
 class EngraveService:
@@ -731,7 +746,7 @@ class EngraveService:
             title,
             isinstance(payload, HumanizedPerformance),
         )
-        pdf_bytes, musicxml_bytes, midi_bytes, chord_symbols_rendered = (
+        pdf_bytes, musicxml_bytes, midi_bytes, lilypond_bytes, chord_symbols_rendered = (
             await asyncio.to_thread(_engrave_sync, payload, title, composer)
         )
 
@@ -739,6 +754,17 @@ class EngraveService:
         pdf_uri = self.blob_store.put_bytes(f"{prefix}/sheet.pdf", pdf_bytes)
         musicxml_uri = self.blob_store.put_bytes(f"{prefix}/score.musicxml", musicxml_bytes)
         midi_uri = self.blob_store.put_bytes(f"{prefix}/humanized.mid", midi_bytes)
+
+        # Phase 2 (INT-07): persist LilyPond source when the LilyPond path
+        # produced one. The A/B harness (Phase 4) and GET /v1/artifacts/
+        # {job_id}/lilypond endpoint (Plan 02-06) read this by convention.
+        # We deliberately do NOT surface the URI on EngravedOutput to avoid
+        # a schema bump; 404 semantics fall out naturally when the blob
+        # is missing (LilyPond not installed, rendering failed, etc.).
+        if lilypond_bytes is not None:
+            self.blob_store.put_bytes(
+                f"jobs/{job_id}/engrave/score.ly", lilypond_bytes,
+            )
 
         score = payload.score if isinstance(payload, HumanizedPerformance) else payload
         chord_input_count = len(score.metadata.chord_symbols)

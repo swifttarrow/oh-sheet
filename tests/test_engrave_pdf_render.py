@@ -37,7 +37,7 @@ def test_engrave_emits_real_pdf_not_stub() -> None:
     hands, and has been rendering cleanly through music21 since PR-1.
     """
     score = load_score_fixture("c_major_scale")
-    pdf_bytes, musicxml_bytes, _midi_bytes, _chord_count = _engrave_sync(
+    pdf_bytes, musicxml_bytes, _midi_bytes, _ly_bytes, _chord_count = _engrave_sync(
         score, title="Smoke Test", composer="pytest",
     )
 
@@ -58,8 +58,8 @@ def test_render_pdf_bytes_direct_call() -> None:
     high-level ``_engrave_sync`` plumbing around.
     """
     score = load_score_fixture("single_note")
-    _, musicxml_bytes, _, _ = _engrave_sync(score, title="", composer="")
+    _, musicxml_bytes, _, _, _ = _engrave_sync(score, title="", composer="")
 
-    pdf_bytes = _render_pdf_bytes(musicxml_bytes)
+    pdf_bytes, _ly_bytes = _render_pdf_bytes(musicxml_bytes)
     assert pdf_bytes != _STUB_PDF
     assert pdf_bytes.startswith(b"%PDF-")
