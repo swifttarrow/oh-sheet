@@ -29,7 +29,14 @@ Decimal phases appear between their surrounding integers in numeric order.
   3. Setting `OHSHEET_REFINE_KILL_SWITCH=true` causes any submission with `enable_refine=true` to behave exactly as if `enable_refine=false` — refine is absent from the execution plan
   4. Only models listed in the `OHSHEET_REFINE_ALLOW_OPUS`-aware allowlist are accepted; a request configured for a non-allowlisted model is rejected at config load time
   5. Running `git status` on a fresh checkout confirms `.env` is gitignored and the pre-commit secret-scan hook blocks a commit containing a mock Anthropic key
-**Plans**: TBD
+**Plans**: 7 plans
+- [ ] 01-01-PLAN.md — Add Refine contracts (RefineEditOp, RefineCitation, RefinedPerformance) + SCHEMA_VERSION 3.1.0 bump + backend/contracts.py re-exports
+- [ ] 01-02-PLAN.md — Contract unit tests (V1-V4) + fixture regression guard (V5 parametrize over 14 fixtures)
+- [ ] 01-03-PLAN.md — Refine Settings fields + allowlist model_validator + SecretStr API key + tests (V14-V19)
+- [ ] 01-04-PLAN.md — PipelineConfig.enable_refine + get_execution_plan insertion + STEP_TO_TASK reservation + baseline parity tests (V7-V8)
+- [ ] 01-05-PLAN.md — JobCreateRequest.enable_refine + HTTP 400 pre-check + kill-switch coercion + log.warning + tests (V9-V13)
+- [ ] 01-06-PLAN.md — Engrave worker RefinedPerformance elif branch (D-07 unwrap) + dispatch tests (V6)
+- [ ] 01-07-PLAN.md — .pre-commit-config.yaml + .secrets.baseline + end-to-end subprocess test (V20-V24)
 
 ### Phase 2: Refine Service and Pipeline Integration
 **Goal**: Ship an end-to-end refine stage — service, validator, worker, runner wiring, engrave unwrap, and skip-on-failure — validated against a mocked Anthropic SDK so the happy path and failure paths are both exercised before any real API spend.
@@ -75,7 +82,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Contracts and Plumbing | 0/TBD | Not started | - |
+| 1. Contracts and Plumbing | 0/7 | Not started | - |
 | 2. Refine Service and Pipeline Integration | 0/TBD | Not started | - |
 | 3. Live Anthropic and Frontend Toggle | 0/TBD | Not started | - |
 | 4. A/B Harness and Baseline | 0/TBD | Not started | - |
