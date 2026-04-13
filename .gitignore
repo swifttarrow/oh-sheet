@@ -19,6 +19,8 @@ blob/
 .cursor/skills/
 # Claude Code project instructions (local / machine-specific)
 CLAUDE.md
+# GSD planning artifacts (local / machine-specific)
+.planning/
 # PRPM-installed Claude Code skills; keep ADR skill versioned
 .openskills/*
 !.openskills/skill-log-architectural-decisions/
