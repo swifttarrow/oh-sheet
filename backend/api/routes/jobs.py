@@ -1,6 +1,7 @@
 """Job submission and inspection."""
 from __future__ import annotations
 
+import logging
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -25,6 +26,8 @@ from backend.storage.local import LocalBlobStore
 
 router = APIRouter()
 
+log = logging.getLogger(__name__)
+
 
 class JobCreateRequest(BaseModel):
     """Submit a pipeline job.
@@ -45,6 +48,10 @@ class JobCreateRequest(BaseModel):
     providing the source directly. See ``backend.services.cover_search``
     for the matching policy. Defaults to False so existing clients keep
     working unchanged.
+
+    ``enable_refine`` opts the job into the LLM refine stage between humanize
+    and engrave. Defaults to False; requires OHSHEET_ANTHROPIC_API_KEY to be
+    set (returns 400 otherwise) and respects OHSHEET_REFINE_KILL_SWITCH.
     """
 
     audio: RemoteAudioFile | None = None
@@ -55,6 +62,15 @@ class JobCreateRequest(BaseModel):
 
     skip_humanizer: bool = False
     difficulty: Difficulty = "intermediate"
+
+    # Phase 1 (CFG-02): opt-in to the LLM refine stage. Default False
+    # preserves backward compatibility. When True, the pipeline runs an
+    # additional refine step between humanize and engrave (or between
+    # arrange/transform and engrave for sheet_only). Requires
+    # OHSHEET_ANTHROPIC_API_KEY to be set; the route returns HTTP 400
+    # otherwise (CFG-04). If OHSHEET_REFINE_KILL_SWITCH is true, the
+    # route silently coerces this to False (CFG-06).
+    enable_refine: bool = False
 
 
 class JobSummary(BaseModel):
@@ -113,6 +129,31 @@ async def create_job(
             detail=f"MIDI URI does not resolve to a stored blob: {body.midi.uri!r}",
         )
 
+    # Phase 1 (CFG-04): fail fast when enable_refine=true but no API key
+    # is configured. The check runs BEFORE PipelineConfig construction so
+    # the user sees a clear 400 about the missing env var rather than a
+    # downstream validation error.
+    effective_enable_refine = body.enable_refine
+    if effective_enable_refine and settings.anthropic_api_key is None:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "enable_refine=true requires OHSHEET_ANTHROPIC_API_KEY to be set. "
+                "Set the env var (restart the service) or submit with enable_refine=false."
+            ),
+        )
+
+    # Phase 1 (CFG-06): kill switch silently coerces enable_refine to False.
+    # The log.warning is emitted after manager.submit so we can include the
+    # job_id for operator-diffable structured logs. Per Claude's Discretion
+    # in CONTEXT.md: no HTTP error, no stage_completed event — if refine is
+    # never in the plan, there's no stage to emit for. PipelineConfig is
+    # never told about the kill switch — it stays pure (Pitfall 3).
+    refine_coerced_by_kill_switch = False
+    if effective_enable_refine and settings.refine_kill_switch:
+        effective_enable_refine = False
+        refine_coerced_by_kill_switch = True
+
     # Build InputMetadata once — prefer_clean_source is threaded through
     # every variant so uploads can theoretically opt in too (the ingest
     # stage just ignores it when audio is already present).
@@ -152,8 +193,20 @@ async def create_job(
         variant=variant,
         skip_humanizer=body.skip_humanizer,
         score_pipeline=settings.score_pipeline,
+        enable_refine=effective_enable_refine,
     )
     record = await manager.submit(bundle, config)
+
+    # Phase 1 (CFG-06): emit the kill-switch coercion signal ONCE per job,
+    # with job_id so operators can correlate with the job's event stream.
+    # Message format is load-bearing — the test V13 asserts on the exact
+    # substring "refine kill switch active; stripping refine from plan".
+    if refine_coerced_by_kill_switch:
+        log.warning(
+            "refine kill switch active; stripping refine from plan for job_id=%s",
+            record.job_id,
+        )
+
     return _record_to_summary(record)
 
 
