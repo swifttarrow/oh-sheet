@@ -8,10 +8,26 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Literal
 
-from pydantic import field_validator
+from pydantic import SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from backend.contracts import ScorePipelineMode
+
+
+# ---------------------------------------------------------------------------
+# Refine-stage model allowlist (CFG-05)
+# ---------------------------------------------------------------------------
+#
+# Private module-level frozensets per Claude's Discretion in CONTEXT.md D-05:
+# only Sonnet models are permitted by default; Opus models require an explicit
+# per-deployment opt-in via OHSHEET_REFINE_ALLOW_OPUS=true because Opus is
+# expensive and the refine stage is not cost-gated on a per-song basis.
+#
+# These are frozensets (not tuples/lists/sets) so runtime code cannot
+# accidentally mutate them — an untyped `set.add(...)` on a regular set
+# elsewhere in the process would permanently lift the allowlist.
+_ALLOWED_REFINE_MODELS_SONNET: frozenset[str] = frozenset({"claude-sonnet-4-6"})
+_ALLOWED_REFINE_MODELS_OPUS: frozenset[str] = frozenset({"claude-opus-4-6"})
 
 
 class Settings(BaseSettings):
@@ -501,6 +517,54 @@ class Settings(BaseSettings):
     # Score path after transcription (or MIDI-derived TranscriptionResult).
     # Env: ``OHSHEET_SCORE_PIPELINE`` — ``arrange`` (default) or ``condense_transform``.
     score_pipeline: ScorePipelineMode = "arrange"
+
+    # ---- Refine stage (LLM engraving refinement) --------------------------
+    # Phase 1 adds the config surface; Phase 2 wires the actual service.
+    # All Refine settings use the OHSHEET_ prefix via env_prefix above.
+
+    # API credential for Anthropic. SecretStr per CFG-03: masks across
+    # str/repr/f-string/model_dump/model_dump_json/%-format. Only
+    # `.get_secret_value()` reveals the raw string — and per CFG-03 that
+    # call lives exclusively in RefineService.__init__ (Phase 2).
+    anthropic_api_key: SecretStr | None = None
+
+    # Model selection (CFG-05). Default is claude-sonnet-4-6; Opus requires
+    # refine_allow_opus=True. Non-allowlisted values are rejected at
+    # Settings() instantiation by _validate_refine_model_allowlist below.
+    refine_model: str = "claude-sonnet-4-6"
+    refine_allow_opus: bool = False
+
+    # Global kill switch (CFG-06). When True, any per-job enable_refine=true
+    # is silently coerced to False in backend/api/routes/jobs.py::create_job
+    # (NOT here — the check lives at the HTTP boundary per D-06 research
+    # pitfall 3). The switch is read by the route, not enforced by this
+    # validator, so that PipelineConfig.get_execution_plan remains pure.
+    refine_kill_switch: bool = False
+
+    # Refine knobs (CFG-07). Loaded from OHSHEET_REFINE_MAX_TOKENS /
+    # OHSHEET_REFINE_WEB_SEARCH_MAX_USES / OHSHEET_REFINE_MAX_RETRIES.
+    # Defaults chosen conservatively for Phase 1; Phase 2 may tighten
+    # after empirical testing.
+    refine_max_tokens: int = 4096
+    refine_web_search_max_uses: int = 5
+    refine_max_retries: int = 3
+
+    # Model allowlist enforcement (CFG-05). Runs after all fields are set,
+    # so it can read both refine_model and refine_allow_opus. Raising here
+    # causes Settings() instantiation to fail with ValidationError — the
+    # desired behavior per CFG-05 success criterion.
+    @model_validator(mode="after")
+    def _validate_refine_model_allowlist(self) -> "Settings":
+        allowed = _ALLOWED_REFINE_MODELS_SONNET
+        if self.refine_allow_opus:
+            allowed = allowed | _ALLOWED_REFINE_MODELS_OPUS
+        if self.refine_model not in allowed:
+            raise ValueError(
+                f"OHSHEET_REFINE_MODEL={self.refine_model!r} is not in the allowlist. "
+                f"Allowed: {sorted(allowed)}. "
+                f"Set OHSHEET_REFINE_ALLOW_OPUS=true to permit Opus models."
+            )
+        return self
 
 
 settings = Settings()
