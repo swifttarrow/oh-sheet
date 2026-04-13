@@ -29,6 +29,64 @@ _KIND_INFO: dict[str, tuple[str, str, str]] = {
 }
 
 
+@router.get("/artifacts/{job_id}/refine-trace")
+def download_refine_trace(
+    job_id: str,
+    manager: Annotated[JobManager, Depends(get_job_manager)],
+    blob: Annotated[LocalBlobStore, Depends(get_blob_store)],
+    inline: bool = False,
+) -> Response:
+    """INT-06: return llm_trace.json for a refined job.
+
+    Uses a convention-derived path (jobs/{job_id}/refine/llm_trace.json)
+    that the refine.run Celery task (Plan 02-04) writes on every
+    successful run. 404 when the job did not run refine (enable_refine=False)
+    or when refine was skipped via INT-03 before the llm_trace.json write
+    (e.g., validator all-rejected at service level — though Plan 04 writes
+    the trace even on validator rejections, so in practice only
+    pre-service failures like envelope deserialization produce a missing
+    trace blob).
+
+    Registered BEFORE the catch-all /{kind} route so FastAPI matches
+    /refine-trace here rather than handing it to download_artifact (which
+    would reject it as an unknown kind).
+    """
+    record = manager.get(job_id)
+    if record is None:
+        raise HTTPException(status_code=404, detail=f"Job not found: {job_id}")
+    if record.status != "succeeded":
+        raise HTTPException(
+            status_code=409,
+            detail=f"Job {job_id} is {record.status}; artifacts unavailable.",
+        )
+
+    # CRITICAL (B1 fix): LocalBlobStore.get_bytes REQUIRES a file:// URI.
+    # Passing a plain key raises ValueError. Construct the URI via
+    # (settings.blob_root / blob_key).as_uri().
+    from backend.config import settings  # local import avoids circular deps
+    blob_key = f"jobs/{job_id}/refine/llm_trace.json"
+    blob_uri = (settings.blob_root / blob_key).as_uri()
+    try:
+        data = blob.get_bytes(blob_uri)
+    except (FileNotFoundError, ValueError):
+        raise HTTPException(
+            status_code=404,
+            detail=(
+                f"Job {job_id} has no refine trace. The job did not run the "
+                "refine stage (enable_refine=false) or refine was skipped "
+                "before the trace was persisted."
+            ),
+        ) from None
+
+    filename = f"{job_id}-llm_trace.json"
+    disposition = "inline" if inline else f'attachment; filename="{filename}"'
+    return Response(
+        content=data,
+        media_type="application/json",
+        headers={"Content-Disposition": disposition},
+    )
+
+
 @router.get("/artifacts/{job_id}/lilypond")
 def download_lilypond_source(
     job_id: str,

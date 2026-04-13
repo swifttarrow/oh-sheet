@@ -7,10 +7,10 @@ from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
+from shared.storage.local import LocalBlobStore
 
 from backend.api import deps
 from backend.config import settings
-from shared.storage.local import LocalBlobStore
 
 
 def _audio_payload(blob_root: Path) -> dict:
