@@ -200,6 +200,34 @@ async def test_apply_edits_modify_changes_pitch() -> None:
     assert len(mutated) >= 1
 
 
+@pytest.mark.asyncio
+async def test_apply_edits_delete_then_modify_targets_original_notes() -> None:
+    """WR-01 regression: when [delete r-0000, modify r-0001 pitch=72] arrive
+    together, the modify must target the note the LLM saw as r-0001 (pitch 64,
+    onset 1.0), NOT whichever note re-indexes to r-0001 after the delete.
+
+    Before the WR-01 fix, ``_apply_edits`` rebuilt ``id_map`` after each delete,
+    which shifted subsequent IDs. A modify that followed a delete would then
+    silently misdirect to a different physical note than validation approved.
+    """
+    perf = _humanized()
+    # Baseline RH notes (sorted by onset, pitch): r-0000 -> pitch 60 onset 0.0,
+    # r-0001 -> pitch 64 onset 1.0. The modify targets r-0001 (pitch 64).
+    edits = [
+        RefineEditOp(op="delete", target_note_id="r-0000", rationale="ghost_note_removal"),
+        RefineEditOp(op="modify", target_note_id="r-0001", rationale="octave_correction", pitch=76),
+    ]
+    svc, _ = _make_service(responses=[_resp(edits=edits)])
+    refined, _ = await svc.run(perf, metadata={})
+
+    rh_notes = [n for n in refined.refined_performance.expressive_notes if n.hand == "rh"]
+    # After delete: one RH note remains. That note MUST be the one the LLM
+    # knew as r-0001 (originally pitch 64 at onset 1.0), now modified to pitch 76.
+    assert len(rh_notes) == 1
+    assert rh_notes[0].onset_beat == 1.0
+    assert rh_notes[0].pitch == 76
+
+
 # ---------------------------------------------------------------------------
 # STG-08: stop_reason != end_turn -> RefineLLMError
 # ---------------------------------------------------------------------------

@@ -262,21 +262,34 @@ class RefineService:
         source: HumanizedPerformance | PianoScore,
         edits: list[RefineEditOp],
     ) -> HumanizedPerformance | PianoScore:
-        """Deep-copy source, apply edits. STG-06 — input is never mutated."""
+        """Deep-copy source, apply edits. STG-06 — input is never mutated.
+
+        WR-01 fix: resolve every edit to its concrete target note object BEFORE
+        applying any edits. ``_derive_note_id_map`` sorts by (onset_beat, pitch)
+        and indexes sequentially, so any ``delete`` shifts the IDs of all
+        subsequent notes. Looking up ``id_map[edit.target_note_id]`` after a
+        delete therefore risks misdirecting a later ``modify`` at a different
+        physical note than the validator/LLM approved. By binding ``target``
+        up front we keep each edit pointed at the exact note the LLM saw,
+        regardless of subsequent re-indexing.
+        """
         working = source.model_copy(deep=True)
         # Re-derive map against the deep copy so we can mutate the copy's note objects directly.
         id_map = _derive_note_id_map(working)
 
+        # WR-01: resolve all edit targets up front (immune to post-delete re-indexing).
+        resolved: list[tuple[RefineEditOp, ExpressiveNote | ScoreNote]] = []
         for edit in edits:
             target = id_map.get(edit.target_note_id)
             if target is None:
                 # Shouldn't happen — validator filtered unknown IDs. Defense-in-depth.
                 log.warning("apply_edits: skipping unknown target_note_id %r", edit.target_note_id)
                 continue
+            resolved.append((edit, target))
+
+        for edit, target in resolved:
             if edit.op == "delete":
                 self._delete_note(working, target)
-                # Rebuild map after delete so subsequent edits don't hit stale entries.
-                id_map = _derive_note_id_map(working)
             elif edit.op == "modify":
                 self._modify_note(target, edit)
         return working
