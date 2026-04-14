@@ -855,6 +855,89 @@ def test_l2_tie_chain_per_part_isolation():
                     open_pitches[key] = False
 
 
+def test_align_tie_chain_voices_does_not_leak_across_parts():
+    """Unit regression guard for the per-part scoping fix.
+
+    Hand-built MusicXML: part 1 (RH) has an unclosed tie-start on C4
+    voice 1; part 2 (LH) has an independent C4 voice 2 with a
+    tie-stop. Under the PRE-FIX code (global ``open_ties`` dict across
+    the whole document), the LH tie-stop would pop the RH entry and
+    rewrite the LH note's voice to 1. Under the per-part scoping fix,
+    the RH entry never reaches LH and the LH voice stays at 2.
+
+    This is the exact bug the integration test
+    ``test_l2_tie_chain_per_part_isolation`` was meant to cover, but
+    that test's music21-generated fixture can't produce a tie-stop on
+    an LH note without a matching start in the same hand. A unit test
+    on the sanitizer lets us construct the collision precisely.
+    """
+    import xml.etree.ElementTree as etree
+
+    from backend.services.engrave import _align_tie_chain_voices
+
+    # Minimal MusicXML with the cross-part collision scenario. Not
+    # something music21 would normally emit (RH has an unclosed
+    # tie-start — a hypothetical malformed input). The point is to
+    # prove the sanitizer's per-part scoping: whatever RH tie state
+    # exists at the end of RH processing must not bleed into LH.
+    xml = (
+        b'<?xml version="1.0" encoding="utf-8"?>'
+        b'<score-partwise version="4.0">'
+        b'<part-list>'
+        b'<score-part id="P1"/>'
+        b'<score-part id="P2"/>'
+        b'</part-list>'
+        b'<part id="P1">'
+        b'<measure number="1">'
+        b'<note>'
+        b'<pitch><step>C</step><octave>4</octave></pitch>'
+        b'<duration>4</duration>'
+        b'<voice>1</voice>'
+        b'<tie type="start"/>'
+        b'</note>'
+        b'</measure>'
+        b'</part>'
+        b'<part id="P2">'
+        b'<measure number="1">'
+        b'<note>'
+        b'<pitch><step>C</step><octave>4</octave></pitch>'
+        b'<duration>4</duration>'
+        b'<voice>2</voice>'
+        b'<tie type="stop"/>'
+        b'</note>'
+        b'</measure>'
+        b'</part>'
+        b'</score-partwise>'
+    )
+
+    result = _align_tie_chain_voices(xml)
+    root = etree.fromstring(result)
+
+    # Verify both parts are present and untouched structurally.
+    parts = root.findall("part")
+    assert len(parts) == 2, f"expected two parts, got {len(parts)}"
+
+    # LH voice must remain "2" — the RH tie-start entry must not have
+    # leaked across the part boundary.
+    lh_note = parts[1].find("measure/note")
+    assert lh_note is not None
+    lh_voice = lh_note.findtext("voice")
+    assert lh_voice == "2", (
+        f"LH note's voice was rewritten from 2 to {lh_voice!r} — "
+        "open_ties leaked from RH part to LH part "
+        "(per-part scoping regression)"
+    )
+
+    # RH voice also unchanged (sanity: no self-rewrite on the unclosed
+    # tie-start).
+    rh_note = parts[0].find("measure/note")
+    assert rh_note is not None
+    rh_voice = rh_note.findtext("voice")
+    assert rh_voice == "1", (
+        f"RH note's voice unexpectedly changed to {rh_voice!r}"
+    )
+
+
 def test_engrave_does_not_leak_music21_defaults():
     """``music21.defaults.divisionsPerQuarter`` must be restored after engrave.
 
