@@ -68,6 +68,39 @@ def test_upload_midi_rejects_empty_file(client):
     assert response.status_code == 415
 
 
+def test_upload_audio_preserves_source_filename(client):
+    # The refine stage falls back to source_filename for title inference
+    # when no metadata is identifiable (see
+    # docs/superpowers/specs/2026-04-13-refine-filename-fallback-design.md).
+    # Round-tripping the filename through the upload response is the
+    # contract the whole fallback path depends on.
+    response = client.post(
+        "/v1/uploads/audio",
+        files={"file": ("My Heart Will Go On.mp3", b"ID3\x04fake mp3 bytes", "audio/mpeg")},
+    )
+    assert response.status_code == 200
+    assert response.json()["source_filename"] == "My Heart Will Go On.mp3"
+
+
+def test_upload_midi_preserves_source_filename(client):
+    # Same contract as test_upload_audio_preserves_source_filename — the
+    # refine stage consumes source_filename as a hint for LLM refinement
+    # when other metadata is missing.
+    smf_header = (
+        b"MThd"
+        b"\x00\x00\x00\x06"
+        b"\x00\x00"
+        b"\x00\x01"
+        b"\x01\xe0"
+    )
+    response = client.post(
+        "/v1/uploads/midi",
+        files={"file": ("Chopin_Nocturne.mid", smf_header, "audio/midi")},
+    )
+    assert response.status_code == 200
+    assert response.json()["source_filename"] == "Chopin_Nocturne.mid"
+
+
 def test_upload_midi_accepts_valid_smf_header(client):
     # Regression guard: the fix must not reject real MIDI files. A
     # minimal valid SMF header starts with "MThd" + 4-byte length +
