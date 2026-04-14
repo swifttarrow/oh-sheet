@@ -309,7 +309,17 @@ class RefineService:
 
     @staticmethod
     def _modify_note(target: ExpressiveNote | ScoreNote, edit: RefineEditOp) -> None:
-        """Apply provided modify-payload fields to target IN-PLACE on the deep copy."""
+        """Apply provided modify-payload fields to target IN-PLACE on the deep copy.
+
+        WR-02 fix: ``timing_offset_ms`` was previously ignored for ``ScoreNote``
+        while the docstring claimed the service translates ms -> onset_beat at
+        120 BPM nominal. The LLM would see the edit echoed in ``applied_edits``
+        but the underlying data was unchanged (silent no-op). We now implement
+        the documented translation: at 120 BPM (2 beats/sec), 1 ms = 0.002
+        beat. ``ScoreNote.onset_beat`` is floored at >=0.0 to keep the contract
+        invariant intact. Documented as approximate, not load-bearing until
+        Phase-3 empirical tuning.
+        """
         if edit.pitch is not None:
             target.pitch = edit.pitch
         if edit.velocity is not None:
@@ -318,14 +328,17 @@ class RefineService:
             target.velocity = max(0, min(127, target.velocity + edit.velocity_offset))
         if edit.duration_beat is not None:
             target.duration_beat = edit.duration_beat
-        if edit.timing_offset_ms is not None and isinstance(target, ExpressiveNote):
-            # ExpressiveNote has timing_offset_ms; ScoreNote does not.
-            # For ScoreNote, we translate ms into an onset_beat adjustment using
-            # a nominal 120 BPM — documented as approximate, not load-bearing
-            # until Phase-3 empirical tuning.
-            target.timing_offset_ms = max(
-                -50.0, min(50.0, target.timing_offset_ms + edit.timing_offset_ms),
-            )
+        if edit.timing_offset_ms is not None:
+            if isinstance(target, ExpressiveNote):
+                # ExpressiveNote has timing_offset_ms clamped to [-50.0, 50.0].
+                target.timing_offset_ms = max(
+                    -50.0, min(50.0, target.timing_offset_ms + edit.timing_offset_ms),
+                )
+            else:
+                # ScoreNote has no timing_offset_ms field; translate ms -> beat
+                # at 120 BPM nominal (2 beats/sec, so 1 ms = 0.002 beat).
+                beat_delta = (edit.timing_offset_ms / 1000.0) * (120.0 / 60.0)
+                target.onset_beat = max(0.0, target.onset_beat + beat_delta)
 
     def _build_trace(
         self,

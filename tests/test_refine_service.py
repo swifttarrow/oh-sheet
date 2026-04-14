@@ -228,6 +228,53 @@ async def test_apply_edits_delete_then_modify_targets_original_notes() -> None:
     assert rh_notes[0].pitch == 76
 
 
+@pytest.mark.asyncio
+async def test_apply_edits_timing_offset_translates_to_onset_beat_for_score_note() -> None:
+    """WR-02 regression: when a refine edit carries timing_offset_ms and the
+    source is a PianoScore (ScoreNote, which has no timing_offset_ms field),
+    the service translates ms -> beat at 120 BPM nominal and adjusts
+    onset_beat. Before the fix this was silently dropped.
+
+    120 BPM = 2 beats/sec, so +50 ms = +0.1 beat. r-0001 has original
+    onset_beat=1.0 -> expected 1.1 after the modify.
+    """
+    ps = _piano_score()
+    edits = [
+        RefineEditOp(
+            op="modify", target_note_id="r-0001",
+            rationale="timing_cleanup", timing_offset_ms=50.0,
+        ),
+    ]
+    svc, _ = _make_service(responses=[_resp(edits=edits)])
+    refined, _ = await svc.run(ps, metadata={})
+
+    assert isinstance(refined.refined_performance, PianoScore)
+    rh = refined.refined_performance.right_hand
+    # r-0001 corresponds to the pitch-64/onset-1.0 RH note after sort.
+    target = next(n for n in rh if n.pitch == 64)
+    assert target.onset_beat == pytest.approx(1.1, rel=1e-6)
+
+
+@pytest.mark.asyncio
+async def test_apply_edits_timing_offset_floors_score_note_onset_at_zero() -> None:
+    """WR-02: negative timing_offset_ms on a ScoreNote near beat 0 must not
+    drive onset_beat below 0.0 (contract invariant)."""
+    ps = _piano_score()  # r-0000 has onset 0.0 (pitch 60)
+    edits = [
+        RefineEditOp(
+            op="modify", target_note_id="r-0000",
+            rationale="timing_cleanup", timing_offset_ms=-50.0,
+        ),
+    ]
+    svc, _ = _make_service(responses=[_resp(edits=edits)])
+    refined, _ = await svc.run(ps, metadata={})
+
+    assert isinstance(refined.refined_performance, PianoScore)
+    rh = refined.refined_performance.right_hand
+    target = next(n for n in rh if n.pitch == 60)
+    assert target.onset_beat == 0.0  # floored, not -0.1
+
+
 # ---------------------------------------------------------------------------
 # STG-08: stop_reason != end_turn -> RefineLLMError
 # ---------------------------------------------------------------------------
