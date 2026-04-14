@@ -919,7 +919,7 @@ def _remap_voices_per_staff(raw: bytes) -> bytes:
             cur_staff = "1"
             for note in measure.findall("note"):
                 staff_el = note.find("staff")
-                staff = staff_el.text if staff_el is not None else cur_staff
+                staff = (staff_el.text if staff_el is not None else None) or cur_staff
                 cur_staff = staff
                 voice_el = note.find("voice")
                 if voice_el is None:
@@ -941,7 +941,7 @@ def _remap_voices_per_staff(raw: bytes) -> bytes:
             cur_staff = "1"
             for note in measure.findall("note"):
                 staff_el = note.find("staff")
-                staff = staff_el.text if staff_el is not None else cur_staff
+                staff = (staff_el.text if staff_el is not None else None) or cur_staff
                 cur_staff = staff
                 voice_el = note.find("voice")
                 if voice_el is None:
@@ -992,7 +992,7 @@ def _align_tie_chain_voices(raw: bytes) -> bytes:
                     pitch.findtext("alter") or "0",
                 )
                 voice_el = note.find("voice")
-                voice = voice_el.text if voice_el is not None else "1"
+                voice = (voice_el.text if voice_el is not None else None) or "1"
                 for tie in note.findall("tie"):
                     typ = tie.get("type")
                     if typ == "start":

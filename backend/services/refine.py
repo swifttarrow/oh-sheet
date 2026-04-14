@@ -228,9 +228,9 @@ class RefineService:
         # otherwise a later run with a different filename/title hint returns
         # the stale cached response, silently defeating the filename-fallback
         # feature.
-        h.update(f"|title={title_hint or ''}".encode("utf-8"))
-        h.update(f"|artist={artist_hint or ''}".encode("utf-8"))
-        h.update(f"|filename={filename_hint or ''}".encode("utf-8"))
+        h.update(f"|title={title_hint or ''}".encode())
+        h.update(f"|artist={artist_hint or ''}".encode())
+        h.update(f"|filename={filename_hint or ''}".encode())
         return h.hexdigest()
 
     def _cache_uri(self, key: str) -> str | None:
