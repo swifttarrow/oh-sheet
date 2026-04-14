@@ -135,6 +135,9 @@ class InputMetadata(BaseModel):
     # backend/services/cover_search.py for the matching logic.
     # Defaults to False so existing callers and fixtures keep working.
     prefer_clean_source: bool = False
+    # Original YouTube URL the user submitted (preserved after
+    # title is replaced with the resolved song name by ingest).
+    source_url: str | None = None
 
 
 class InputBundle(BaseModel):
@@ -324,6 +327,13 @@ class EngravedOutput(BaseModel):
     audio_preview_uri: str | None = None
     transcription_midi_uri: str | None = None
 
+    # TuneChat integration — populated when tunechat_enabled=True and
+    # TuneChat responded successfully. job_id powers the "Open in
+    # TuneChat" deep link. preview_image_url is a first-page PNG of
+    # TuneChat's rendered score for display in Oh Sheet's result screen.
+    tunechat_job_id: str | None = None
+    tunechat_preview_image_url: str | None = None
+
 
 # ---------------------------------------------------------------------------
 # Pipeline routing
@@ -340,7 +350,7 @@ ScorePipelineMode = Literal["arrange", "condense_transform"]
 
 class PipelineConfig(BaseModel):
     variant: PipelineVariant
-    skip_humanizer: bool = False
+    skip_humanizer: bool = True
     stage_timeout_sec: int = 600
     score_pipeline: ScorePipelineMode = "arrange"
 
@@ -361,5 +371,7 @@ class PipelineConfig(BaseModel):
             except ValueError:
                 pass
             else:
-                plan[idx : idx + 1] = ["condense", "transform"]
+                # Replace arrange with just condense (transform is a
+                # no-op stub, so skip it to save pipeline time).
+                plan[idx : idx + 1] = ["condense"]
         return plan

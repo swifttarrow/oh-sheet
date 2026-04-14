@@ -265,5 +265,5 @@ def test_midi_job_condense_pipeline_emits_condense_and_transform(monkeypatch, cl
 
     completed = [e["stage"] for e in events if e["type"] == "stage_completed"]
     assert "condense" in completed
-    assert "transform" in completed
     assert "arrange" not in completed
+    assert "transform" not in completed
