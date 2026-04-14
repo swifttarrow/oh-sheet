@@ -3,7 +3,7 @@ FROM python:3.12-slim
 
 WORKDIR /app
 
-RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg gcc g++ \
+RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg gcc g++ lilypond \
     && rm -rf /var/lib/apt/lists/*
 
 COPY shared/ shared/
@@ -12,9 +12,12 @@ RUN pip install --no-cache-dir -e ./shared
 
 COPY pyproject.toml .
 COPY backend/ backend/
+# Pop2Piano (preferred transcription path) + Basic Pitch (fallback).
 # madmom requires Cython + numpy at build time (C extensions).
 # Mirror the Makefile install-basic-pitch sequence.
+# NOTE: essentia (required by Pop2Piano) only ships x86_64 Linux wheels,
+# so this image must be built with platform=linux/amd64 (see docker-compose.yml).
 RUN pip install --no-cache-dir setuptools Cython numpy \
     && pip install --no-cache-dir --no-build-isolation "madmom>=0.16" \
-    && pip install --no-cache-dir ".[basic-pitch]" \
+    && pip install --no-cache-dir ".[pop2piano,basic-pitch]" \
     && pip install --no-cache-dir --no-deps "basic-pitch>=0.4"

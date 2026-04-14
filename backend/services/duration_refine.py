@@ -49,10 +49,13 @@ def refine_durations(
     floor_ratio: float = 0.15,
     tail_sec: float = 0.03,
     min_duration_sec: float = 0.03,
+    preloaded_audio: tuple | None = None,
 ) -> tuple[list[NoteEvent], DurationRefineStats]:
     """Refine note offsets using per-pitch CQT energy envelopes.
 
-    Returns (refined_events, stats).
+    Returns (refined_events, stats).  When ``preloaded_audio`` is a
+    ``(y, sr)`` tuple the ``librosa.load`` call is skipped, saving
+    ~100-500 ms per invocation.
     """
     stats = DurationRefineStats(total_notes=len(events))
 
@@ -67,7 +70,10 @@ def refine_durations(
         return list(events), stats
 
     try:
-        y, _ = librosa.load(str(audio_path), sr=sr, mono=True)
+        if preloaded_audio is not None:
+            y, _ = preloaded_audio
+        else:
+            y, _ = librosa.load(str(audio_path), sr=sr, mono=True)
     except Exception:
         log.warning("Could not load audio at %s — skipping duration refinement", audio_path, exc_info=True)
         return list(events), stats

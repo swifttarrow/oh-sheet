@@ -10,6 +10,9 @@ services:
       retries: 5
 
   orchestrator:
+    # essentia (Pop2Piano dep) only ships x86_64 Linux wheels.
+    # On Apple Silicon this runs under Rosetta — transparent but ~10-20% slower.
+    platform: linux/amd64
     build:
       context: .
       dockerfile: Dockerfile.dev
@@ -29,6 +32,7 @@ services:
         condition: service_healthy
 
   worker-ingest:
+    platform: linux/amd64
     build:
       context: .
       dockerfile: Dockerfile.dev
@@ -46,6 +50,7 @@ services:
         condition: service_healthy
 
   worker-transcribe:
+    platform: linux/amd64
     build:
       context: .
       dockerfile: Dockerfile.dev
@@ -63,6 +68,7 @@ services:
         condition: service_healthy
 
   worker-arrange:
+    platform: linux/amd64
     build:
       context: .
       dockerfile: Dockerfile.dev
@@ -80,6 +86,7 @@ services:
         condition: service_healthy
 
   worker-humanize:
+    platform: linux/amd64
     build:
       context: .
       dockerfile: Dockerfile.dev
@@ -97,6 +104,7 @@ services:
         condition: service_healthy
 
   worker-engrave:
+    platform: linux/amd64
     build:
       context: .
       dockerfile: Dockerfile.dev
