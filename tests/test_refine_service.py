@@ -25,6 +25,7 @@ from backend.services.refine import (
     _PRICE_PER_MTOK_USD,
     RefinedEditOpList,
     RefineLLMError,
+    RefinePauseTurnError,
     RefineService,
     RefineTraceRejectedEdit,
 )
@@ -276,19 +277,67 @@ async def test_apply_edits_timing_offset_floors_score_note_onset_at_zero() -> No
 
 
 # ---------------------------------------------------------------------------
-# STG-08: stop_reason != end_turn -> RefineLLMError
+# STG-08 / D-24 / D-25 / D-26: stop_reason handling
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("bad_stop", ["pause_turn", "max_tokens", "tool_use", "stop_sequence"])
+@pytest.mark.parametrize("bad_stop", ["max_tokens", "tool_use", "stop_sequence", "refusal"])
 async def test_non_end_turn_stop_reason_raises(bad_stop: str) -> None:
-    """STG-08: any non-end_turn stop_reason is a failure; pause_turn never auto-resumed."""
+    """STG-08: non-end_turn stop_reasons (excluding pause_turn) raise plain RefineLLMError.
+
+    pause_turn moved to its own dedicated test (test_pause_turn_raises_refinepauseturnerror)
+    because it now raises the RefinePauseTurnError subclass (D-24, D-25).
+    """
     perf = _humanized()
     svc, _ = _make_service(responses=[_resp(stop_reason=bad_stop)])
     with pytest.raises(RefineLLMError) as exc_info:
         await svc.run(perf, metadata={})
     assert bad_stop in str(exc_info.value)
+    # Regression guard: these stop_reasons must NOT raise the pause_turn subclass.
+    assert not isinstance(exc_info.value, RefinePauseTurnError)
+
+
+@pytest.mark.asyncio
+async def test_pause_turn_raises_refinepauseturnerror() -> None:
+    """D-24, D-25: pause_turn -> RefinePauseTurnError (not plain RefineLLMError)."""
+    perf = _humanized()
+    # Single response w/ stop_reason="pause_turn" and explicit id for
+    # assertion on anthropic_message_id propagation.
+    response = FakeParseResponse(
+        parsed=_parsed_ok(),
+        stop_reason="pause_turn",
+        model="claude-sonnet-4-6",
+        id="msg_pause_001",
+    )
+    svc, fake = _make_service(responses=[response])
+
+    with pytest.raises(RefinePauseTurnError) as exc_info:
+        await svc.run(perf, metadata={})
+
+    # D-25: grep-friendly name (no underscores)
+    assert type(exc_info.value).__name__.lower() == "refinepauseturnerror"
+    # Subclass relationship: still a RefineLLMError for legacy callers.
+    assert isinstance(exc_info.value, RefineLLMError)
+    # Carries stop_reason + anthropic_message_id for diagnostics.
+    assert exc_info.value.stop_reason == "pause_turn"
+    assert exc_info.value.anthropic_message_id == "msg_pause_001"
+    # D-26: single call, no retry (pause_turn not in _RETRYABLE_EXC).
+    assert fake.call_count == 1
+
+
+async def test_pause_turn_error_name_is_lowercase_grep_friendly() -> None:
+    """Guard the skip-counter naming convention (Phase-2 contract).
+
+    The runner's `type(exc).__name__.lower()` is what flows into the
+    `refine_skipped: %s` log line; tests and ops both grep on the literal
+    'refinepauseturnerror' string.
+    """
+    exc = RefinePauseTurnError("x")
+    assert type(exc).__name__.lower() == "refinepauseturnerror"
+    # No underscores in the name (rules out accidental rename like
+    # RefinePauseTurnError -> Refine_Pause_Turn_Error).
+    assert "_" not in type(exc).__name__
 
 
 # ---------------------------------------------------------------------------
