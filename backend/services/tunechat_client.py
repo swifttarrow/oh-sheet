@@ -52,16 +52,16 @@ async def transcribe_via_tunechat(
         async with httpx.AsyncClient(timeout=settings.tunechat_timeout_sec) as client:
             log.info("tunechat: sending %d bytes (%s) to %s", len(audio_bytes), filename, url)
 
-            data = {}
+            form_data: dict[str, str] = {}
             if title:
-                data["title"] = title
+                form_data["title"] = title
             if artist:
-                data["artist"] = artist
+                form_data["artist"] = artist
             response = await client.post(
                 url,
                 headers={"Authorization": f"Bearer {settings.tunechat_api_key}"},
                 files={"file": (filename, audio_bytes, "application/octet-stream")},
-                data=data,
+                data=form_data,
             )
 
             if response.status_code != 200:

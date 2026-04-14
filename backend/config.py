@@ -525,12 +525,12 @@ class Settings(BaseSettings):
         return v
 
     # Score path after transcription (or MIDI-derived TranscriptionResult).
-    # Env: ``OHSHEET_SCORE_PIPELINE`` — ``arrange`` or ``condense_transform`` (default).
-    # condense_transform splits arrangement into two stages: condense
+    # Env: ``OHSHEET_SCORE_PIPELINE`` — ``arrange`` or ``condense_only`` (default).
+    # condense_only splits arrangement into two stages: condense
     # (flatten all tracks into one piano stream) then transform (apply
     # difficulty shaping). Produces a denser, more complete MIDI than
     # the single-pass arrange mode.
-    score_pipeline: ScorePipelineMode = "condense_transform"
+    score_pipeline: ScorePipelineMode = "condense_only"
 
     # ── TuneChat integration ──────────────────────────────────────────
     # When enabled, Oh Sheet sends audio to TuneChat's transcription

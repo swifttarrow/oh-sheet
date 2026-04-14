@@ -176,19 +176,19 @@ def _maybe_swap_for_cover_sync(url: str) -> str:
     # " - " to extract the real artist for cover search matching.
     # If no separator, pass the full title with no artist — cover search
     # uses the title as the yt-dlp search query, which often works.
-    if " - " in raw_title:
-        parts = raw_title.split(" - ", 1)
-        artist = parts[0].strip()
-        title = parts[1].strip()
+    # YouTube titles use various separators: " - ", " – ", " — ", " | "
+    import re as _re
+    sep_match = _re.split(r"\s+[-–—|]\s+", raw_title, maxsplit=1)
+    if len(sep_match) == 2:
+        artist = sep_match[0].strip()
+        title = sep_match[1].strip()
     else:
-        # No separator — pass full title as-is. Cover search appends
-        # "piano cover" to build the YouTube query.
         title = raw_title
         artist = None
     try:
         match = find_clean_source(
-            title.lower(),
-            artist.lower() if artist else None,
+            title,
+            artist,
             min_score=settings.cover_search_min_score,
         )
     except Exception as exc:  # noqa: BLE001 — defensive depth; find_clean_source

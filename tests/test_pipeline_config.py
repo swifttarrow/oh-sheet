@@ -4,12 +4,13 @@ from backend.contracts import PipelineConfig
 
 
 def test_default_plan_uses_arrange() -> None:
-    """Default audio_upload with skip_humanizer=True skips humanize."""
+    """Default audio_upload includes humanize (skip_humanizer defaults to False)."""
     cfg = PipelineConfig(variant="audio_upload")
     assert cfg.get_execution_plan() == [
         "ingest",
         "transcribe",
         "arrange",
+        "humanize",
         "engrave",
     ]
 
@@ -26,21 +27,22 @@ def test_default_plan_with_humanizer() -> None:
     ]
 
 
-def test_condense_transform_replaces_arrange() -> None:
-    """condense_transform pipeline uses condense (no transform) and skips humanize by default."""
-    cfg = PipelineConfig(variant="midi_upload", score_pipeline="condense_transform")
+def test_condense_only_replaces_arrange() -> None:
+    """condense_only pipeline uses condense instead of arrange, includes humanize by default."""
+    cfg = PipelineConfig(variant="midi_upload", score_pipeline="condense_only")
     assert cfg.get_execution_plan() == [
         "ingest",
         "condense",
+        "humanize",
         "engrave",
     ]
 
 
-def test_condense_transform_with_humanizer() -> None:
-    """condense_transform with humanizer enabled includes humanize."""
+def test_condense_only_with_humanizer() -> None:
+    """condense_only with humanizer enabled includes humanize."""
     cfg = PipelineConfig(
         variant="midi_upload",
-        score_pipeline="condense_transform",
+        score_pipeline="condense_only",
         skip_humanizer=False,
     )
     assert cfg.get_execution_plan() == [
@@ -51,10 +53,10 @@ def test_condense_transform_with_humanizer() -> None:
     ]
 
 
-def test_condense_transform_with_skip_humanizer() -> None:
+def test_condense_only_with_skip_humanizer() -> None:
     cfg = PipelineConfig(
         variant="sheet_only",
-        score_pipeline="condense_transform",
+        score_pipeline="condense_only",
         skip_humanizer=True,
     )
     assert cfg.get_execution_plan() == [

@@ -343,14 +343,14 @@ PipelineVariant = Literal["full", "audio_upload", "midi_upload", "sheet_only"]
 
 # How seconds-domain transcription becomes a beat-domain PianoScore.
 # ``arrange`` — hand assignment, dedup, quantization (default).
-# ``condense_transform`` — merge all tracks into one piano stream (condense) then
+# ``condense_only`` — merge all tracks into one piano stream (condense) then
 # transform (passthrough for now).
-ScorePipelineMode = Literal["arrange", "condense_transform"]
+ScorePipelineMode = Literal["arrange", "condense_only"]
 
 
 class PipelineConfig(BaseModel):
     variant: PipelineVariant
-    skip_humanizer: bool = True
+    skip_humanizer: bool = False
     stage_timeout_sec: int = 600
     score_pipeline: ScorePipelineMode = "arrange"
 
@@ -365,7 +365,7 @@ class PipelineConfig(BaseModel):
         plan = list(routing[self.variant])
         if self.skip_humanizer and "humanize" in plan:
             plan.remove("humanize")
-        if self.score_pipeline == "condense_transform":
+        if self.score_pipeline == "condense_only":
             try:
                 idx = plan.index("arrange")
             except ValueError:

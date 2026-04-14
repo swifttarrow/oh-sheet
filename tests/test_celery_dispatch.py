@@ -46,7 +46,7 @@ async def test_full_pipeline_via_celery(runner):
         ),
         metadata=InputMetadata(title="Test", artist="Tester", source="audio_upload"),
     )
-    config = PipelineConfig(variant="audio_upload", skip_humanizer=False)
+    config = PipelineConfig(variant="audio_upload")
 
     result = await runner.run(
         job_id="test-celery-001",
@@ -100,7 +100,7 @@ async def test_midi_upload_pipeline_via_celery(runner):
         ),
         metadata=InputMetadata(title="MIDI Test", artist="Tester", source="midi_upload"),
     )
-    config = PipelineConfig(variant="midi_upload", skip_humanizer=False)
+    config = PipelineConfig(variant="midi_upload")
 
     result = await runner.run(
         job_id="test-celery-midi-001",

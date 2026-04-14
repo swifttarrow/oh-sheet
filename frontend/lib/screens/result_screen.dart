@@ -61,8 +61,7 @@ class _ResultScreenState extends State<ResultScreen> {
     _displayArtist = job.artist;
 
     final resultMap = job.result ?? {};
-    _sourceUrl = resultMap['source_url'] as String?
-        ?? (job.title?.startsWith('http') == true ? job.title : null);
+    _sourceUrl = job.sourceUrl;
 
     _tuneChatJobId = resultMap['tunechat_job_id'] as String?;
     _hasTuneChat = _tuneChatJobId != null;

@@ -433,6 +433,5 @@ class PipelineRunner:
             result = result.model_copy(
                 update={"transcription_midi_uri": txr_dict["transcription_midi_uri"]},
             )
-        # Await the parallel TuneChat request (if it was fired).
         log.info("pipeline finished job_id=%s", job_id)
         return result
