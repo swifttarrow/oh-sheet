@@ -138,3 +138,21 @@ const List<String> kPipelineStages = [
   'humanize',
   'engrave',
 ];
+
+/// Feature-availability probe result returned by GET /v1/capabilities.
+///
+/// Mirrors the backend's `CapabilitiesResponse` (backend/api/routes/capabilities.py).
+/// Phase 3 (D-22): the upload screen calls `getCapabilities()` at load time
+/// and disables the refine checkbox with helper text when `refineAvailable`
+/// is false (the server has no Anthropic API key configured).
+///
+/// Kept deliberately minimal — add fields only when a concrete UI need exists.
+class Capabilities {
+  final bool refineAvailable;
+
+  const Capabilities({required this.refineAvailable});
+
+  factory Capabilities.fromJson(Map<String, dynamic> json) => Capabilities(
+        refineAvailable: json['refine_available'] as bool,
+      );
+}
