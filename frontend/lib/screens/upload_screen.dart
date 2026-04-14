@@ -39,7 +39,6 @@ class _UploadScreenState extends State<UploadScreen> {
   // already picked the source) and plain title lookups (no URL to swap).
   // Defaults off so the user's first experience matches what they
   // pasted; they can flip it on once they see the option.
-  bool _preferCleanSource = false;
 
   static final _youtubeRegex = RegExp(
     r'^https?://(www\.|music\.|m\.)?youtu(\.be/|be\.com/watch\?v=)([\w-]{11})',
@@ -142,7 +141,7 @@ class _UploadScreenState extends State<UploadScreen> {
             artist: _artistController.text.trim().isEmpty
                 ? null
                 : _artistController.text.trim(),
-            preferCleanSource: _preferCleanSource,
+            preferCleanSource: true,
           );
           break;
       }
@@ -250,11 +249,6 @@ class _UploadScreenState extends State<UploadScreen> {
                             // change. The toggle is YouTube-only; letting
                             // its state persist across a mode switch
                             // means the user could flip it ON, switch
-                            // to Audio, switch back to YouTube, and
-                            // submit with the flag still set silently —
-                            // the invisible-state footgun PR #47 review
-                            // flagged as (Important).
-                            _preferCleanSource = false;
                           }),
                         ),
                       ),
@@ -322,38 +316,6 @@ class _UploadScreenState extends State<UploadScreen> {
                           ),
                         ),
                         const SizedBox(height: 12),
-                        // Clean-source opt-in. When on, the backend searches
-                        // for the best alternative source (easy/moderate piano
-                        // cover OR 8-bit chiptune cover) and transcribes that
-                        // instead of the full-band original. Dramatically
-                        // cleaner output on pop mixes because Basic Pitch is
-                        // much happier with piano-shaped or chiptune-shaped
-                        // audio than with a full band.
-                        SwitchListTile(
-                          key: const ValueKey('ohsheet_prefer_clean_source_toggle'),
-                          contentPadding: EdgeInsets.zero,
-                          dense: true,
-                          value: _preferCleanSource,
-                          onChanged: (v) => setState(() => _preferCleanSource = v),
-                          activeThumbColor: OhSheetColors.teal,
-                          title: const Text(
-                            'Find a clean source',
-                            style: TextStyle(
-                              fontWeight: FontWeight.w700,
-                              fontSize: 14,
-                              color: OhSheetColors.darkText,
-                            ),
-                          ),
-                          subtitle: const Text(
-                            'Search for a piano cover or 8-bit version of '
-                            'this song and transcribe that instead — much '
-                            'cleaner results for full-band pop tracks.',
-                            style: TextStyle(
-                              fontSize: 12,
-                              color: OhSheetColors.mutedText,
-                            ),
-                          ),
-                        ),
                       ] else ...[
                         TextField(
                           controller: _titleController,
