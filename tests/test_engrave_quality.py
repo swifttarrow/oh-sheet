@@ -342,53 +342,71 @@ def test_l2_humanized_fermata_rendered(engraved_artifacts):
 # ---------------------------------------------------------------------------
 
 
-def _count_staff(musicxml: bytes, staff: int) -> int:
-    """Count pitched ``<note>`` elements tagged with ``<staff>{staff}</staff>``."""
+def _count_part_notes(musicxml: bytes, part_index: int) -> int:
+    """Count pitched ``<note>`` elements in the N-th ``<part>`` (0-based)."""
     from lxml import etree
 
+    parts = etree.fromstring(musicxml).findall("part")
+    if part_index >= len(parts):
+        return 0
     count = 0
-    for note in etree.fromstring(musicxml).iter("note"):
+    for note in parts[part_index].iter("note"):
         if note.find("rest") is not None:
             continue
-        staff_elem = note.find("staff")
-        if staff_elem is not None and int(staff_elem.text) == staff:
-            count += 1
+        count += 1
     return count
 
 
-def test_l2_grand_staff_single_part(engraved_artifacts):
-    """Piano scores render as one ``<part>`` with ``<staves>2</staves>``.
+def test_l2_grand_staff_two_parts_braced(engraved_artifacts):
+    """Piano scores render as two ``<part>`` elements joined by a brace group.
 
-    Plan phase 2.3 / PR-8 — before this change, engrave emitted two
-    separate parts ("Right Hand", "Left Hand") which renderers drew as
-    two stacked instruments without a brace. The fix is ``PartStaff`` +
-    ``StaffGroup(symbol='brace')``, which music21 collapses into a single
-    multi-staff part at export time. The part-list label is "Piano",
-    not the per-hand labels used for in-engine bookkeeping.
+    We emit MusicXML in the "two parts + part-group(brace)" idiom instead
+    of the "one part + <staves>2" idiom. Rationale: ``musicxml2ly`` (the
+    MusicXML → LilyPond bridge) does not reliably honor the one-part /
+    multi-staff encoding, so LilyPond renders both staves with a treble
+    clef and left-hand notes end up as ledger-line stacks below the
+    staff. Two-part + brace is handled correctly by LilyPond, MuseScore,
+    Verovio, and OSMD.
     """
     from lxml import etree
 
-    # two_hand_chordal is the canonical grand-staff fixture: triads in
-    # RH, octaves in LH — both must end up on the same part.
+    # two_hand_chordal is the canonical grand-staff fixture: 12 RH notes
+    # (triads) and 8 LH notes (octaves).
     musicxml, _ = engraved_artifacts["two_hand_chordal"]
     root = etree.fromstring(musicxml)
 
     parts = root.findall("part")
-    assert len(parts) == 1, f"expected single merged part, got {len(parts)}"
+    assert len(parts) == 2, f"expected two parts (RH + LH), got {len(parts)}"
 
-    score_parts = root.findall("part-list/score-part")
-    assert len(score_parts) == 1
-    part_name = score_parts[0].findtext("part-name")
-    assert part_name == "Piano", f"expected part-name 'Piano', got {part_name!r}"
-
-    staves = [int(e.text) for e in root.iter("staves")]
-    assert staves and max(staves) == 2, (
-        f"expected <staves>2</staves>, got {staves}"
+    # No <staves> element under any part — that's the old one-part idiom.
+    assert not list(root.iter("staves")), (
+        "unexpected <staves> element — two-part encoding should not declare it"
     )
 
-    # Staff 1 gets the 12 RH notes, staff 2 gets the 8 LH notes.
-    assert _count_staff(musicxml, 1) == 12
-    assert _count_staff(musicxml, 2) == 8
+    # part-list carries a brace-group wrapping both score-parts.
+    part_list = root.find("part-list")
+    assert part_list is not None
+    groups = part_list.findall("part-group")
+    assert groups, "expected a <part-group> in <part-list>"
+    brace_starts = [
+        g for g in groups
+        if g.get("type") == "start" and g.findtext("group-symbol") == "brace"
+    ]
+    assert brace_starts, "expected a brace-type part-group in part-list"
+    assert brace_starts[0].findtext("group-name") == "Piano"
+
+    # Clef sanity: part 1 = treble (G on line 2), part 2 = bass (F on line 4).
+    def clef_of(part_elem) -> tuple[str, str]:
+        clef = part_elem.find("measure/attributes/clef")
+        assert clef is not None
+        return (clef.findtext("sign") or "", clef.findtext("line") or "")
+
+    assert clef_of(parts[0]) == ("G", "2"), f"RH clef: {clef_of(parts[0])}"
+    assert clef_of(parts[1]) == ("F", "4"), f"LH clef: {clef_of(parts[1])}"
+
+    # 12 RH notes on part 1, 8 LH notes on part 2 (same counts as before).
+    assert _count_part_notes(musicxml, 0) == 12
+    assert _count_part_notes(musicxml, 1) == 8
 
 
 def test_l2_two_voices_preserved_on_same_staff(engraved_artifacts):
@@ -437,18 +455,29 @@ def test_l2_two_voices_preserved_on_same_staff(engraved_artifacts):
     assert backups, "expected <backup> elements separating voice 1 from voice 2"
 
 
-def test_l2_rh_only_fixture_still_single_part(engraved_artifacts):
-    """An empty-LH fixture still emits a grand staff — just with an empty
-    bass stave. This catches the regression where dropping LH content
-    would also drop the ``<staves>2</staves>`` declaration.
+def test_l2_rh_only_fixture_still_braced(engraved_artifacts):
+    """An empty-LH fixture still emits a two-part braced grand staff.
+
+    The LH ``<part>`` will contain measures with only rests, but the
+    ``<part-group>`` (brace) must still be present so renderers draw a
+    grand staff with the expected shape.
     """
     from lxml import etree
 
     musicxml, _ = engraved_artifacts["empty_left_hand"]
     root = etree.fromstring(musicxml)
-    assert len(root.findall("part")) == 1
-    staves = [int(e.text) for e in root.iter("staves")]
-    assert staves and max(staves) == 2
+
+    parts = root.findall("part")
+    assert len(parts) == 2, f"expected two parts even with empty LH, got {len(parts)}"
+
+    brace_starts = [
+        g for g in root.findall("part-list/part-group")
+        if g.get("type") == "start" and g.findtext("group-symbol") == "brace"
+    ]
+    assert brace_starts, "expected brace part-group even when LH is empty"
+
+    # LH part exists but has no pitched notes.
+    assert _count_part_notes(musicxml, 1) == 0
 
 
 def test_l2_bar_crossing_note_in_voice_is_split_with_tie():
