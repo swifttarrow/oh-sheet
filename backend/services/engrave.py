@@ -854,10 +854,11 @@ def _sanitize_musicxml_for_osmd(raw: bytes) -> bytes:
        note's tie continuation to a different voice in the next
        measure (see ``_split_bar_crossing_notes`` for the upstream
        attempt). MuseScore 4 flags mismatched tie-start / tie-stop
-       voices as a corrupt score. Walk the XML, track open ties by
-       (pitch, staff), and rewrite the tie-stop's ``<voice>`` to match
-       the tie-start's voice. The voice reassignment only affects the
-       single tied note; surrounding voice content keeps its tags.
+       voices as a corrupt score. Walk the XML part by part, track
+       open ties by ``(step, octave, alter)``, and rewrite the
+       tie-stop's ``<voice>`` to match the tie-start's voice. The
+       voice reassignment only affects the single tied note;
+       surrounding voice content keeps its tags.
     """
     text = raw.decode("utf-8")
 
@@ -935,24 +936,28 @@ def _remap_voices_per_staff(raw: bytes) -> bytes:
 
 def _align_tie_chain_voices(raw: bytes) -> bytes:
     """Rewrite tie-stop / tie-continue notes to match the voice of the
-    preceding tie-start for the same (pitch, staff).
+    preceding tie-start for the same pitch within the same ``<part>``.
 
     music21 sometimes assigns a bar-crossing note's continuation to a
     different voice in the next measure. After the voice-clamp step
     this shows up as tie-start on voice 1, tie-stop on voice 2 — which
     MuseScore 4 reports as a dangling tie corruption. We walk the XML
-    in document order, track open ties by ``(step, octave, alter,
-    staff)``, and when we see a note that closes an open tie, rewrite
-    its ``<voice>`` tag to match the start.
+    part by part (ties never cross hands), tracking open ties by
+    ``(step, octave, alter)``, and rewrite the tie-stop's ``<voice>``
+    tag to match the tie-start's voice.
     """
     import xml.etree.ElementTree as ET  # noqa: PLC0415 — only needed on this path
 
     parser = ET.XMLParser()
     root = ET.fromstring(raw, parser=parser)
 
-    open_ties: dict[tuple[str, str, str, str], str] = {}
     rewrites = 0
     for part in root.findall("part"):
+        # Ties never cross hands. Reset the open-tie map for each <part>
+        # so an RH tie-start can't "match" an LH same-pitch attack in
+        # the two-part encoding (where <staff> tags are absent and the
+        # old (pitch, staff) key degenerated to (pitch,)).
+        open_ties: dict[tuple[str, str, str], str] = {}
         for measure in part.findall("measure"):
             for note in measure.findall("note"):
                 pitch = note.find("pitch")
@@ -962,7 +967,6 @@ def _align_tie_chain_voices(raw: bytes) -> bytes:
                     pitch.findtext("step") or "",
                     pitch.findtext("octave") or "",
                     pitch.findtext("alter") or "0",
-                    note.findtext("staff") or "1",
                 )
                 voice_el = note.find("voice")
                 voice = voice_el.text if voice_el is not None else "1"

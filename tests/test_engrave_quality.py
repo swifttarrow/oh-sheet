@@ -787,6 +787,74 @@ def test_l2_ties_do_not_cross_voices():
     )
 
 
+def test_l2_tie_chain_per_part_isolation():
+    """Open ties don't leak across parts.
+
+    In the two-part encoding, the same pitch can appear (untied) on both
+    RH and LH. The tie-chain sanitizer must track open ties per-part so
+    an RH tie-start never "matches" an LH non-tied attack of the same
+    pitch.
+    """
+    import xml.etree.ElementTree as etree
+
+    from backend.contracts import (
+        PianoScore,
+        ScoreMetadata,
+        ScoreNote,
+        TempoMapEntry,
+    )
+    from backend.services.engrave import _engrave_sync
+
+    # RH has a tied C4 crossing a bar line; LH has an untied C4 in
+    # measure 2. The tie sanitizer must not rewrite the LH note's voice.
+    rh = [
+        ScoreNote(id="rh-0", pitch=60, onset_beat=0.0, duration_beat=8.0, velocity=75, voice=1),
+    ]
+    lh = [
+        ScoreNote(id="lh-0", pitch=60, onset_beat=5.0, duration_beat=1.0, velocity=75, voice=1),
+    ]
+    score = PianoScore(
+        right_hand=rh,
+        left_hand=lh,
+        metadata=ScoreMetadata(
+            key="C:major",
+            time_signature=(4, 4),
+            tempo_map=[TempoMapEntry(time_sec=0.0, beat=0.0, bpm=120.0)],
+            difficulty="intermediate",
+            sections=[],
+            chord_symbols=[],
+        ),
+    )
+
+    _pdf, musicxml, _midi, _chords = _engrave_sync(score, title="x", composer="")
+    root = etree.fromstring(musicxml)
+    parts = root.findall("part")
+    assert len(parts) == 2
+
+    # Every tied note pair must have both ends within the same <part>.
+    for part in parts:
+        open_pitches: dict[tuple[str, str, str], bool] = {}
+        for note in part.iter("note"):
+            pitch = note.find("pitch")
+            if pitch is None:
+                continue
+            key = (
+                pitch.findtext("step") or "",
+                pitch.findtext("octave") or "",
+                pitch.findtext("alter") or "0",
+            )
+            for tie in note.findall("tie"):
+                typ = tie.get("type")
+                if typ == "start":
+                    open_pitches[key] = True
+                elif typ == "stop":
+                    # stop must match a start in the SAME part.
+                    assert open_pitches.get(key), (
+                        f"tie-stop with no matching tie-start in same part for pitch {key}"
+                    )
+                    open_pitches[key] = False
+
+
 def test_engrave_does_not_leak_music21_defaults():
     """``music21.defaults.divisionsPerQuarter`` must be restored after engrave.
 
