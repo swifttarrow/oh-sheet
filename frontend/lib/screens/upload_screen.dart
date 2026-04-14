@@ -41,6 +41,19 @@ class _UploadScreenState extends State<UploadScreen> {
   // pasted; they can flip it on once they see the option.
   bool _preferCleanSource = false;
 
+  // Phase 3 (D-23): refine opt-in state. Defaults false on every screen
+  // construction and is NEVER persisted across sessions — the user must
+  // re-opt-in every upload. Matches PROJECT.md's default-off-until-quality-
+  // proven posture.
+  bool _enableRefine = false;
+
+  // Phase 3 (D-22): capabilities probe — populated once at initState().
+  // While the future is outstanding we optimistically treat refine as
+  // available so a slow network doesn't flicker the toggle into the
+  // disabled state. If the call fails or returns refineAvailable=false,
+  // the toggle becomes disabled with helper text.
+  Capabilities? _capabilities;
+
   static final _youtubeRegex = RegExp(
     r'^https?://(www\.|music\.|m\.)?youtu(\.be/|be\.com/watch\?v=)([\w-]{11})',
   );
@@ -52,6 +65,26 @@ class _UploadScreenState extends State<UploadScreen> {
     if (text.isEmpty) return null;
     if (!_isValidYoutubeUrl) return 'Enter a valid YouTube URL';
     return null;
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    _loadCapabilities();
+  }
+
+  Future<void> _loadCapabilities() async {
+    try {
+      final caps = await widget.api.getCapabilities();
+      if (!mounted) return;
+      setState(() => _capabilities = caps);
+    } catch (_) {
+      // Safe default on network failure: treat as unavailable so the user
+      // doesn't submit and get a 400 at the server. The error is silent
+      // (no toast) because this is a pre-flight probe, not a user action.
+      if (!mounted) return;
+      setState(() => _capabilities = const Capabilities(refineAvailable: false));
+    }
   }
 
   @override
@@ -103,6 +136,7 @@ class _UploadScreenState extends State<UploadScreen> {
             artist: _artistController.text.trim().isEmpty
                 ? null
                 : _artistController.text.trim(),
+            enableRefine: _enableRefine,
           );
           break;
         case _SourceMode.midi:
@@ -121,6 +155,7 @@ class _UploadScreenState extends State<UploadScreen> {
             artist: _artistController.text.trim().isEmpty
                 ? null
                 : _artistController.text.trim(),
+            enableRefine: _enableRefine,
           );
           break;
         case _SourceMode.title:
@@ -131,6 +166,7 @@ class _UploadScreenState extends State<UploadScreen> {
             artist: _artistController.text.trim().isEmpty
                 ? null
                 : _artistController.text.trim(),
+            enableRefine: _enableRefine,
           );
           break;
         case _SourceMode.youtube:
@@ -143,6 +179,7 @@ class _UploadScreenState extends State<UploadScreen> {
                 ? null
                 : _artistController.text.trim(),
             preferCleanSource: _preferCleanSource,
+            enableRefine: _enableRefine,
           );
           break;
       }
@@ -372,6 +409,56 @@ class _UploadScreenState extends State<UploadScreen> {
                           ),
                         ),
                       ],
+                      const SizedBox(height: 18),
+                      // Phase 3 (D-20): dedicated "AI refinement" section,
+                      // visible for all source variants. Distinct from the
+                      // _preferCleanSource cluster above because refine is
+                      // variant-independent. D-22: disabled with helper text
+                      // when the server has no Anthropic key configured.
+                      const OhSheetStickerSectionTitle(
+                        text: 'AI refinement',
+                        accent: OhSheetColors.teal,
+                      ),
+                      const SizedBox(height: 8),
+                      SwitchListTile(
+                        key: const ValueKey('enableRefineToggle'),
+                        contentPadding: EdgeInsets.zero,
+                        dense: true,
+                        value: _enableRefine,
+                        onChanged: (_capabilities?.refineAvailable == false)
+                            ? null
+                            : (v) => setState(() => _enableRefine = v),
+                        activeThumbColor: OhSheetColors.teal,
+                        title: const Text(
+                          'Use AI refinement (experimental)',
+                          style: TextStyle(
+                            fontWeight: FontWeight.w700,
+                            fontSize: 14,
+                            color: OhSheetColors.darkText,
+                          ),
+                        ),
+                        subtitle: const Text(
+                          'Uses an AI model to polish the generated score. '
+                          'Experimental — may add processing cost and a few '
+                          'seconds of latency.',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: OhSheetColors.mutedText,
+                          ),
+                        ),
+                      ),
+                      if (_capabilities?.refineAvailable == false)
+                        const Padding(
+                          padding: EdgeInsets.only(top: 4, left: 4),
+                          child: Text(
+                            'AI refinement not configured on this server',
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: OhSheetColors.mutedText,
+                              fontStyle: FontStyle.italic,
+                            ),
+                          ),
+                        ),
                       const SizedBox(height: 22),
                       OhSheetStickerCTA(
                         key: const ValueKey('ohsheet_primary_submit'),
