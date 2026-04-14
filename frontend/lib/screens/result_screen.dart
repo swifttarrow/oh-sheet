@@ -196,11 +196,11 @@ class _ResultScreenState extends State<ResultScreen> {
               Uri.parse(url),
               mode: LaunchMode.externalApplication,
             ),
-            child: Row(
+            child: const Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                const Icon(Icons.play_circle_outline, size: 16, color: OhSheetColors.teal),
-                const SizedBox(width: 4),
+                Icon(Icons.play_circle_outline, size: 16, color: OhSheetColors.teal),
+                SizedBox(width: 4),
                 Text(
                   'View on YouTube',
                   style: TextStyle(
