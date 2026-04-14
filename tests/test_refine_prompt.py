@@ -142,6 +142,19 @@ def test_build_prompt_returns_required_keys() -> None:
         assert id_str in out["user"], f"note id {id_str} missing from user prompt"
 
 
+def test_build_prompt_web_search_tool_spec_has_required_name_field() -> None:
+    """WR-04 regression: Anthropic's WebSearchTool20260209Param requires a
+    `name` field (Required[Literal["web_search"]]). Without it the real API
+    rejects the tools= argument at validation time — the FakeRefineClient
+    accepts **kwargs so the gap only surfaces against the live SDK.
+    """
+    perf = _humanized()
+    out = build_prompt({"title": "x", "composer": "y"}, perf)
+    spec = out["web_search_tool_spec"]
+    assert spec["type"] == "web_search_20260209"
+    assert spec["name"] == "web_search"
+
+
 def test_build_prompt_web_search_max_uses_override() -> None:
     perf = _humanized()
     out = build_prompt({"title": "x", "composer": "y"}, perf, web_search_max_uses=3)

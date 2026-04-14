@@ -168,8 +168,13 @@ def build_prompt(
         "user": user,
         "version": REFINE_PROMPT_VERSION,
         "note_id_map": note_id_map,
+        # WR-04: Anthropic's WebSearchTool20260209Param requires BOTH `type`
+        # and `name` fields — `name` is typed Required[Literal["web_search"]]
+        # in anthropic.types.web_search_tool_20260209_param. Without it the
+        # real API would reject the tools= argument at validation time.
         "web_search_tool_spec": {
             "type": "web_search_20260209",
+            "name": "web_search",
             "max_uses": web_search_max_uses,
         },
     }
