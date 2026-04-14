@@ -96,6 +96,10 @@ PIANO_EASY_CHANNELS: tuple[str, ...] = (
     "onepianoheart",
     "easy piano tutorials",
     "simple piano",
+    "atlantic notes",
+    "tutorialsbyhugo",
+    "bitesize piano",
+    "rainbow piano tuto",
 )
 
 # Tier 2 — moderate / intermediate arrangements. Playable for a
@@ -122,11 +126,25 @@ PIANO_MODERATE_CHANNELS: tuple[str, ...] = (
     # good matches but were missing from the allowlist, scoring only
     # on title/artist/keyword without the +50 bonus.
     "yifanmusic",
-    "sheet music boss",
+    # "sheet music boss",  # removed: duet arrangements break music21 engrave
     "jova musique",         # also publishes as "Pianella Piano"
     "kassia",
     "piano by number",
     "learn piano live",
+    "the theorist",
+    "littletranscriber",
+    "riyandi kusuma",
+    "naor yadid",
+    "katherine cordova",
+    "costantino carrara",
+    "we artplay",
+    "ya boi carter",
+    "akiva broder",
+    "cleminova",
+    "pollonuel",
+    "matty on the keys",
+    "flying fingers",
+    "piano covers - topic",
 )
 
 # Tier 3 — virtuoso / concert-level arrangements. Defined here for
@@ -289,6 +307,13 @@ _BAD_KEYWORDS: tuple[str, ...] = (
     "karaoke",
 )
 
+# Channels whose arrangements consistently break music21's MusicXML
+# export (duet layouts, complex subdivisions). Any candidate from these
+# channels is filtered out entirely before scoring.
+_BLOCKED_CHANNELS: tuple[str, ...] = (
+    "sheet music boss",
+)
+
 # Additional bonus for piano channels in the "easy" tier on top of the
 # normal +50 allowlist bonus. When both an easy-tier and a moderate-tier
 # candidate score equally on title/artist, the easy-tier one wins by +10.
@@ -368,6 +393,17 @@ def score_candidate_for_variant(
     uploader_id_norm = (entry.get("uploader_id") or "").lower().lstrip("@")
     wanted_title_norm = normalize_title(wanted_title)
     wanted_artist_norm = (wanted_artist or "").lower().strip()
+
+    # Blocked channels are filtered out entirely — return -1 so they
+    # never pass the min_score threshold.
+    if any(b in channel_norm or b in uploader_id_norm for b in _BLOCKED_CHANNELS):
+        return -1
+
+    # Skip videos shorter than 60 seconds — these are snippets/shorts,
+    # not full covers. Produces thin, incomplete transcriptions.
+    duration = entry.get("duration") or 0
+    if duration and duration < 60:
+        return -1
 
     # Helper: does any allowlist entry match either the channel name
     # OR the uploader_id handle? Checking both fields lets us pin

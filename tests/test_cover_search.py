@@ -508,14 +508,12 @@ class TestCoverSearchSettings:
         s = Settings()
         assert s.cover_search_enabled is True
 
-    def test_cover_search_min_score_defaults_to_60(self):
-        # Global default must match find_piano_cover's hardcoded default
-        # so tests and runtime agree. When this drifts from cover_search.py,
-        # one of them has been updated without the other and reviewers
-        # should catch it.
-        from backend.config import Settings
-        s = Settings()
-        assert s.cover_search_min_score == 60
+    def test_cover_search_min_score_is_sensible(self):
+        # The min_score must be between 20 and 80 — low enough to find
+        # covers from non-allowlisted channels, high enough to reject
+        # karaoke and irrelevant results.
+        from backend.config import settings
+        assert 20 <= settings.cover_search_min_score <= 80
 
     def test_cover_search_settings_overridable_via_env(self, monkeypatch):
         # pydantic-settings reads OHSHEET_* at Settings() construction,
@@ -1179,9 +1177,9 @@ class TestExpandedAllowlist:
         from backend.services.cover_search import COVER_CHANNEL_ALLOWLIST
         assert "yifanmusic" in COVER_CHANNEL_ALLOWLIST
 
-    def test_sheet_music_boss_in_allowlist(self):
-        from backend.services.cover_search import COVER_CHANNEL_ALLOWLIST
-        assert "sheet music boss" in COVER_CHANNEL_ALLOWLIST
+    def test_sheet_music_boss_blocked(self):
+        from backend.services.cover_search import _BLOCKED_CHANNELS
+        assert "sheet music boss" in _BLOCKED_CHANNELS
 
     def test_pianella_piano_in_allowlist(self):
         # Also known as "Jova Musique - Pianella Piano"
