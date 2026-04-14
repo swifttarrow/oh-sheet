@@ -67,12 +67,19 @@ class OhSheetApi {
   /// / plain-title modes should not pass this parameter at all — it is
   /// meaningful only for YouTube URL submissions, and shipping it
   /// anyway is semantic noise in request logs (PR #47 review #4).
+  ///
+  /// ``enableRefine`` opts the job into the LLM refine stage between humanize
+  /// and engrave. Defaults to false. When true the backend must have
+  /// ``OHSHEET_ANTHROPIC_API_KEY`` configured or the server returns HTTP 400;
+  /// the upload screen calls ``getCapabilities()`` at load time to know
+  /// whether to surface the opt-in at all (D-22).
   Future<JobSummary> createJob({
     RemoteAudioFile? audio,
     RemoteMidiFile? midi,
     String? title,
     String? artist,
     bool skipHumanizer = false,
+    bool enableRefine = false,
     bool? preferCleanSource,
   }) async {
     final body = <String, dynamic>{
@@ -81,6 +88,7 @@ class OhSheetApi {
       if (title != null && title.isNotEmpty) 'title': title,
       if (artist != null && artist.isNotEmpty) 'artist': artist,
       'skip_humanizer': skipHumanizer,
+      'enable_refine': enableRefine,
       if (preferCleanSource != null) 'prefer_clean_source': preferCleanSource,
     };
     final response = await _client.post(
@@ -100,6 +108,22 @@ class OhSheetApi {
       throw ApiException(response.statusCode, response.body);
     }
     return JobSummary.fromJson(jsonDecode(response.body) as Map<String, dynamic>);
+  }
+
+  // ---- capabilities ----------------------------------------------------
+
+  /// GET /v1/capabilities — backend feature-availability probe.
+  ///
+  /// Phase 3 (D-22): the upload screen calls this at load time to decide
+  /// whether to render the refine checkbox as enabled (server has an
+  /// Anthropic key) or disabled with helper text (server does not). The
+  /// backend response is a single boolean; see ``Capabilities``.
+  Future<Capabilities> getCapabilities() async {
+    final response = await _client.get(_u('/v1/capabilities'));
+    if (response.statusCode != 200) {
+      throw ApiException(response.statusCode, response.body);
+    }
+    return Capabilities.fromJson(jsonDecode(response.body) as Map<String, dynamic>);
   }
 
   // ---- artifacts -------------------------------------------------------
