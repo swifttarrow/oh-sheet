@@ -16,6 +16,13 @@ import 'progress_screen.dart';
 
 enum _SourceMode { audio, midi, title, youtube }
 
+// Phase 3 (WR-02): distinguish "probe in flight" from "probe said no" from
+// "probe never completed (network failure)". Conflating the last two into a
+// single `refineAvailable=false` signal hides airplane-mode / backend-down
+// failures behind the "not configured on this server" helper text, leaving
+// the user with no retry affordance and a misleading diagnosis.
+enum _CapabilitiesState { loading, available, notConfigured, probeFailed }
+
 class UploadScreen extends StatefulWidget {
   const UploadScreen({super.key, required this.api});
   final OhSheetApi api;
@@ -47,12 +54,15 @@ class _UploadScreenState extends State<UploadScreen> {
   // proven posture.
   bool _enableRefine = false;
 
-  // Phase 3 (D-22): capabilities probe — populated once at initState().
-  // While the future is outstanding we optimistically treat refine as
-  // available so a slow network doesn't flicker the toggle into the
-  // disabled state. If the call fails or returns refineAvailable=false,
-  // the toggle becomes disabled with helper text.
-  Capabilities? _capabilities;
+  // Phase 3 (D-22, WR-02): capabilities probe — populated once at
+  // initState(). While loading we optimistically treat refine as available
+  // so a slow network doesn't flicker the toggle into the disabled state.
+  // WR-02: we track three terminal states (available, notConfigured,
+  // probeFailed) so "server said no" and "couldn't reach server" render
+  // different helper text and have different enablement — probeFailed
+  // keeps the toggle enabled so a real submit-time error can surface
+  // instead of the misleading "not configured" message.
+  _CapabilitiesState _capabilitiesState = _CapabilitiesState.loading;
 
   static final _youtubeRegex = RegExp(
     r'^https?://(www\.|music\.|m\.)?youtu(\.be/|be\.com/watch\?v=)([\w-]{11})',
@@ -77,13 +87,18 @@ class _UploadScreenState extends State<UploadScreen> {
     try {
       final caps = await widget.api.getCapabilities();
       if (!mounted) return;
-      setState(() => _capabilities = caps);
+      setState(() => _capabilitiesState = caps.refineAvailable
+          ? _CapabilitiesState.available
+          : _CapabilitiesState.notConfigured);
     } catch (_) {
-      // Safe default on network failure: treat as unavailable so the user
-      // doesn't submit and get a 400 at the server. The error is silent
-      // (no toast) because this is a pre-flight probe, not a user action.
+      // WR-02: probe failure (network unreachable, 500, malformed body) is
+      // NOT the same signal as "server responded refineAvailable=false".
+      // We surface a distinct state so the UI can render different helper
+      // text and keep the toggle enabled, letting a submission attempt
+      // surface the real backend error instead of a misleading
+      // "not configured" diagnosis.
       if (!mounted) return;
-      setState(() => _capabilities = const Capabilities(refineAvailable: false));
+      setState(() => _capabilitiesState = _CapabilitiesState.probeFailed);
     }
   }
 
@@ -429,9 +444,14 @@ class _UploadScreenState extends State<UploadScreen> {
                         contentPadding: EdgeInsets.zero,
                         dense: true,
                         value: _enableRefine,
-                        onChanged: (_capabilities?.refineAvailable == false)
-                            ? null
-                            : (v) => setState(() => _enableRefine = v),
+                        // WR-02: only disable when the server explicitly
+                        // said "not configured". On probeFailed we leave
+                        // the toggle enabled so a submit-time error can
+                        // surface the real backend issue.
+                        onChanged:
+                            (_capabilitiesState == _CapabilitiesState.notConfigured)
+                                ? null
+                                : (v) => setState(() => _enableRefine = v),
                         activeThumbColor: OhSheetColors.teal,
                         title: const Text(
                           'Use AI refinement (experimental)',
@@ -451,11 +471,24 @@ class _UploadScreenState extends State<UploadScreen> {
                           ),
                         ),
                       ),
-                      if (_capabilities?.refineAvailable == false)
+                      if (_capabilitiesState == _CapabilitiesState.notConfigured)
                         const Padding(
                           padding: EdgeInsets.only(top: 4, left: 4),
                           child: Text(
                             'AI refinement not configured on this server',
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: OhSheetColors.mutedText,
+                              fontStyle: FontStyle.italic,
+                            ),
+                          ),
+                        ),
+                      if (_capabilitiesState == _CapabilitiesState.probeFailed)
+                        const Padding(
+                          padding: EdgeInsets.only(top: 4, left: 4),
+                          child: Text(
+                            'Could not reach the server to check AI '
+                            'refinement availability — try again in a moment.',
                             style: TextStyle(
                               fontSize: 12,
                               color: OhSheetColors.mutedText,
