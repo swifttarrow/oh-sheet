@@ -187,7 +187,11 @@ class _UploadScreenState extends State<UploadScreen> {
       if (!mounted) return;
       await Navigator.of(context).push(
         MaterialPageRoute(
-          builder: (_) => ProgressScreen(api: widget.api, jobId: job.jobId),
+          builder: (_) => ProgressScreen(
+            api: widget.api,
+            jobId: job.jobId,
+            enableRefine: _enableRefine,
+          ),
         ),
       );
     } catch (e) {
