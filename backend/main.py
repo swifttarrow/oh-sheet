@@ -9,7 +9,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
-from backend.api.routes import artifacts, health, jobs, stages, uploads, ws
+from backend.api.routes import artifacts, capabilities, health, jobs, stages, uploads, ws
 from backend.config import settings
 from backend.contracts import SCHEMA_VERSION
 
@@ -67,6 +67,7 @@ def create_app() -> FastAPI:
     app.include_router(artifacts.router, prefix="/v1", tags=["artifacts"])
     app.include_router(stages.router, prefix="/v1", tags=["stages"])
     app.include_router(ws.router, prefix="/v1", tags=["websocket"])
+    app.include_router(capabilities.router, prefix="/v1", tags=["capabilities"])
 
     # IMPORTANT: mount AFTER API routers — StaticFiles at "/" is a catch-all.
     if _STATIC_DIR.is_dir():
