@@ -7,8 +7,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg gcc g++ 
     && rm -rf /var/lib/apt/lists/*
 
 COPY shared/ shared/
-# Editable so bind-mounting ./shared in docker-compose tracks host changes.
-RUN pip install --no-cache-dir -e ./shared
+RUN pip install --no-cache-dir ./shared
 
 COPY pyproject.toml .
 COPY backend/ backend/

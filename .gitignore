@@ -23,6 +23,7 @@ blob/
 !.openskills/skill-log-architectural-decisions/**
 LINEAR_TICKETS.md
 STUDY_GUIDE.md
+ROADMAP.md
 PRD.md
 coverage.xml
 node_modules/
