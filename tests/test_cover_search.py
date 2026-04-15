@@ -1031,8 +1031,8 @@ class TestFindCleanSource:
         assert result.score == 110
 
     def test_chiptune_variant_is_paused_only_piano_runs(self):
-        # Chiptune variant is paused because TuneChat's pipeline
-        # The downstream transcription pipeline only handles piano. With chiptune
+        # Chiptune variant is paused — the downstream transcription
+        # pipeline only handles piano audio. With chiptune
         # active, it could outscore piano and steal songs from the
         # TuneChat path. Verify only the piano query fires.
         from backend.services.cover_search import find_clean_source
