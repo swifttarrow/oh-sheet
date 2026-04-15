@@ -67,11 +67,16 @@ def _compute_amplitude_envelope(
     audio_path: Path,
     *,
     hop_length: int = 441,  # ~10 ms windows at 44100 Hz
+    preloaded_audio: tuple | None = None,
 ) -> AmplitudeEnvelope | None:
     """Compute an RMS amplitude envelope from an audio file.
 
     Returns a list of ``(time_sec, rms_value)`` tuples sampled in ~10 ms
     windows, suitable for passing to the energy gating cleanup pass.
+
+    When ``preloaded_audio`` is a ``(y, sr)`` tuple the ``librosa.load``
+    call is skipped.  The hop_length may need adjusting when sr differs
+    from the native rate.
 
     Returns ``None`` on any failure (missing librosa, unreadable file)
     so callers can gracefully fall back to the heuristic cleanup path.
@@ -79,7 +84,10 @@ def _compute_amplitude_envelope(
     try:
         import librosa  # noqa: PLC0415 — ships with the basic-pitch extra
 
-        y, sr = librosa.load(str(audio_path), sr=None, mono=True)
+        if preloaded_audio is not None:
+            y, sr = preloaded_audio
+        else:
+            y, sr = librosa.load(str(audio_path), sr=None, mono=True)
         if len(y) == 0:
             return None
 
@@ -96,6 +104,8 @@ def _compute_amplitude_envelope(
 
 def _maybe_analyze_key_and_meter(
     audio_path: Path,
+    *,
+    preloaded_audio: tuple | None = None,
 ) -> tuple[str, tuple[int, int], KeyEstimationStats | None, MeterEstimationStats | None]:
     """Run key + meter estimation, honouring the config feature flags.
 
@@ -128,6 +138,7 @@ def _maybe_analyze_key_and_meter(
             key_min_confidence=settings.key_min_confidence,
             meter_confidence_margin=settings.meter_confidence_margin,
             meter_min_beats=settings.meter_min_beats,
+            preloaded_audio=preloaded_audio,
         )
     except Exception as exc:  # noqa: BLE001 — never let analysis sink transcribe
         log.warning("key/meter analysis raised on %s: %s", audio_path, exc)

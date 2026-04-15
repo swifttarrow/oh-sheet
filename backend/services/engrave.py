@@ -2,7 +2,8 @@
 
   * MIDI     — pretty_midi if installed, else a minimal MThd+MTrk file
   * MusicXML — music21 (hard dependency; errors propagate to the caller)
-  * PDF      — LilyPond (preferred) or MuseScore CLI if on $PATH, else a 1-line %PDF stub
+  * PDF      — LilyPond (preferred) or MuseScore CLI ($PATH, ``MUSESCORE_PATH``, or macOS
+    ``.app`` bundle), else a 1-line %PDF stub
 """
 from __future__ import annotations
 
@@ -13,6 +14,8 @@ import shutil
 import subprocess
 import tempfile
 from pathlib import Path
+
+from shared.musescore_cli import musescore_executable_paths
 
 from backend.contracts import (
     SCHEMA_VERSION,
@@ -335,6 +338,131 @@ def _attach_pedal_marks(part, pedal_events, music21) -> None:  # noqa: ANN001
         part.insert(off_beat, music21.expressions.TextExpression(off_label))
 
 
+def _approximate_ql_for_musicxml_export(ql: float, music21) -> float:  # noqa: ANN001
+    """Pick a ``quarterLength`` near ``ql`` that music21 can encode to MusicXML.
+
+    Transcription grids often produce floats that are not exact rationals music21
+    can express as a single ``Duration`` (``type == 'inexpressible'``). Try
+    ``Fraction(...).limit_denominator`` at increasing denominators and keep the
+    closest candidate that passes the exporter's type rules.
+    """
+    from fractions import Fraction
+
+    dur_mod = music21.duration
+    min_safe = float(dur_mod.convertTypeToQuarterLength("1024th"))
+    if ql <= 0:
+        return min_safe
+
+    best: float | None = None
+    best_err = float("inf")
+    for lim in (
+        32, 48, 64, 96, 128, 192, 256, 384, 512, 768, 1024, 1536, 2048,
+        4096, 8192, 16384, 32768, 65536, 131072, 262144,
+    ):
+        cand = float(Fraction(ql).limit_denominator(lim))
+        if cand <= 0:
+            continue
+        d = dur_mod.Duration(cand)
+        if _duration_needs_musicxml_coercion(d):
+            continue
+        err = abs(cand - ql)
+        if err < best_err:
+            best_err = err
+            best = cand
+
+    if best is not None:
+        return best
+
+    # Last resort: snap to 1/384 quarter (finer than our divisions=12 grid).
+    step = 1.0 / 384.0
+    k = max(1, round(ql / step))
+    return k * step
+
+
+def _duration_needs_musicxml_coercion(d) -> bool:  # noqa: ANN001 — music21 Duration
+    """True if music21 would raise when exporting this duration to MusicXML.
+
+    ``makeNotation`` can attach tuplets whose ``durationNormal`` is a
+    ``2048th`` — valid internally but rejected by ``typeToMusicXMLType``
+    (see music21 ``m21ToXml``). We also treat any other duration type the
+    exporter refuses the same way so future music21 versions stay covered.
+    """
+    from music21.musicxml.m21ToXml import typeToMusicXMLType  # noqa: PLC0415
+    from music21.musicxml.xmlObjects import MusicXMLExportException  # noqa: PLC0415
+
+    try:
+        typeToMusicXMLType(d.type)
+    except MusicXMLExportException:
+        return True
+    for tup in d.tuplets:
+        dn = tup.durationNormal
+        if dn is not None:
+            try:
+                typeToMusicXMLType(dn.type)
+            except MusicXMLExportException:
+                return True
+        da = tup.durationActual
+        if da is not None:
+            try:
+                typeToMusicXMLType(da.type)
+            except MusicXMLExportException:
+                return True
+    return False
+
+
+def _coerce_durations_for_musicxml_export(part, music21) -> None:  # noqa: ANN001
+    """Normalize note/rest durations so MusicXML export cannot fail on types
+    like ``2048th`` tuplet brackets.
+
+    First pass rebuilds each offending duration from its ``quarterLength``
+    alone (music21 usually picks sane tuplets). If types are still rejected,
+    very short lengths are clamped to a ``1024th``. If the duration is still
+    bad (common for float noise → ``inexpressible``), snap ``quarterLength``
+    to a nearby rational via ``_approximate_ql_for_musicxml_export``.
+    """
+    dur_mod = music21.duration
+    min_safe_ql = float(dur_mod.convertTypeToQuarterLength("1024th"))
+
+    for elem in part.recurse().notesAndRests:
+        d = elem.duration
+        if not _duration_needs_musicxml_coercion(d):
+            continue
+        ql_orig = float(d.quarterLength)
+        if ql_orig <= 0:
+            continue
+        ql = ql_orig
+        elem.duration = dur_mod.Duration(ql)
+        if not _duration_needs_musicxml_coercion(elem.duration):
+            continue
+        if ql < min_safe_ql:
+            ql = min_safe_ql
+            elem.duration = dur_mod.Duration(ql)
+            if not _duration_needs_musicxml_coercion(elem.duration):
+                log.warning(
+                    "engrave: raised sub–1024th duration ql=%s to %s for MusicXML",
+                    ql_orig,
+                    ql,
+                )
+                continue
+        approx = _approximate_ql_for_musicxml_export(ql, music21)
+        elem.duration = dur_mod.Duration(approx)
+        if not _duration_needs_musicxml_coercion(elem.duration):
+            if approx != ql_orig:
+                log.warning(
+                    "engrave: snapped unexportable duration ql=%s -> %s for MusicXML",
+                    ql_orig,
+                    approx,
+                )
+            continue
+        # Should be unreachable; keep export from crashing.
+        elem.duration = dur_mod.Duration(min_safe_ql)
+        log.warning(
+            "engrave: fell back to minimum duration ql=%s -> %s for MusicXML",
+            ql_orig,
+            min_safe_ql,
+        )
+
+
 def _render_musicxml_bytes(
     score: PianoScore,
     perf: HumanizedPerformance | None,
@@ -489,6 +617,9 @@ def _render_musicxml_bytes(
         # which is LCM(2, 3, 4) — every grid value arrange can emit
         # lands on an integer ``<duration>``.
         part.makeNotation(inPlace=True)
+        # makeNotation can still emit tuplets MusicXML refuses (e.g. a
+        # ``2048th`` tuplet "normal" type). Coerce before ``write()``.
+        _coerce_durations_for_musicxml_export(part, music21)
 
         # makeMeasures rebuilds per-measure Voice sub-streams with fresh
         # integer ids (music21 treats large ints as memory locations and
@@ -520,6 +651,19 @@ def _render_musicxml_bytes(
         ),
     )
 
+    # ``makeNotation=False`` skips the exporter's second ``makeNotation`` pass.
+    # Per-part ``makeNotation`` can still leave one ``Note``/``Rest`` carrying a
+    # ``complex`` multi-component duration or other MusicXML-unwritable shapes;
+    # ``m21ToXml.noteToXml`` then raises (``inexpressible`` / ``complex``). The
+    # supported fix is ``splitAtDurations(recurse=True)`` before export — see
+    # ``music21.converter.subConverters`` tests around ``makeNotation=False``.
+    s.splitAtDurations(recurse=True)
+    _coerce_durations_for_musicxml_export(s, music21)
+    # Rare: rational snap can reintroduce a ``complex`` multi-component view;
+    # a second split is cheap insurance before export.
+    s.splitAtDurations(recurse=True)
+    _coerce_durations_for_musicxml_export(s, music21)
+
     # Force divisions=12 at the exporter boundary. music21's MeasureExporter
     # reads ``defaults.divisionsPerQuarter`` verbatim when stamping the
     # ``<divisions>`` tag (m21ToXml.setMxAttributesObjectForStartOfMeasure)
@@ -534,7 +678,13 @@ def _render_musicxml_bytes(
     prior_divisions = music21.defaults.divisionsPerQuarter
     try:
         music21.defaults.divisionsPerQuarter = 12
-        s.write("musicxml", fp=str(tmp_path))
+        # music21's MusicXML writer defaults to ``makeNotation=True``, which
+        # deep-copies the score and runs ``makeNotation`` again on every part.
+        # That second pass can emit tuplets MusicXML cannot encode (e.g. a
+        # ``2048th`` normal-type) even after our per-part cleanup. We already
+        # called ``makeNotation`` on each ``PartStaff`` above — export the
+        # score as-is. (Requires a well-formed ``Score``; see GeneralObjectExporter.)
+        s.write("musicxml", fp=str(tmp_path), makeNotation=False)
         raw = tmp_path.read_bytes()
         return _sanitize_musicxml_for_osmd(raw), chord_symbols_rendered
     finally:
@@ -582,16 +732,13 @@ def _render_pdf_bytes(musicxml_bytes: bytes) -> bytes:
     Tries LilyPond first (this is what production ships — ~250 MB apt
     package, musicxml2ly + lilypond binaries) and MuseScore as a
     higher-fidelity fallback for local dev machines that have it
-    installed. Returns the 60-byte stub PDF only when no renderer is
+    installed (including macOS ``.app`` bundles via ``musescore_executable_paths``).
+    Returns the 60-byte stub PDF only when no renderer is
     available or all renderers fail.
     """
+    ms_paths = musescore_executable_paths()
     has_lilypond = bool(shutil.which("musicxml2ly") and shutil.which("lilypond"))
-    mscore_bin = next(
-        (b for b in ("musescore4", "musescore3", "mscore", "MuseScore4") if shutil.which(b)),
-        None,
-    )
-
-    if not has_lilypond and mscore_bin is None:
+    if not has_lilypond and not ms_paths:
         log.warning(
             "No PDF renderer found — install lilypond (preferred) or MuseScore "
             "for real PDF output; emitting stub",
@@ -628,27 +775,27 @@ def _render_pdf_bytes(musicxml_bytes: bytes) -> bytes:
             except (FileNotFoundError, subprocess.TimeoutExpired) as exc:
                 log.warning("LilyPond PDF render failed: %s", exc)
 
-        if mscore_bin is not None:
+        for mscore in ms_paths:
             pdf_path = tmp / "sheet.pdf"
             try:
                 subprocess.run(
-                    [mscore_bin, "-o", str(pdf_path), str(xml_path)],
+                    [mscore, "-o", str(pdf_path), str(xml_path)],
                     check=True, capture_output=True, timeout=120,
                 )
                 if pdf_path.is_file():
                     log.info(
-                        "PDF rendered via %s (%d bytes)", mscore_bin, pdf_path.stat().st_size,
+                        "PDF rendered via %s (%d bytes)", mscore, pdf_path.stat().st_size,
                     )
                     return pdf_path.read_bytes()
-                log.warning("%s ran but produced no PDF at %s", mscore_bin, pdf_path)
+                log.warning("%s ran but produced no PDF at %s", mscore, pdf_path)
             except subprocess.CalledProcessError as exc:
                 log.warning(
                     "%s PDF render failed: %s",
-                    mscore_bin,
+                    mscore,
                     (exc.stderr or b"").decode("utf-8", "replace")[:500],
                 )
             except (FileNotFoundError, subprocess.TimeoutExpired) as exc:
-                log.warning("%s PDF render failed: %s", mscore_bin, exc)
+                log.warning("%s PDF render failed: %s", mscore, exc)
 
     return _STUB_PDF
 

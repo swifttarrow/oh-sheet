@@ -18,7 +18,7 @@ def run(job_id: str, payload_uri: str) -> str:
 
     service = ArrangeService()
     # asyncio.run() is safe with Celery's default prefork pool; breaks with gevent/eventlet.
-    result = asyncio.run(service.run(txr))
+    result = asyncio.run(service.run(txr, blob_store=blob))
 
     # Post-process: aggressive simplification for sheet music readability.
     # Swaps dense per-note transcription output for a cleaner notation layer.

@@ -597,6 +597,7 @@ def analyze_audio(
     key_min_confidence: float = DEFAULT_KEY_MIN_CONFIDENCE,
     meter_confidence_margin: float = DEFAULT_METER_CONFIDENCE_MARGIN,
     meter_min_beats: int = DEFAULT_METER_MIN_BEATS,
+    preloaded_audio: tuple | None = None,
 ) -> tuple[str, tuple[int, int], KeyEstimationStats, MeterEstimationStats]:
     """Run both key and meter estimators on ``audio_path`` with one load.
 
@@ -604,6 +605,9 @@ def analyze_audio(
     audio via librosa costs ~100 ms for a 30 s file at 22 kHz, and
     both estimators want the same mono downmix, so the pragmatic
     move is to load once and fan out.
+
+    When ``preloaded_audio`` is a ``(y, sr)`` tuple the ``librosa.load``
+    call is skipped, reusing a waveform already in memory.
 
     Returns the full ``(key_label, time_signature, key_stats,
     meter_stats)`` tuple so the caller can attach both stats to the
@@ -626,18 +630,21 @@ def analyze_audio(
         meter_stats.warnings.append("librosa unavailable")
         return "C:major", (4, 4), key_stats, meter_stats
 
-    try:
-        y, file_sr = librosa.load(str(audio_path), sr=sample_rate, mono=True)
-    except Exception as exc:  # noqa: BLE001
-        log.warning(
-            "librosa.load failed for key/meter analysis on %s: %s",
-            audio_path, exc,
-        )
-        key_stats.skipped = True
-        key_stats.warnings.append(f"librosa.load failed: {exc}")
-        meter_stats.skipped = True
-        meter_stats.warnings.append(f"librosa.load failed: {exc}")
-        return "C:major", (4, 4), key_stats, meter_stats
+    if preloaded_audio is not None:
+        y, file_sr = preloaded_audio
+    else:
+        try:
+            y, file_sr = librosa.load(str(audio_path), sr=sample_rate, mono=True)
+        except Exception as exc:  # noqa: BLE001
+            log.warning(
+                "librosa.load failed for key/meter analysis on %s: %s",
+                audio_path, exc,
+            )
+            key_stats.skipped = True
+            key_stats.warnings.append(f"librosa.load failed: {exc}")
+            meter_stats.skipped = True
+            meter_stats.warnings.append(f"librosa.load failed: {exc}")
+            return "C:major", (4, 4), key_stats, meter_stats
 
     try:
         key_label, key_stats = estimate_key_from_waveform(

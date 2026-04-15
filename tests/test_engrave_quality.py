@@ -471,6 +471,122 @@ def test_engrave_does_not_leak_music21_defaults():
     assert music21.defaults.divisionsPerQuarter == prior
 
 
+def test_coerce_musicxml_durations_fixes_2048th_tuplet_bracket() -> None:
+    """``makeNotation``-style tuplets can use a 2048th normal type; MusicXML rejects that."""
+    import music21
+    from music21.duration import Tuplet, durationTupleFromTypeDots
+    from music21.musicxml.m21ToXml import typeToMusicXMLType
+
+    from backend.services.engrave import _coerce_durations_for_musicxml_export
+
+    part = music21.stream.PartStaff()
+    r = music21.note.Rest()
+    r.duration = music21.duration.Duration(1 / 6)
+    nt = Tuplet(3, 2)
+    nt.durationNormal = durationTupleFromTypeDots("2048th", 0)
+    nt.durationActual = durationTupleFromTypeDots("2048th", 0)
+    r.duration.tuplets = (nt,)
+    part.insert(0, r)
+
+    _coerce_durations_for_musicxml_export(part, music21)
+
+    r_out = next(part.recurse().notesAndRests)
+    typeToMusicXMLType(r_out.duration.type)
+    for tup in r_out.duration.tuplets:
+        if tup.durationNormal is not None:
+            typeToMusicXMLType(tup.durationNormal.type)
+        if tup.durationActual is not None:
+            typeToMusicXMLType(tup.durationActual.type)
+
+
+def test_coerce_musicxml_durations_clamps_raw_2048th() -> None:
+    """A bare 2048th note type is also unexportable; coerce to at least 1024th."""
+    import music21
+    from music21.musicxml.m21ToXml import typeToMusicXMLType
+
+    from backend.services.engrave import _coerce_durations_for_musicxml_export
+
+    part = music21.stream.PartStaff()
+    n = music21.note.Note("C4")
+    n.duration = music21.duration.Duration(
+        music21.duration.convertTypeToQuarterLength("2048th"),
+    )
+    part.insert(0, n)
+
+    _coerce_durations_for_musicxml_export(part, music21)
+
+    n_out = next(part.recurse().notesAndRests)
+    typeToMusicXMLType(n_out.duration.type)
+    assert n_out.duration.type != "2048th"
+
+
+def test_coerce_durations_snaps_inexpressible_float_ql() -> None:
+    """Float ``quarterLength`` noise can yield ``duration.type == 'inexpressible'``."""
+    import music21
+
+    from backend.services.engrave import _coerce_durations_for_musicxml_export
+
+    n = music21.note.Note("C4", quarterLength=2.718281828)
+    p = music21.stream.PartStaff()
+    p.append(music21.meter.TimeSignature("4/4"))
+    p.insert(0, n)
+    p.makeNotation(inPlace=True)
+    _coerce_durations_for_musicxml_export(p, music21)
+    n_out = next(p.recurse().notesAndRests)
+    assert n_out.duration.type != "inexpressible"
+
+
+def test_musicxml_write_make_notation_false_needs_split_at_durations() -> None:
+    """Regression: ``complex`` duration on one note breaks MusicXML unless split.
+
+    music21's per-part ``makeNotation`` can leave a single ``Note`` with
+    ``duration.type == 'complex'``. ``write(..., makeNotation=False)`` then
+    raises; ``splitAtDurations(recurse=True)`` is the documented fix (see
+    ``music21.converter.subConverters`` tests).
+    """
+    import tempfile
+    from pathlib import Path
+
+    import music21
+    from music21 import duration, meter, note, stream
+
+    from backend.services.engrave import _coerce_durations_for_musicxml_export
+
+    p = stream.PartStaff()
+    p.append(meter.TimeSignature("4/4"))
+    n = note.Note("C4")
+    d = duration.Duration()
+    d.addDurationTuple(duration.durationTupleFromTypeDots("quarter", 0))
+    d.addDurationTuple(duration.durationTupleFromTypeDots("eighth", 0))
+    n.duration = d
+    p.insert(0, n)
+    p.makeNotation(inPlace=True)
+
+    s = stream.Score()
+    s.insert(0, p)
+
+    from music21.musicxml.xmlObjects import MusicXMLExportException
+
+    with tempfile.NamedTemporaryFile(suffix=".musicxml", delete=False) as tmp:
+        bad_path = Path(tmp.name)
+    try:
+        with pytest.raises(MusicXMLExportException):
+            s.write("musicxml", fp=str(bad_path), makeNotation=False)
+    finally:
+        bad_path.unlink(missing_ok=True)
+
+    s.splitAtDurations(recurse=True)
+    _coerce_durations_for_musicxml_export(s, music21)
+
+    with tempfile.NamedTemporaryFile(suffix=".musicxml", delete=False) as tmp:
+        good_path = Path(tmp.name)
+    try:
+        s.write("musicxml", fp=str(good_path), makeNotation=False)
+        assert good_path.stat().st_size > 500
+    finally:
+        good_path.unlink(missing_ok=True)
+
+
 # ---------------------------------------------------------------------------
 # L2 — Tuplet survival (plan phase 3.4 / PR-13)
 # ---------------------------------------------------------------------------

@@ -60,6 +60,7 @@ def refine_onsets(
     sr: int = 22050,
     hop_length: int = 256,
     max_shift_sec: float = 0.05,
+    preloaded_audio: tuple | None = None,
 ) -> tuple[list[NoteEvent], OnsetRefineStats]:
     """Sharpen note onsets by snapping them to spectral onset-strength peaks.
 
@@ -83,6 +84,10 @@ def refine_onsets(
         resolution at 22050 Hz — twice as fine as Basic Pitch's 512.
     max_shift_sec:
         Maximum allowed onset adjustment in seconds.
+    preloaded_audio:
+        Optional ``(y, sr)`` tuple of pre-loaded mono audio. When provided,
+        skips ``librosa.load`` and uses the given waveform directly. The
+        ``sr`` element overrides the ``sr`` parameter.
 
     Returns
     -------
@@ -113,7 +118,10 @@ def refine_onsets(
 
     # Load audio and compute onset strength — once for all notes.
     try:
-        y, actual_sr = librosa.load(str(audio_path), sr=sr, mono=True)
+        if preloaded_audio is not None:
+            y, actual_sr = preloaded_audio
+        else:
+            y, actual_sr = librosa.load(str(audio_path), sr=sr, mono=True)
         if len(y) == 0:
             stats.skipped = True
             stats.warnings.append("onset-refine: skipped — empty audio")

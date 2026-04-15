@@ -32,6 +32,10 @@ from backend.contracts import (
     TranscriptionResult,
     sec_to_beat,
 )
+from backend.services.hf_arrange.inference import run_hf_midi_inference
+from backend.services.hf_arrange.midi_bridge import transcription_from_midi_bytes
+from backend.services.transcription_midi_materialize import materialize_transcription_midi_bytes
+from backend.storage.base import BlobStore
 
 log = logging.getLogger(__name__)
 
@@ -116,6 +120,14 @@ def _notes_to_beats(
     for n in notes:
         onset = sec_to_beat(n.onset_sec, tempo_map)
         offset = sec_to_beat(n.offset_sec, tempo_map)
+        # Clamp to non-negative — notes before the first detected beat
+        # (e.g. Pop2Piano emitting from 0.0s when the beat tracker anchors
+        # beat 0 later in the audio) would otherwise produce negative beat
+        # positions that music21 cannot place in any measure.
+        if onset < 0.0:
+            onset = 0.0
+        if offset < 0.0:
+            continue  # entirely before the first beat — drop it
         out.append((n.pitch, onset, max(offset - onset, QUANT_GRID), n.velocity))
     return out
 
@@ -505,6 +517,22 @@ def _arrange_sync(
     )
 
 
+def _arrange_hf_sync(
+    payload: TranscriptionResult,
+    difficulty: Difficulty,
+    blob_store: BlobStore,
+) -> PianoScore:
+    """Materialize MIDI, run HF inference, parse back, then classic arrange."""
+    mid_in = materialize_transcription_midi_bytes(payload, blob_store)
+    mid_out = run_hf_midi_inference(mid_in, settings.arrange_hf_inference_mode)
+    rebuilt = transcription_from_midi_bytes(
+        mid_out,
+        payload,
+        extra_warnings=[f"hf_arrange: inference_mode={settings.arrange_hf_inference_mode}"],
+    )
+    return _arrange_sync(rebuilt, difficulty)
+
+
 class ArrangeService:
     name = "arrange"
 
@@ -513,13 +541,37 @@ class ArrangeService:
         payload: TranscriptionResult,
         *,
         difficulty: Difficulty = "intermediate",
+        blob_store: BlobStore | None = None,
     ) -> PianoScore:
         log.info(
-            "arrange: start tracks_in=%d difficulty=%s",
+            "arrange: start backend=%s tracks_in=%d difficulty=%s",
+            settings.arrange_backend,
             len(payload.midi_tracks),
             difficulty,
         )
-        score = await asyncio.to_thread(_arrange_sync, payload, difficulty)
+        use_hf = (
+            settings.arrange_backend == "hf_midi_identity"
+            and blob_store is not None
+        )
+        if settings.arrange_backend not in ("rules", "hf_midi_identity"):
+            raise ValueError(f"Unknown arrange_backend: {settings.arrange_backend!r}")
+        if settings.arrange_backend == "hf_midi_identity" and blob_store is None:
+            if not settings.arrange_hf_fallback_to_rules:
+                raise ValueError("hf_midi_identity requires blob_store")
+            log.warning("hf_midi_identity requires blob_store — falling back to rules")
+
+        if use_hf:
+            try:
+                score = await asyncio.to_thread(
+                    _arrange_hf_sync, payload, difficulty, blob_store,
+                )
+            except Exception:
+                if not settings.arrange_hf_fallback_to_rules:
+                    raise
+                log.exception("HF arrange failed; falling back to rules")
+                score = await asyncio.to_thread(_arrange_sync, payload, difficulty)
+        else:
+            score = await asyncio.to_thread(_arrange_sync, payload, difficulty)
         log.info(
             "arrange: done rh_notes=%d lh_notes=%d",
             len(score.right_hand),

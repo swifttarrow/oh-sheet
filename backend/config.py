@@ -221,6 +221,32 @@ class Settings(BaseSettings):
     arrange_simplify_max_onsets_per_beat: int = 4       # density cap
     arrange_simplify_min_duration_beats: float = 0.25   # 16th note floor
 
+    # ---- Pop2Piano transcription (replaces Demucs + Basic Pitch) -----------
+    # When enabled, the transcribe stage runs Pop2Piano (sweetcocoa/pop2piano)
+    # on the source audio to produce a single piano MIDI directly, replacing
+    # both Demucs source separation and Basic Pitch polyphonic tracking in
+    # one shot. The output is a pretty_midi object whose notes are converted
+    # to NoteEvent tuples and fed through the same post-processing pipeline
+    # (melody/bass extraction, onset/duration refinement, key/chord/tempo
+    # estimation) as the single-mix Basic Pitch path.
+    #
+    # Pop2Piano is a seq2seq transformer trained on pop music → piano covers;
+    # it produces cleaner piano reductions than the Demucs+BP pipeline on
+    # most pop/rock material because it was explicitly trained for the task
+    # rather than doing generic pitch tracking on separated stems.
+    #
+    # Any failure (missing deps, model load crash, inference error) falls
+    # back transparently to the old Demucs+BP path, so leaving this on is
+    # safe even on boxes where torch/transformers aren't installed.
+    #
+    # Dependencies: torch, transformers, librosa, resampy, scipy,
+    # pretty_midi, essentia (see [pop2piano] extra in pyproject.toml).
+    pop2piano_enabled: bool = True
+    pop2piano_model: str = "sweetcocoa/pop2piano"
+    pop2piano_sample_rate: int = 44100
+    pop2piano_device: str | None = None  # None → auto: cuda → mps → cpu
+    pop2piano_composer: str = "composer1"  # Pop2Piano "composer" token
+
     # ---- Demucs source separation (pre-Basic Pitch) -----------------------
     # When enabled, the transcribe stage runs Demucs over the source
     # waveform to split it into {drums, bass, other, vocals} and routes
@@ -501,6 +527,17 @@ class Settings(BaseSettings):
     # Score path after transcription (or MIDI-derived TranscriptionResult).
     # Env: ``OHSHEET_SCORE_PIPELINE`` — ``arrange`` (default) or ``condense_transform``.
     score_pipeline: ScorePipelineMode = "arrange"
+
+    # ---- Arrange backend (rules vs HF MIDI path) ---------------------------
+    # ``rules`` — existing hand assignment + quantization in arrange.
+    # ``hf_midi_identity`` — materialize MIDI → HF inference (see
+    # ``arrange_hf_inference_mode``) → parse output → same ``_arrange_sync``.
+    # Env: ``OHSHEET_ARRANGE_BACKEND``.
+    arrange_backend: Literal["rules", "hf_midi_identity"] = "rules"
+    # Sub-mode for ``hf_midi_identity`` (extensible when real weights ship).
+    arrange_hf_inference_mode: Literal["identity"] = "identity"
+    # On materialize/HF/parse failure, run classic arrange on the original txr.
+    arrange_hf_fallback_to_rules: bool = True
 
 
 settings = Settings()

@@ -91,8 +91,24 @@ jobs:
           $SCP /tmp/.env "${VM_USER}@${VM_HOST}:~/oh-sheet/.env.tmp"
           $SSH "mv ~/oh-sheet/.env.tmp ~/oh-sheet/.env && mv ~/oh-sheet/docker-compose.prod.yml ~/oh-sheet/docker-compose.yml"
 
-          # Pull and restart
-          $SSH "cd ~/oh-sheet && sudo docker compose pull && sudo docker compose up -d --remove-orphans && sudo docker image prune -f"
+          # Reclaim disk BEFORE pulling the new image. The app image ships
+          # heavy ML deps (torch/transformers via the [pop2piano] extra),
+          # so a single layer can exceed 1.6 GB. Without an aggressive
+          # pre-pull prune, stale tagged images from prior deploys
+          # accumulate and fill /var/lib/containerd, causing `compose
+          # pull` to abort with "no space left on device" — see run
+          # 24407031842 / job 71295904329. `-a` also removes unused
+          # *tagged* images (plain `-f` only touches dangling ones); the
+          # `until=24h` filter keeps the currently-running image safe
+          # from reclamation. The post-pull prune then reclaims the
+          # just-superseded previous deploy, capped at `until=1h` so a
+          # quick rollback within the hour still has layers to pull.
+          $SSH "cd ~/oh-sheet && \
+                sudo docker image prune -af --filter 'until=24h' && \
+                sudo docker builder prune -af && \
+                sudo docker compose pull && \
+                sudo docker compose up -d --remove-orphans && \
+                sudo docker image prune -af --filter 'until=1h'"
 
       - name: Verify deployment
         env:

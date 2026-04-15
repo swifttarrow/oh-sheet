@@ -1,16 +1,22 @@
-"""Single-mix transcription pipeline (no Demucs stems).
+"""Pop2Piano transcription pipeline — audio → piano MIDI → TranscriptionResult.
 
-One Basic Pitch pass on the full mix, then Viterbi melody/bass split,
-chord recognition, onset/duration refinement, and result assembly.
-This is the legacy path and also the fallback when stem separation
-fails. Extracted from ``transcribe.py``.
+Runs Pop2Piano to get a single piano MIDI stream, then feeds the result
+through the same post-processing chain as the single-mix Basic Pitch
+path: melody/bass extraction (Viterbi on note events since there's no
+contour matrix), onset/duration refinement, key/chord/tempo estimation
+from the original audio waveform.
+
+This module is the Pop2Piano counterpart to ``transcribe_pipeline_single``
+(no-Demucs Basic Pitch) and ``transcribe_pipeline_stems`` (Demucs+BP).
 
 Performance
 -----------
-Audio is loaded from disk **once** at sr=22050 and shared across all
-post-processing consumers.  Audio-only analysis steps (tempo, key/meter,
-chords) run in parallel with note-dependent steps via a
-:class:`~concurrent.futures.ThreadPoolExecutor`.
+Audio is loaded from disk **once** at sr=22050 and the waveform is shared
+across all post-processing consumers (onset refinement, duration
+refinement, tempo map, key/meter estimation, chord recognition).
+Audio-only analysis steps (tempo, key/meter, chords) run in parallel
+with note-dependent steps (melody/bass extraction, onset/duration
+refinement) via a :class:`~concurrent.futures.ThreadPoolExecutor`.
 """
 from __future__ import annotations
 
@@ -21,97 +27,58 @@ from pathlib import Path
 from backend.config import settings
 from backend.contracts import InstrumentRole, RealtimeChordEvent, TranscriptionResult
 from backend.services import transcribe_audio as _audio_mod
-from backend.services import transcribe_inference as _bp_mod
 from backend.services import transcribe_midi as _midi_mod
 from backend.services import transcribe_result as _result_mod
 from backend.services.audio_timing import tempo_map_from_audio_path
-from backend.services.bass_extraction import (
-    BassExtractionStats,
-    extract_bass,
-)
-from backend.services.chord_recognition import (
-    ChordRecognitionStats,
-    recognize_chords,
-)
-from backend.services.duration_refine import (
-    DurationRefineStats,
-    refine_durations,
-)
+from backend.services.bass_extraction import BassExtractionStats, extract_bass
+from backend.services.chord_recognition import ChordRecognitionStats, recognize_chords
+from backend.services.duration_refine import DurationRefineStats, refine_durations
 from backend.services.key_estimation import refine_key_with_chords
-from backend.services.melody_extraction import (
-    MelodyExtractionStats,
-    extract_melody,
-)
-from backend.services.onset_refine import (
-    OnsetRefineStats,
-    refine_onsets,
-)
-from backend.services.stem_separation import StemSeparationStats
-from backend.services.transcription_cleanup import (
-    AmplitudeEnvelope,
-    NoteEvent,
-)
+from backend.services.melody_extraction import MelodyExtractionStats, extract_melody
+from backend.services.onset_refine import OnsetRefineStats, refine_onsets
+from backend.services.transcribe_pop2piano import run_pop2piano
+from backend.services.transcription_cleanup import NoteEvent
 
 log = logging.getLogger(__name__)
 
 
-def _run_without_stems(
+def _run_with_pop2piano(
     audio_path: Path,
-    stem_stats: StemSeparationStats | None,
 ) -> tuple[TranscriptionResult, bytes | None]:
-    """Legacy single-mix pipeline — one Basic Pitch pass + Viterbi splits.
+    """Pop2Piano pipeline — one transformer pass + shared post-processing.
 
-    This is what ``_run_basic_pitch_sync`` falls back to when Demucs
-    is disabled *or* stem separation failed. ``stem_stats`` may
-    carry a "skipped: ..." message from a failed Demucs attempt;
-    threading it through lets the QualitySignal explain why the
-    per-stem code path didn't run.
+    The structure mirrors ``_run_without_stems`` in
+    ``transcribe_pipeline_single.py`` closely: Pop2Piano replaces the
+    Basic Pitch inference, then the same melody/bass extraction, onset
+    refinement, duration refinement, tempo/key/chord analysis runs on
+    the result + original audio waveform.
     """
+    events, pm, pop2piano_stats = run_pop2piano(audio_path)
+
     # ── Load audio once for all post-processing ──────────────────────
+    # Every downstream consumer (onset refine, duration refine, tempo
+    # map, key/meter, chords) wants mono 22050 Hz.  Loading once here
+    # eliminates 5+ redundant librosa.load() calls.
     preloaded_audio: tuple | None = None
     try:
         import librosa  # noqa: PLC0415
         y, actual_sr = librosa.load(str(audio_path), sr=22050, mono=True)
         preloaded_audio = (y, actual_sr)
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:  # noqa: BLE001 — best-effort; consumers fall back to loading themselves
         log.debug("pre-load for post-processing failed: %s", exc)
 
-    # Compute amplitude envelope for energy gating — best-effort.
-    envelope: AmplitudeEnvelope | None = None
-    if settings.cleanup_energy_gate_enabled:
-        try:
-            envelope = _audio_mod._compute_amplitude_envelope(
-                audio_path, preloaded_audio=preloaded_audio,
-            )
-        except Exception as exc:  # noqa: BLE001
-            log.debug("envelope computation failed for %s: %s", audio_path, exc)
-
-    pass_result = _bp_mod._basic_pitch_single_pass(
-        audio_path, amplitude_envelope=envelope,
-    )
-    cleaned_events = pass_result.cleaned_events
-    model_output = pass_result.model_output
-    midi_data = pass_result.midi_data
-
-    # Audio duration is used to clamp the Viterbi melody back-fill so
-    # synthesized notes don't extend past the real end of the audio
-    # (see :func:`_backfill_missed_melody_notes`). Best-effort: ``None``
-    # leaves back-fill unclamped, which matches the pre-fix behaviour.
-    audio_duration_sec = _audio_mod._audio_duration_sec(audio_path)
-
-    # Phase 2+3 post-processing — waveform-guided voice split via a
-    # Viterbi path over ``model_output["contour"]``, then bass on the
-    # low-register slice, then chord recognition from the source
-    # waveform. Each phase is independently feature-flagged. Skipped
-    # extractors leave their inputs unchanged so the chain degrades
-    # gracefully to single-track PIANO when everything is off.
-    contour = model_output.get("contour")
+    # Pop2Piano produces a single piano stream — no contour matrix
+    # for Viterbi, so melody/bass extraction works on note pitch ranges only.
+    # We pass contour=None; the extractors handle this gracefully.
+    contour = None
+    remaining: list[NoteEvent] = list(events)
     melody_events: list[NoteEvent] = []
     bass_events: list[NoteEvent] = []
-    remaining: list[NoteEvent] = list(cleaned_events)
 
     melody_stats: MelodyExtractionStats | None = None
     bass_stats: BassExtractionStats | None = None
+
+    audio_duration_sec = _audio_mod._audio_duration_sec(audio_path)
 
     if settings.melody_extraction_enabled:
         melody_events, remaining, melody_stats = extract_melody(
@@ -148,10 +115,7 @@ def _run_without_stems(
 
     events_by_role: dict[InstrumentRole, list[NoteEvent]]
     if melody_skipped and bass_skipped:
-        # Legacy single-track fallback — both Phase 2 and Phase 3 voice
-        # splits were disabled or failed. Merge everything into PIANO
-        # so the arrange stage still gets the full pitch stream.
-        events_by_role = {InstrumentRole.PIANO: cleaned_events}
+        events_by_role = {InstrumentRole.PIANO: events}
     else:
         events_by_role = {}
         if melody_events:
@@ -161,14 +125,18 @@ def _run_without_stems(
         if remaining:
             events_by_role[InstrumentRole.CHORDS] = remaining
         if not events_by_role:
-            # Edge case: both extractors ran but all notes ended up
-            # outside every band. Keep the raw stream under PIANO.
-            events_by_role = {InstrumentRole.PIANO: cleaned_events}
+            events_by_role = {InstrumentRole.PIANO: events}
 
     # ── Parallel post-processing ─────────────────────────────────────
-    # Audio-analysis steps are independent of note events.  Run them
-    # concurrently with onset/duration refinement.
+    # Audio-analysis steps (tempo, key/meter, chords) are independent
+    # of note events.  Run them concurrently with onset/duration
+    # refinement to cut wall-clock time.  All share the pre-loaded
+    # waveform so there is no redundant disk I/O.
+    #
+    # Results are collected from futures after the note-processing
+    # steps complete (melody/bass split → onset → duration).
 
+    # Kick off audio-analysis work in background threads.
     audio_tempo_map = None
     key_label = "C:major"
     time_signature: tuple[int, int] = (4, 4)
@@ -200,25 +168,25 @@ def _run_without_stems(
                 key_label=kl,
                 preloaded_audio=preloaded_audio,
             )
-        except Exception as exc:  # noqa: BLE001 — never let chord recog sink transcribe
+        except Exception as exc:  # noqa: BLE001
             log.warning("chord recognition raised: %s", exc)
             cs = ChordRecognitionStats(skipped=True)
             cs.warnings.append(f"chord recognition failed: {exc}")
             return [], cs
 
-    with ThreadPoolExecutor(max_workers=3, thread_name_prefix="bp-post") as pool:
+    with ThreadPoolExecutor(max_workers=3, thread_name_prefix="p2p-post") as pool:
         fut_tempo = pool.submit(_run_tempo)
         fut_key = pool.submit(_run_key_meter)
 
-        # ── Note-dependent refinement (main thread) ──────────────────
-        # Onset refinement — snap note onsets to spectral onset-strength peaks.
-        onset_refine_stats_single: OnsetRefineStats | None = None
+        # ── Note-dependent refinement (runs on main thread) ──────────
+        # Onset refinement
+        onset_refine_stats: OnsetRefineStats | None = None
         if settings.onset_refine_enabled:
             all_events: list[NoteEvent] = []
             for evts in events_by_role.values():
                 all_events.extend(evts)
             try:
-                refined_all, onset_refine_stats_single = refine_onsets(
+                refined_all, onset_refine_stats = refine_onsets(
                     all_events,
                     audio_path,
                     sr=22050,
@@ -226,28 +194,27 @@ def _run_without_stems(
                     max_shift_sec=settings.onset_refine_max_shift_sec,
                     preloaded_audio=preloaded_audio,
                 )
-            except Exception as exc:  # noqa: BLE001 — never let onset refine sink transcribe
+            except Exception as exc:  # noqa: BLE001
                 log.warning("onset refinement raised: %s", exc)
-                onset_refine_stats_single = OnsetRefineStats(
+                onset_refine_stats = OnsetRefineStats(
                     total_notes=len(all_events), skipped=True,
                 )
-                onset_refine_stats_single.warnings.append(f"onset-refine: exception: {exc}")
+                onset_refine_stats.warnings.append(f"onset-refine: exception: {exc}")
             else:
-                # Scatter the refined events back into their per-role buckets.
                 offset = 0
                 for role in list(events_by_role.keys()):
                     role_len = len(events_by_role[role])
                     events_by_role[role] = refined_all[offset : offset + role_len]
                     offset += role_len
 
-        # Duration refinement — trim note offsets using per-pitch CQT energy.
-        duration_refine_stats_single: DurationRefineStats | None = None
+        # Duration refinement
+        duration_refine_stats: DurationRefineStats | None = None
         if settings.duration_refine_enabled:
             all_events_dur: list[NoteEvent] = []
             for evts in events_by_role.values():
                 all_events_dur.extend(evts)
             try:
-                refined_dur, duration_refine_stats_single = refine_durations(
+                refined_dur, duration_refine_stats = refine_durations(
                     all_events_dur,
                     audio_path,
                     sr=22050,
@@ -259,7 +226,7 @@ def _run_without_stems(
                 )
             except Exception as exc:  # noqa: BLE001
                 log.warning("duration refinement raised: %s", exc)
-                duration_refine_stats_single = DurationRefineStats(total_notes=len(all_events_dur))
+                duration_refine_stats = DurationRefineStats(total_notes=len(all_events_dur))
             else:
                 offset = 0
                 for role in list(events_by_role.keys()):
@@ -271,11 +238,12 @@ def _run_without_stems(
         audio_tempo_map = fut_tempo.result()
         key_label, time_signature, key_stats, meter_stats = fut_key.result()
 
-        # Chord recognition needs key_label, so submit after fut_key.
+        # Chord recognition needs key_label from the key estimator, so
+        # it must be submitted after fut_key completes.
         fut_chords = pool.submit(_run_chords, key_label)
         chord_labels, chord_stats = fut_chords.result()
 
-    # Cross-validate the KS key estimate against detected chords.
+    # Cross-validate key estimate against detected chords
     if (
         settings.key_chord_validation_enabled
         and key_stats is not None
@@ -290,20 +258,19 @@ def _run_without_stems(
             flip_margin=settings.key_chord_flip_margin,
         )
 
-    # Rebuild the blob MIDI so its ``set_tempo`` meta event matches the
-    # waveform-derived tempo. Fall back to the BP-default ``midi_data``
-    # on any rebuild failure so blob persistence stays best-effort.
-    initial_bpm = (
-        float(audio_tempo_map[0].bpm)
-        if audio_tempo_map
-        else 120.0
-    )
-    blob_midi = _midi_mod._rebuild_blob_midi(cleaned_events, initial_bpm=initial_bpm)
+    # Build blob MIDI with the audio-derived tempo
+    initial_bpm = float(audio_tempo_map[0].bpm) if audio_tempo_map else 120.0
+    blob_midi = _midi_mod._rebuild_blob_midi(events, initial_bpm=initial_bpm)
     if blob_midi is None:
-        blob_midi = midi_data
+        blob_midi = pm
+
+    # Build a minimal model_output dict — _pretty_midi_to_transcription_result
+    # uses model_output["note"] only as a confidence fallback when events are
+    # empty, so an empty dict is fine for the normal path.
+    model_output: dict = {}
 
     result = _result_mod._pretty_midi_to_transcription_result(
-        midi_data,
+        pm,
         events_by_role,
         model_output,
         tempo_map_override=audio_tempo_map,
@@ -311,15 +278,34 @@ def _run_without_stems(
         time_signature=time_signature,
         key_stats=key_stats,
         meter_stats=meter_stats,
-        preprocess_stats=pass_result.preprocess_stats,
-        cleanup_stats=pass_result.cleanup_stats,
         melody_stats=melody_stats,
         bass_stats=bass_stats,
         chord_stats=chord_stats,
         chord_labels=chord_labels,
-        stem_stats=stem_stats,
-        onset_refine_stats=onset_refine_stats_single,
-        duration_refine_stats=duration_refine_stats_single,
+        onset_refine_stats=onset_refine_stats,
+        duration_refine_stats=duration_refine_stats,
     )
+
+    # Inject Pop2Piano-specific warnings into quality signal
+    pop2piano_warnings = pop2piano_stats.as_warnings()
+    existing_warnings = list(result.quality.warnings)
+    # Replace the "Basic Pitch baseline" banner with a Pop2Piano one
+    existing_warnings = [
+        w for w in existing_warnings
+        if "Basic Pitch baseline" not in w
+    ]
+    pop2piano_banner = (
+        f"Pop2Piano transcription (model={pop2piano_stats.model_id}, "
+        f"notes={pop2piano_stats.note_count}, "
+        f"audio={pop2piano_stats.audio_duration_sec:.1f}s)"
+    )
+    result = result.model_copy(
+        update={
+            "quality": result.quality.model_copy(
+                update={"warnings": [pop2piano_banner] + pop2piano_warnings + existing_warnings}
+            )
+        }
+    )
+
     midi_bytes = _midi_mod._serialize_pretty_midi(blob_midi)
     return result, midi_bytes
