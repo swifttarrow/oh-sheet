@@ -138,6 +138,9 @@ class InputMetadata(BaseModel):
     # backend/services/cover_search.py for the matching logic.
     # Defaults to False so existing callers and fixtures keep working.
     prefer_clean_source: bool = False
+    # Original YouTube URL the user submitted (preserved after
+    # title is replaced with the resolved song name by ingest).
+    source_url: str | None = None
 
 
 class InputBundle(BaseModel):
@@ -351,6 +354,13 @@ class EngravedOutput(BaseModel):
     audio_preview_uri: str | None = None
     transcription_midi_uri: str | None = None
 
+    # TuneChat integration — populated when tunechat_enabled=True and
+    # TuneChat responded successfully. job_id powers the "Open in
+    # TuneChat" deep link. preview_image_url is a first-page PNG of
+    # TuneChat's rendered score for display in Oh Sheet's result screen.
+    tunechat_job_id: str | None = None
+    tunechat_preview_image_url: str | None = None
+
 
 # ---------------------------------------------------------------------------
 # Pipeline routing
@@ -360,9 +370,9 @@ PipelineVariant = Literal["full", "audio_upload", "midi_upload", "sheet_only"]
 
 # How seconds-domain transcription becomes a beat-domain PianoScore.
 # ``arrange`` — hand assignment, dedup, quantization (default).
-# ``condense_transform`` — merge all tracks into one piano stream (condense) then
+# ``condense_only`` — merge all tracks into one piano stream (condense) then
 # transform (passthrough for now).
-ScorePipelineMode = Literal["arrange", "condense_transform"]
+ScorePipelineMode = Literal["arrange", "condense_only"]
 
 
 class PipelineConfig(BaseModel):
@@ -383,17 +393,15 @@ class PipelineConfig(BaseModel):
         plan = list(routing[self.variant])
         if self.skip_humanizer and "humanize" in plan:
             plan.remove("humanize")
-        if self.score_pipeline == "condense_transform":
+        if self.score_pipeline == "condense_only":
             try:
                 idx = plan.index("arrange")
             except ValueError:
                 pass
             else:
-                plan[idx : idx + 1] = ["condense", "transform"]
+                # Replace arrange with just condense (transform is a
+                # no-op stub, so skip it to save pipeline time).
+                plan[idx : idx + 1] = ["condense"]
         if self.enable_refine and "engrave" in plan:
-            # Refine always runs immediately before engrave, regardless of
-            # which upstream stages are present. Insert after all prior
-            # substitutions so we don't re-anchor on a stage that was
-            # already replaced.
             plan.insert(plan.index("engrave"), "refine")
         return plan

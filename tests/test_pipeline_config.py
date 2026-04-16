@@ -49,26 +49,25 @@ def test_midi_upload_plan_includes_refine() -> None:
     ]
 
 
-def test_condense_transform_plan_places_refine_before_engrave() -> None:
+def test_condense_only_replaces_arrange() -> None:
+    """condense_only pipeline uses condense instead of arrange."""
     cfg = PipelineConfig(
         variant="midi_upload",
-        score_pipeline="condense_transform",
-        enable_refine=True,
+        score_pipeline="condense_only",
+        enable_refine=False,
     )
     assert cfg.get_execution_plan() == [
         "ingest",
         "condense",
-        "transform",
         "humanize",
-        "refine",
         "engrave",
     ]
 
 
-def test_condense_transform_with_skip_humanizer_includes_refine() -> None:
+def test_condense_only_with_skip_humanizer_and_refine() -> None:
     cfg = PipelineConfig(
         variant="sheet_only",
-        score_pipeline="condense_transform",
+        score_pipeline="condense_only",
         skip_humanizer=True,
         enable_refine=True,
     )
@@ -76,7 +75,6 @@ def test_condense_transform_with_skip_humanizer_includes_refine() -> None:
         "ingest",
         "transcribe",
         "condense",
-        "transform",
         "refine",
         "engrave",
     ]

@@ -29,6 +29,12 @@ services:
     environment:
       OHSHEET_BLOB_ROOT: /app/blob
       OHSHEET_REDIS_URL: redis://redis:6379/0
+      # Pin the score pipeline explicitly so a default flip in
+      # backend/config.py can't silently change prod behavior. Only the
+      # orchestrator reads this (PipelineConfig is built at job-creation
+      # time in api/routes/jobs.py); workers just execute whatever stage
+      # they're dispatched. Remove after validating condense_only in prod.
+      OHSHEET_SCORE_PIPELINE: arrange
       COMMIT_SHA: ${COMMIT_SHA:-unknown}
     volumes:
       - blob-data:/app/blob

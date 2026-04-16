@@ -63,6 +63,7 @@ class JobSummary(BaseModel):
     variant: str
     title: str | None = None
     artist: str | None = None
+    source_url: str | None = None
     error: str | None = None
     result: EngravedOutput | None = None
 
@@ -74,6 +75,7 @@ def _record_to_summary(record: JobRecord) -> JobSummary:
         variant=record.config.variant,
         title=record.bundle.metadata.title,
         artist=record.bundle.metadata.artist,
+        source_url=record.bundle.metadata.source_url,
         error=record.error,
         result=record.result,
     )

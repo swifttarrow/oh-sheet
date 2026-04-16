@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import re
 from pathlib import Path
 from urllib.parse import urlparse
 
@@ -170,7 +171,29 @@ def _maybe_swap_for_cover_sync(url: str) -> str:
         log.info("ingest: cover_search could not probe metadata for %r", url)
         return url
 
-    title, artist = probed
+    raw_title, yt_uploader = probed
+    # YouTube uploaders (e.g. "Too Much Music") are NOT the real artist.
+    # Many video titles embed the artist: "Artist - Song Title". Split on
+    # the first " - " / " – " / " — " / " | " separator to extract the
+    # artist for cover-search matching. If no separator, pass the full
+    # title with no artist — cover_search falls back to a keyword-only
+    # yt-dlp query, which usually still lands on the right video.
+    #
+    # Heuristic limits (acknowledged):
+    #   * "Song Name - Live at Wembley - Artist" splits on the first
+    #     dash, so "Song Name" becomes the artist. Low impact: the
+    #     resulting query still matches on title tokens.
+    #   * "Artist feat. X - Song" works correctly (dash is the split).
+    #   * No attempt to disambiguate "Artist - Song" vs "Song - Artist"
+    #     (YouTube uploaders are inconsistent). Always assumes
+    #     "Artist - Song" ordering.
+    sep_match = re.split(r"\s+[-–—|]\s+", raw_title, maxsplit=1)
+    if len(sep_match) == 2:
+        artist = sep_match[0].strip()
+        title = sep_match[1].strip()
+    else:
+        title = raw_title
+        artist = None
     try:
         match = find_clean_source(
             title,
