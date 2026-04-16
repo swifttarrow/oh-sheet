@@ -13,10 +13,11 @@ API_BASE_URL ?=
 HOST         ?= 0.0.0.0
 PORT         ?= 8000
 FLUTTER      ?= flutter
+BASE_IMAGE   ?= ghcr.io/oh-sheet-team/ohsheet-dev-base:latest
 
 DART_DEFINE := $(if $(API_BASE_URL),--dart-define=API_BASE_URL=$(API_BASE_URL),)
 
-.PHONY: help install install-backend install-basic-pitch install-pop2piano install-demucs install-eval install-frontend backend frontend test test-backend test-e2e eval eval-refine lint typecheck clean require-flutter require-port-free
+.PHONY: help install install-backend install-basic-pitch install-pop2piano install-demucs install-eval install-frontend backend build rebuild frontend test test-backend test-e2e eval lint typecheck clean require-flutter require-port-free require-base-image
 
 help:
 	@echo "Oh Sheet — make targets"
@@ -30,7 +31,11 @@ help:
 	@echo "  make install-eval         pip install -e .[eval]  (mir_eval for the offline eval harness)"
 	@echo "  make install-frontend     $(FLUTTER) pub get inside frontend/"
 	@echo ""
+	@echo "  make build              build the shared dev base image ($(BASE_IMAGE))"
+	@echo "                          re-run when pyproject.toml, shared/, or Dockerfile.dev changes"
 	@echo "  make backend            docker compose up (Redis + Celery workers + API on :8000)"
+	@echo "                          requires 'make build' first"
+	@echo "  make rebuild            shortcut for: make build && make backend"
 	@echo "  make frontend           $(FLUTTER) run -d $(DEVICE) (override DEVICE=ios|android|macos|...)"
 	@echo "                          set API_BASE_URL=http://host:port to point at a non-default backend"
 	@echo "                          set FLUTTER=/path/to/flutter if the SDK is not on your PATH"
@@ -107,8 +112,24 @@ require-port-free:
 		exit 1; \
 	fi
 
-backend:
-	docker compose up --build
+backend: require-base-image require-port-free
+	docker compose up
+
+build:
+	DOCKER_BUILDKIT=1 docker build \
+		--platform linux/amd64 \
+		-f Dockerfile.dev \
+		-t $(BASE_IMAGE) .
+
+rebuild: build backend
+
+require-base-image:
+	@if ! docker image inspect $(BASE_IMAGE) >/dev/null 2>&1; then \
+		echo "Base image $(BASE_IMAGE) not found locally."; \
+		echo "Run 'make build' first (one-time; re-run when pyproject.toml,"; \
+		echo "shared/, or Dockerfile.dev changes)."; \
+		exit 1; \
+	fi
 
 frontend: require-flutter
 	cd $(FRONTEND) && $(FLUTTER) run -d $(DEVICE) $(DART_DEFINE)

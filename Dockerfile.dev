@@ -1,23 +1,36 @@
-# Lightweight dev image — backend only, no Flutter web build.
+# syntax=docker/dockerfile:1.6
+# Dev base image for Oh Sheet — shared by every compose service.
+#
+# NOT standalone: backend/ is intentionally NOT copied in. docker-compose
+# bind-mounts ./backend and ./shared at runtime so source edits are live
+# without a rebuild. Rebuild this image only when pyproject.toml,
+# shared/, or this Dockerfile changes (see `make build`).
+#
+# Platform note: essentia (required by Pop2Piano) only ships x86_64 Linux
+# wheels, so compose pins platform: linux/amd64. On Apple Silicon this
+# runs under Rosetta (~10-20% slower).
 FROM python:3.12-slim
 
 WORKDIR /app
 
-RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg gcc g++ lilypond \
+# System deps: ffmpeg (yt-dlp), lilypond (engrave), gcc/g++ (madmom Cython build).
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt,sharing=locked \
+    apt-get update && apt-get install -y --no-install-recommends \
+        ffmpeg gcc g++ lilypond \
     && rm -rf /var/lib/apt/lists/*
 
+# Shared package first (changes less often than pyproject.toml).
 COPY shared/ shared/
-# Editable so bind-mounting ./shared in docker-compose tracks host changes.
-RUN pip install --no-cache-dir -e ./shared
+RUN --mount=type=cache,target=/root/.cache/pip \
+    pip install -e ./shared
 
+# Heavy ML install. madmom needs Cython + numpy at build time; basic-pitch
+# 0.4 pins tensorflow-macos on Darwin so we install it with --no-deps and
+# rely on the [basic-pitch] extra for actual runtime deps.
 COPY pyproject.toml .
-COPY backend/ backend/
-# Pop2Piano (preferred transcription path) + Basic Pitch (fallback).
-# madmom requires Cython + numpy at build time (C extensions).
-# Mirror the Makefile install-basic-pitch sequence.
-# NOTE: essentia (required by Pop2Piano) only ships x86_64 Linux wheels,
-# so this image must be built with platform=linux/amd64 (see docker-compose.yml).
-RUN pip install --no-cache-dir setuptools Cython numpy \
-    && pip install --no-cache-dir --no-build-isolation "madmom>=0.16" \
-    && pip install --no-cache-dir ".[pop2piano,basic-pitch]" \
-    && pip install --no-cache-dir --no-deps "basic-pitch>=0.4"
+RUN --mount=type=cache,target=/root/.cache/pip \
+    pip install setuptools Cython numpy \
+ && pip install --no-build-isolation "madmom>=0.16" \
+ && pip install ".[pop2piano,basic-pitch]" \
+ && pip install --no-deps "basic-pitch>=0.4"

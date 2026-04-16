@@ -13,9 +13,7 @@ services:
     # essentia (Pop2Piano dep) only ships x86_64 Linux wheels.
     # On Apple Silicon this runs under Rosetta — transparent but ~10-20% slower.
     platform: linux/amd64
-    build:
-      context: .
-      dockerfile: Dockerfile.dev
+    image: ${BASE_IMAGE:-ghcr.io/oh-sheet-team/ohsheet-dev-base:latest}
     command: uvicorn backend.main:app --host 0.0.0.0 --port 8000 --reload
     ports:
       - "8000:8000"
@@ -33,9 +31,7 @@ services:
 
   worker-ingest:
     platform: linux/amd64
-    build:
-      context: .
-      dockerfile: Dockerfile.dev
+    image: ${BASE_IMAGE:-ghcr.io/oh-sheet-team/ohsheet-dev-base:latest}
     command: celery -A backend.workers.celery_app worker -Q ingest -c 1 --loglevel=info
     environment:
       PYTHONDONTWRITEBYTECODE: "1"
@@ -51,9 +47,7 @@ services:
 
   worker-transcribe:
     platform: linux/amd64
-    build:
-      context: .
-      dockerfile: Dockerfile.dev
+    image: ${BASE_IMAGE:-ghcr.io/oh-sheet-team/ohsheet-dev-base:latest}
     command: celery -A backend.workers.celery_app worker -Q transcribe -c 1 --loglevel=info
     environment:
       PYTHONDONTWRITEBYTECODE: "1"
@@ -69,9 +63,7 @@ services:
 
   worker-arrange:
     platform: linux/amd64
-    build:
-      context: .
-      dockerfile: Dockerfile.dev
+    image: ${BASE_IMAGE:-ghcr.io/oh-sheet-team/ohsheet-dev-base:latest}
     command: celery -A backend.workers.celery_app worker -Q arrange -c 1 --loglevel=info
     environment:
       PYTHONDONTWRITEBYTECODE: "1"
@@ -87,9 +79,7 @@ services:
 
   worker-humanize:
     platform: linux/amd64
-    build:
-      context: .
-      dockerfile: Dockerfile.dev
+    image: ${BASE_IMAGE:-ghcr.io/oh-sheet-team/ohsheet-dev-base:latest}
     command: celery -A backend.workers.celery_app worker -Q humanize -c 1 --loglevel=info
     environment:
       PYTHONDONTWRITEBYTECODE: "1"
@@ -124,9 +114,7 @@ services:
 
   worker-engrave:
     platform: linux/amd64
-    build:
-      context: .
-      dockerfile: Dockerfile.dev
+    image: ${BASE_IMAGE:-ghcr.io/oh-sheet-team/ohsheet-dev-base:latest}
     command: celery -A backend.workers.celery_app worker -Q engrave -c 1 --loglevel=info
     environment:
       PYTHONDONTWRITEBYTECODE: "1"
