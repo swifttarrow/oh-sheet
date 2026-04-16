@@ -57,6 +57,10 @@ make install                  # backend + frontend deps
 # Optional: install ML deps for real transcription
 make install-basic-pitch      # Spotify Basic Pitch (CPU, ~10s per song)
 
+# Build the shared dev base image (one-time; re-run when pyproject.toml,
+# shared/, or Dockerfile.dev changes).
+make build
+
 # Run
 make backend                  # API on http://localhost:8000
 make frontend                 # Flutter Web on Chrome
