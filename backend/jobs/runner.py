@@ -17,9 +17,11 @@ from urllib.parse import urlparse
 
 from celery import Celery
 
+from backend.config import settings
 from backend.contracts import (
     SCHEMA_VERSION,
     EngravedOutput,
+    EngravedScoreData,
     HarmonicAnalysis,
     InputBundle,
     InstrumentRole,
@@ -264,6 +266,88 @@ class PipelineRunner:
                     payload_uri = self._serialize_stage_input(job_id, step, current_payload)
                     output_uri = await self._dispatch_task(task_name, job_id, payload_uri, config.stage_timeout_sec)
                     current_payload = self.blob_store.get_json(output_uri)
+
+                    # Update the display title/artist from the resolved
+                    # ingest metadata. The user submitted a YouTube URL as
+                    # the "title" — ingest probed the video and resolved
+                    # the real song name + artist. We update title/composer
+                    # so the result screen shows the song name, not the URL.
+                    ingest_meta = current_payload.get("metadata", {})
+                    resolved_title = ingest_meta.get("title")
+                    resolved_artist = ingest_meta.get("artist")
+                    # Keep the original URL for linking back to the source
+                    original_url = title if title.startswith("http") else None
+                    if resolved_title and resolved_title != title:
+                        title = resolved_title
+                    if resolved_artist and resolved_artist != composer:
+                        composer = resolved_artist
+                    # Update the bundle so the API returns the resolved
+                    # title instead of the raw YouTube URL.
+                    bundle = bundle.model_copy(update={
+                        "metadata": bundle.metadata.model_copy(update={
+                            "title": title,
+                            "artist": composer if composer != "Unknown" else bundle.metadata.artist,
+                            "source_url": original_url,
+                        }),
+                    })
+
+                    # For title_lookup jobs (YouTube URL / song title search),
+                    # delegate entirely to TuneChat when enabled. TuneChat
+                    # uses tcalgo + MuseScore which produces much cleaner
+                    # scores than Basic Pitch + music21. Skip the remaining
+                    # Oh Sheet pipeline stages and return TuneChat's result.
+                    if settings.tunechat_enabled:
+                        audio_data = current_payload.get("audio")
+                        is_title_job = bundle.metadata.source == "title_lookup"
+
+                        if is_title_job and audio_data and audio_data.get("uri"):
+                            # TuneChat-only path: send audio, await result,
+                            # return minimal EngravedOutput with TuneChat fields.
+                            try:
+                                from backend.services.tunechat_client import transcribe_via_tunechat
+                                audio_bytes = self.blob_store.get_bytes(audio_data["uri"])
+                                emit("ingest", "stage_completed", progress=0.25)
+                                emit("transcribe", "stage_started", progress=0.25)
+                                log.info("tunechat-only: sending audio for job_id=%s", job_id)
+                                tc_result = await transcribe_via_tunechat(
+                                    audio_bytes, "audio.wav",
+                                    title=title, artist=composer,
+                                )
+                                if tc_result is not None:
+                                    emit("transcribe", "stage_completed", progress=0.75)
+                                    emit("engrave", "stage_started", progress=0.75)
+                                    emit("engrave", "stage_completed", progress=1.0)
+                                    log.info(
+                                        "tunechat-only: success job_id=%s tc_job_id=%s",
+                                        job_id, tc_result.job_id,
+                                    )
+                                    return EngravedOutput(
+                                        metadata=EngravedScoreData(
+                                            includes_dynamics=False,
+                                            includes_pedal_marks=False,
+                                            includes_fingering=False,
+                                            includes_chord_symbols=False,
+                                            title=title,
+                                            composer=composer,
+                                        ),
+                                        pdf_uri="",
+                                        musicxml_uri="",
+                                        humanized_midi_uri="",
+                                        tunechat_job_id=tc_result.job_id,
+                                        tunechat_preview_image_url=tc_result.preview_image_url,
+                                    )
+                                else:
+                                    log.warning("tunechat-only: returned None, falling back to Oh Sheet pipeline")
+                            # Silent-failure contract: any error (network,
+                            # SDK, blob read) drops us to the Oh Sheet
+                            # pipeline below. Never crash the job just
+                            # because the optional TuneChat path failed.
+                            except Exception as exc:  # noqa: BLE001
+                                log.warning("tunechat-only: failed (%s), falling back to Oh Sheet pipeline", exc)
+
+                        # Audio/MIDI uploads use Oh Sheet's own pipeline
+                        # (Basic Pitch + music21). TuneChat is not fired for
+                        # these routes — only for title_lookup jobs above.
 
                 elif step == "transcribe":
                     payload_uri = self._serialize_stage_input(job_id, step, current_payload)

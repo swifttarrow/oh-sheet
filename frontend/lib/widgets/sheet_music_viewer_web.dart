@@ -143,7 +143,7 @@ class _WebSheetMusicViewerState extends State<WebSheetMusicViewer> {
       if (container) {
         while (container.firstChild) container.removeChild(container.firstChild);
         var fallback = document.createElement("iframe");
-        fallback.src = "$musicxmlUrl".replace("/musicxml", "/pdf") + "?inline=true";
+        fallback.src = "$musicxmlUrl".replace("/musicxml", "/pdf") + "#toolbar=0&navpanes=0&view=FitH";
         fallback.style.cssText = "width:100%;height:100%;border:none";
         container.appendChild(fallback);
       }
@@ -269,7 +269,7 @@ class _WebSheetMusicViewerState extends State<WebSheetMusicViewer> {
       function fallbackToPdf() {
         while (container.firstChild) container.removeChild(container.firstChild);
         var iframe = document.createElement("iframe");
-        iframe.src = "$musicxmlUrl".replace("/musicxml", "/pdf") + "?inline=true";
+        iframe.src = "$musicxmlUrl".replace("/musicxml", "/pdf") + "#toolbar=0&navpanes=0&view=FitH";
         iframe.style.cssText = "width:100%;height:100%;border:none";
         container.style.overflow = "hidden";
         container.appendChild(iframe);

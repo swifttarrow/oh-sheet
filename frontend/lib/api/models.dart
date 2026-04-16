@@ -69,6 +69,7 @@ class JobSummary {
   final String variant;
   final String? title;
   final String? artist;
+  final String? sourceUrl;
   final String? error;
   final Map<String, dynamic>? result;
 
@@ -78,6 +79,7 @@ class JobSummary {
     required this.variant,
     this.title,
     this.artist,
+    this.sourceUrl,
     this.error,
     this.result,
   });
@@ -91,6 +93,7 @@ class JobSummary {
         variant: json['variant'] as String,
         title: json['title'] as String?,
         artist: json['artist'] as String?,
+        sourceUrl: json['source_url'] as String?,
         error: json['error'] as String?,
         result: json['result'] as Map<String, dynamic>?,
       );

@@ -142,9 +142,10 @@ class TestCoverSearchSwapsUrl:
         # find_clean_source gets the probed title + artist
         mock_find.assert_called_once()
         call = mock_find.call_args
-        # title is first positional arg, artist is second
+        # Probed title has no " - " separator, so the full title is
+        # passed as-is and the YouTube uploader is ignored (unreliable).
         assert call.args[0] == "bohemian rhapsody"
-        assert call.args[1] == "Queen"
+        assert call.args[1] is None
 
 
 # ---------------------------------------------------------------------------

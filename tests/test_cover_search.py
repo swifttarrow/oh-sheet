@@ -41,6 +41,19 @@ class TestNormalizeTitle:
         assert normalize_title("Hotel California [Official Video]") == "hotel california"
         assert normalize_title("Hotel California (Official Music Video)") == "hotel california"
         assert normalize_title("Hotel California - Official Video") == "hotel california"
+        assert normalize_title("Hotel California - Official Audio") == "hotel california"
+        assert normalize_title("Hotel California - Official Lyric Video") == "hotel california"
+
+    def test_dash_official_pattern_does_not_overmatch(self):
+        """Narrow dash-prefix pattern only strips known video/audio suffixes.
+        Trailing text like 'release announcement' must survive so it can be
+        scored against the user's query.
+        """
+        from backend.services.cover_search import normalize_title
+        # "release announcement" is not a known variant — keep it.
+        assert normalize_title("Big Hit - Official release announcement") == (
+            "big hit - official release announcement"
+        )
 
     def test_strips_lyrics_tag(self):
         from backend.services.cover_search import normalize_title
@@ -190,19 +203,16 @@ class TestScoreCandidate:
         # title match (+20) + karaoke penalty (-20) = 0
         assert score_candidate(entry, wanted_title="Bohemian Rhapsody", wanted_artist=None) == 0
 
-    def test_tutorial_subtracts_20(self):
+    def test_tutorial_gives_positive_keyword(self):
         from backend.services.cover_search import score_candidate
         entry = _entry(title="How to Play Hotel California on Piano Tutorial")
-        # Has "piano" keyword (+30?) — actually no, "how to play" is a penalty.
-        # Let's check: "tutorial" in title → -20
-        # "Hotel California" substring → +20
-        # No "piano cover" (it's "piano tutorial" which is a tutorial, not a cover)
-        # Expected: 20 - 20 = 0. This test forces us to think about the token
-        # rules carefully: "piano cover" matches, but "piano tutorial" doesn't.
+        # "piano tutorial" is now a positive keyword (+30); tutorial penalty
+        # was removed (only karaoke remains as bad keyword).
+        # "Hotel California" substring → +20, "piano tutorial" → +30 = 50.
         result = score_candidate(
             entry, wanted_title="Hotel California", wanted_artist=None
         )
-        assert result == 0
+        assert result == 50
 
     def test_perfect_match_max_score(self):
         from backend.services.cover_search import score_candidate
@@ -511,14 +521,30 @@ class TestCoverSearchSettings:
         s = Settings()
         assert s.cover_search_enabled is True
 
-    def test_cover_search_min_score_defaults_to_60(self):
-        # Global default must match find_piano_cover's hardcoded default
-        # so tests and runtime agree. When this drifts from cover_search.py,
-        # one of them has been updated without the other and reviewers
-        # should catch it.
+    def test_cover_search_min_score_is_sensible(self):
+        # The min_score must be between 20 and 80 — low enough to find
+        # covers from non-allowlisted channels, high enough to reject
+        # karaoke and irrelevant results.
+        from backend.config import settings
+        assert 20 <= settings.cover_search_min_score <= 80
+
+    def test_cover_search_min_score_matches_find_clean_source_default(self):
+        """Drift check: the Settings default and ``find_clean_source``'s
+        signature default must agree, or operators who rely on the
+        function-level default will silently diverge from production
+        behavior. See also the ``sensible`` bound check above.
+        """
+        import inspect
+
         from backend.config import Settings
-        s = Settings()
-        assert s.cover_search_min_score == 60
+        from backend.services.cover_search import find_clean_source
+
+        settings_default = Settings.model_fields["cover_search_min_score"].default
+        sig_default = inspect.signature(find_clean_source).parameters["min_score"].default
+        assert settings_default == sig_default, (
+            f"cover_search_min_score drift: Settings={settings_default} vs "
+            f"find_clean_source={sig_default}"
+        )
 
     def test_cover_search_settings_overridable_via_env(self, monkeypatch):
         # pydantic-settings reads OHSHEET_* at Settings() construction,
@@ -667,26 +693,23 @@ class TestPianoTierPreference:
         entry = _entry(title="My Song", channel="Jacob's Piano")
         assert score_candidate(entry, wanted_title="unrelated", wanted_artist=None) == 50
 
-    def test_advanced_tier_channel_gets_zero_from_channel(self):
+    def test_advanced_tier_channel_gets_50_from_channel(self):
         # Advanced channels (Rousseau, Pietschmann, Kyle Landry, etc.) are
-        # defined but NOT in the active allowlist. They get no channel
-        # bonus — title/artist/keyword matches only.
+        # now in the active allowlist and receive the +50 channel bonus.
+        # Reactivated because a complex cover transcribed well is
+        # dramatically better than no cover at all.
         from backend.services.cover_search import score_candidate
         for channel in ("Rousseau", "Patrik Pietschmann", "Kyle Landry"):
             entry = _entry(title="My Song", channel=channel)
             score = score_candidate(
                 entry, wanted_title="unrelated", wanted_artist=None,
             )
-            assert score == 0, f"{channel!r} should score 0 from channel alone"
+            assert score == 50, f"{channel!r} should score 50 from channel alone"
 
-    def test_advanced_channel_scores_below_threshold_for_typical_match(self):
-        # A Rousseau Bohemian Rhapsody Piano Cover match under the
-        # CURRENT active allowlist scores: 0 (advanced not active) +
-        # 30 (piano cover keyword) + 20 (title) + 10 (artist) = 60.
-        # Exactly at the default threshold. One bad keyword (live
-        # recording, karaoke) would drop it. Title-only (no "piano
-        # cover" keyword in the title) would drop it below. This
-        # documents the intended "advanced rarely wins" behavior.
+    def test_advanced_channel_scores_above_threshold_for_typical_match(self):
+        # A Rousseau Bohemian Rhapsody Piano Cover match with the
+        # advanced tier active scores: 50 (allowlist) + 30 (piano cover
+        # keyword) + 20 (title) + 10 (artist) = 110.
         from backend.services.cover_search import score_candidate
         entry = _entry(
             title="Bohemian Rhapsody - Queen (Piano Cover)",
@@ -695,7 +718,7 @@ class TestPianoTierPreference:
         score = score_candidate(
             entry, wanted_title="Bohemian Rhapsody", wanted_artist="Queen",
         )
-        assert score == 60
+        assert score == 110
 
     def test_easy_tier_perfect_match_scores_120(self):
         # Easy-tier gets the full stack: 50 + 10 easy bonus + 30 piano
@@ -736,27 +759,25 @@ class TestPianoTierPreference:
         assert result.channel == "Pianote"
         assert result.score == 110
 
-    def test_advanced_tier_exported_for_future_reactivation(self):
-        # PIANO_ADVANCED_CHANNELS should remain defined in the module so
-        # a future PR can reactivate the tier by adding it to the active
-        # allowlist. This test locks in the contract and catches a
-        # silent deletion of the tier data.
+    def test_advanced_tier_is_in_active_allowlist(self):
+        # All three tiers (easy + moderate + advanced) are now in the
+        # active allowlist. This test locks in the contract.
         from backend.services.cover_search import (
             COVER_CHANNEL_ALLOWLIST,
             PIANO_ADVANCED_CHANNELS,
             PIANO_EASY_CHANNELS,
             PIANO_MODERATE_CHANNELS,
         )
-        # Advanced list is defined and nonempty.
         assert len(PIANO_ADVANCED_CHANNELS) >= 3
-        # But it is NOT in the active allowlist.
+        # ALL advanced channels are in the active allowlist.
         for ch in PIANO_ADVANCED_CHANNELS:
-            assert ch not in COVER_CHANNEL_ALLOWLIST, (
-                f"{ch!r} should not be in the active allowlist"
+            assert ch in COVER_CHANNEL_ALLOWLIST, (
+                f"{ch!r} should be in the active allowlist"
             )
-        # The active allowlist equals easy + moderate, nothing else.
+        # The active allowlist equals easy + moderate + advanced.
         assert set(COVER_CHANNEL_ALLOWLIST) == (
             set(PIANO_EASY_CHANNELS) | set(PIANO_MODERATE_CHANNELS)
+            | set(PIANO_ADVANCED_CHANNELS)
         )
 
 
@@ -824,12 +845,11 @@ class TestTrustedTutorialChannels:
         score = score_candidate(
             entry, wanted_title="River Flows In You", wanted_artist="Yiruma",
         )
-        # allowlist +50 (via uploader_id match) + title match +20 +
-        # artist match +10 - tutorial penalty (SKIPPED for trusted
-        # tutorial) = 80
-        assert score == 80, (
-            f"Kesh + title + artist should score 80 with tutorial penalty "
-            f"exempted; got {score}"
+        # allowlist +50 (via uploader_id match) + "piano tutorial" keyword
+        # +30 + title match +20 + artist match +10 = 110
+        assert score == 110, (
+            f"Kesh + piano tutorial keyword + title + artist should score "
+            f"110; got {score}"
         )
 
     def test_kesh_tutorial_penalty_exempt(self):
@@ -842,29 +862,28 @@ class TestTrustedTutorialChannels:
             channel="Kesh",
             uploader_id="@keshpianomusic",
         )
-        # allowlist +50 only; no title/artist match; tutorial penalty
-        # skipped because trusted. Should score 50.
+        # allowlist +50 + "piano tutorial" keyword +30; no title/artist
+        # match. Should score 80.
         score = score_candidate(
             entry, wanted_title="unrelated song", wanted_artist=None,
         )
-        assert score == 50
+        assert score == 80
 
-    def test_non_trusted_tutorial_still_penalized(self):
-        # Regression: the exemption must be SPECIFIC to the trusted list.
-        # A random channel with "tutorial" in the title still gets -20.
+    def test_non_trusted_tutorial_gets_keyword_bonus(self):
+        # "piano tutorial" is now a positive keyword (+30); tutorial
+        # penalty was removed. Non-trusted channels still benefit from
+        # the keyword match.
         from backend.services.cover_search import score_candidate
         entry = _entry(
             title="River Flows In You - Piano Tutorial",
             channel="Random Piano Channel",
             uploader_id="@randomchannel",
         )
-        # No allowlist, no piano-cover keyword ("piano tutorial"
-        # doesn't match), title match +20, no artist, tutorial -20.
-        # Net: 0.
+        # No allowlist, "piano tutorial" keyword +30, title match +20 = 50.
         score = score_candidate(
             entry, wanted_title="River Flows In You", wanted_artist=None,
         )
-        assert score == 0
+        assert score == 50
 
     def test_kesh_allowlist_does_not_false_match_kesha_pop_channel(self):
         # Defensive regression: the pop artist "Kesha" must not trip
@@ -1042,27 +1061,26 @@ class TestFindCleanSource:
         assert result.channel == "Jacob's Piano"
         assert result.score == 110
 
-    def test_returns_chiptune_match_when_it_outscores_piano(self):
+    def test_chiptune_variant_is_paused_only_piano_runs(self):
+        # Chiptune variant is paused — the downstream transcription
+        # pipeline only handles piano audio. With chiptune
+        # active, it could outscore piano and steal songs from the
+        # TuneChat path. Verify only the piano query fires.
         from backend.services.cover_search import find_clean_source
 
-        # piano query returns a non-allowlist result with weak match → 20
-        # chiptune query returns a strong allowlist match → 110
-        def _search(query, *, top_k=5):
-            if "piano cover" in query:
-                return [_entry(title="Bohemian Rhapsody weak", channel="Random")]
-            if "8 bit" in query:
-                return [_entry(
-                    title="Bohemian Rhapsody - Queen (8 Bit Cover)",
-                    channel="8-Bit Universe",
-                )]
-            return []
+        calls: list[str] = []
+
+        def _search(query, *, top_k=10):
+            calls.append(query)
+            return [_entry(title="Bohemian Rhapsody weak", channel="Random")]
 
         with patch("backend.services.cover_search._yt_dlp_search", side_effect=_search):
-            result = find_clean_source("Bohemian Rhapsody", "Queen")
+            find_clean_source("Bohemian Rhapsody", "Queen")
 
-        assert result is not None
-        assert result.channel == "8-Bit Universe"
-        assert result.score == 110
+        assert any("piano cover" in q for q in calls)
+        assert not any("8 bit" in q for q in calls), (
+            "Chiptune variant should be paused but '8 bit' query was fired"
+        )
 
     def test_returns_none_when_both_variants_below_threshold(self):
         from backend.services.cover_search import find_clean_source
@@ -1075,43 +1093,44 @@ class TestFindCleanSource:
 
         assert result is None
 
-    def test_one_variant_failing_does_not_block_the_other(self):
-        # If piano search crashes but chiptune succeeds, we should still
-        # return the chiptune result instead of silently returning None.
+    def test_piano_search_failure_returns_none_with_chiptune_paused(self):
+        # With only the piano variant active, a search failure means
+        # no result — there's no chiptune fallback to save us.
         from backend.services.cover_search import find_clean_source
 
-        def _search(query, *, top_k=5):
-            if "piano cover" in query:
-                raise RuntimeError("piano search hiccup")
-            return [_entry(
-                title="Bohemian Rhapsody - Queen 8 bit cover",
-                channel="8-Bit Universe",
-            )]
+        def _search(query, *, top_k=10):
+            raise RuntimeError("search hiccup")
 
         with patch("backend.services.cover_search._yt_dlp_search", side_effect=_search):
             result = find_clean_source("Bohemian Rhapsody", "Queen")
 
-        assert result is not None
-        assert result.channel == "8-Bit Universe"
+        assert result is None
 
-    def test_queries_every_variant_even_when_first_yields_match(self):
-        # We don't short-circuit: every variant runs so the scorer can
-        # pick the absolute best across all of them. This test guards
-        # against a "first-match-wins" regression.
-        from backend.services.cover_search import find_clean_source
+    def test_chiptune_variant_can_be_reactivated_via_explicit_variants_param(self):
+        # Even though DEFAULT_VARIANTS only includes PIANO_VARIANT,
+        # callers can explicitly pass variants=(PIANO_VARIANT, CHIPTUNE_VARIANT)
+        # to re-enable the chiptune search. This keeps the code path
+        # exercised for future reactivation.
+        from backend.services.cover_search import (
+            CHIPTUNE_VARIANT,
+            PIANO_VARIANT,
+            find_clean_source,
+        )
 
         calls: list[str] = []
 
-        def _search(query, *, top_k=5):
+        def _search(query, *, top_k=10):
             calls.append(query)
-            return [_entry(title="Generic", channel="Random")]
+            return []
 
         with patch("backend.services.cover_search._yt_dlp_search", side_effect=_search):
-            find_clean_source("Bohemian Rhapsody", "Queen")
+            find_clean_source(
+                "Bohemian Rhapsody", "Queen",
+                variants=(PIANO_VARIANT, CHIPTUNE_VARIANT),
+            )
 
-        # Both "piano cover" and "8 bit cover" queries should have fired.
-        assert any("piano cover" in q for q in calls), calls
-        assert any("8 bit" in q for q in calls), calls
+        assert any("piano cover" in q for q in calls)
+        assert any("8 bit" in q for q in calls)
 
     def test_find_piano_cover_remains_piano_only_for_backward_compat(self):
         # Explicit regression test: find_piano_cover MUST keep running
@@ -1132,3 +1151,195 @@ class TestFindCleanSource:
         assert len(calls) == 1
         assert "piano cover" in calls[0]
         assert "8 bit" not in calls[0]
+
+
+# ---------------------------------------------------------------------------
+# Change 1: PIANO_ADVANCED_CHANNELS in the active allowlist
+# ---------------------------------------------------------------------------
+
+
+class TestAdvancedTierReactivated:
+    """Advanced-tier piano channels (Rousseau, Pietschmann, Kyle Landry, etc)
+    should be in the active COVER_CHANNEL_ALLOWLIST and receive the +50
+    channel bonus. Previously excluded to scope output to easy/moderate
+    difficulty, but a complex cover transcribed well is dramatically better
+    than no cover at all."""
+
+    def test_rousseau_is_in_active_allowlist(self):
+        from backend.services.cover_search import COVER_CHANNEL_ALLOWLIST
+        assert "rousseau" in COVER_CHANNEL_ALLOWLIST
+
+    def test_patrik_pietschmann_is_in_active_allowlist(self):
+        from backend.services.cover_search import COVER_CHANNEL_ALLOWLIST
+        assert "patrik pietschmann" in COVER_CHANNEL_ALLOWLIST
+
+    def test_kyle_landry_is_in_active_allowlist(self):
+        from backend.services.cover_search import COVER_CHANNEL_ALLOWLIST
+        assert "kyle landry" in COVER_CHANNEL_ALLOWLIST
+
+    def test_rousseau_scores_at_least_70_from_allowlist_plus_title(self):
+        from backend.services.cover_search import (
+            PIANO_VARIANT,
+            score_candidate_for_variant,
+        )
+        entry = {
+            "title": "Bohemian Rhapsody - Rousseau",
+            "channel": "Rousseau",
+            "uploader_id": "@Rousseau",
+        }
+        score = score_candidate_for_variant(
+            entry, wanted_title="Bohemian Rhapsody",
+            wanted_artist="Queen", variant=PIANO_VARIANT,
+        )
+        # +50 allowlist + 20 title = 70 ("Queen" not in title/channel
+        # so artist match doesn't fire). Still well above the 60 threshold.
+        assert score >= 70
+
+
+# ---------------------------------------------------------------------------
+# Change 2: expanded allowlist with new channels
+# ---------------------------------------------------------------------------
+
+
+class TestExpandedAllowlist:
+    """Channels that consistently produce clean piano covers should be in
+    the allowlist so they receive the +50 channel bonus. These channels
+    were identified from the 8-song cover_search audit as high-quality
+    sources that scored at or near threshold without the bonus."""
+
+    def test_yifanmusic_in_allowlist(self):
+        from backend.services.cover_search import COVER_CHANNEL_ALLOWLIST
+        assert "yifanmusic" in COVER_CHANNEL_ALLOWLIST
+
+    def test_sheet_music_boss_blocked(self):
+        from backend.services.cover_search import _BLOCKED_CHANNELS
+        assert "sheet music boss" in _BLOCKED_CHANNELS
+
+    def test_pianella_piano_in_allowlist(self):
+        # Also known as "Jova Musique - Pianella Piano"
+        from backend.services.cover_search import COVER_CHANNEL_ALLOWLIST
+        assert "pianella piano" in COVER_CHANNEL_ALLOWLIST
+
+    def test_new_channels_are_lowercase(self):
+        from backend.services.cover_search import COVER_CHANNEL_ALLOWLIST
+        for ch in COVER_CHANNEL_ALLOWLIST:
+            assert ch == ch.lower(), f"Allowlist entry {ch!r} must be lowercase"
+
+
+# ---------------------------------------------------------------------------
+# Change 4: top_k increased from 5 to 10
+# ---------------------------------------------------------------------------
+
+
+class TestTopKIncreased:
+    """find_clean_source should search 10 YouTube results instead of 5,
+    widening the net for niche songs where an allowlisted channel's
+    cover might not be in the top 5 search results."""
+
+    def test_find_clean_source_default_top_k_is_10(self):
+        import inspect
+
+        from backend.services.cover_search import find_clean_source
+        sig = inspect.signature(find_clean_source)
+        assert sig.parameters["top_k"].default == 10
+
+    def test_find_piano_cover_default_top_k_is_10(self):
+        import inspect
+
+        from backend.services.cover_search import find_piano_cover
+        sig = inspect.signature(find_piano_cover)
+        assert sig.parameters["top_k"].default == 10
+
+    def test_top_k_10_is_passed_to_yt_dlp_search(self):
+        calls = []
+        def _search(query, *, top_k=5):
+            calls.append(top_k)
+            return []
+
+        with patch("backend.services.cover_search._yt_dlp_search", side_effect=_search):
+            from backend.services.cover_search import find_clean_source
+            find_clean_source("Test Song", "Test Artist")
+
+        # Should have been called with top_k=10 (once per variant)
+        assert all(k == 10 for k in calls), f"Expected top_k=10, got {calls}"
+
+
+# ---------------------------------------------------------------------------
+# Change 5: ALL allowlisted channels exempt from tutorial penalty
+# ---------------------------------------------------------------------------
+
+
+class TestAllowlistExemptFromTutorialPenalty:
+    """Any channel in the active COVER_CHANNEL_ALLOWLIST should be exempt
+    from the -20 tutorial penalty, not just channels in
+    TRUSTED_TUTORIAL_CHANNELS. The reasoning: if a channel is good enough
+    to be on the allowlist, their 'tutorial' videos are good enough to
+    transcribe. The penalty exists for UNKNOWN tutorial uploaders."""
+
+    def test_allowlisted_channel_with_tutorial_in_title_no_penalty(self):
+        # Peter PlutaX is in PIANO_EASY_CHANNELS. A video titled
+        # "Piano Tutorial" should NOT get the -20 penalty.
+        from backend.services.cover_search import (
+            PIANO_VARIANT,
+            score_candidate_for_variant,
+        )
+        entry = {
+            "title": "Runaway - Kanye West - BEGINNER Piano Tutorial",
+            "channel": "Peter PlutaX",
+            "uploader_id": "@Peter_PlutaX",
+        }
+        score_with_tutorial = score_candidate_for_variant(
+            entry, wanted_title="Runaway",
+            wanted_artist="Kanye West", variant=PIANO_VARIANT,
+        )
+        # Without penalty: +50 allowlist + 10 easy tier + 20 title + 10 artist = 90
+        # With penalty: 90 - 20 = 70
+        # We assert NO penalty was applied → score >= 90
+        assert score_with_tutorial >= 90, (
+            f"Allowlisted channel should be exempt from tutorial penalty, "
+            f"but scored {score_with_tutorial} (expected >= 90)"
+        )
+
+    def test_non_allowlisted_channel_with_tutorial_scores_lower_than_allowlisted(self):
+        # A random channel NOT in any allowlist scores lower than an
+        # allowlisted one because it lacks the +50 allowlist bonus.
+        # "piano tutorial" keyword +30, title +20, artist +10 = 60.
+        from backend.services.cover_search import (
+            PIANO_VARIANT,
+            score_candidate_for_variant,
+        )
+        entry = {
+            "title": "Runaway - Kanye West - Piano Tutorial",
+            "channel": "Random Piano Guy",
+            "uploader_id": "@randompianoguy",
+        }
+        score = score_candidate_for_variant(
+            entry, wanted_title="Runaway",
+            wanted_artist="Kanye West", variant=PIANO_VARIANT,
+        )
+        # No allowlist bonus: "piano tutorial" +30 + title +20 + artist +10 = 60
+        assert score == 60, (
+            f"Non-allowlisted piano tutorial should score 60 (keyword + "
+            f"title + artist), got {score}"
+        )
+
+    def test_rousseau_with_tutorial_no_penalty(self):
+        # Rousseau (advanced tier, now reactivated) should also be exempt.
+        from backend.services.cover_search import (
+            PIANO_VARIANT,
+            score_candidate_for_variant,
+        )
+        entry = {
+            "title": "Bohemian Rhapsody Piano Tutorial - Rousseau",
+            "channel": "Rousseau",
+            "uploader_id": "@Rousseau",
+        }
+        score = score_candidate_for_variant(
+            entry, wanted_title="Bohemian Rhapsody",
+            wanted_artist="Queen", variant=PIANO_VARIANT,
+        )
+        # +50 allowlist + 20 title + 0 artist ("Queen" not in title/channel)
+        # = 70 WITHOUT penalty. WITH penalty it would be 50.
+        # Assert no penalty applied (score >= 70, not 50).
+        assert score >= 70, f"Rousseau should be exempt from tutorial penalty, got {score}"
+        assert score > 50, "If score is 50, the tutorial penalty was applied incorrectly"

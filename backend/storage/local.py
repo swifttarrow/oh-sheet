@@ -1,10 +1,15 @@
-"""Backend `LocalBlobStore`: shared implementation plus API-only helpers.
+"""Backend ``LocalBlobStore`` — defensive subclass of the shared impl.
 
-Docker Compose bind-mounts ``./backend`` into the dev container but not
-``shared``, so the orchestrator can run newer route code against an older
-``ohsheet-shared`` wheel. Subclassing here keeps ``exists()`` available for
-job integrity checks regardless of wheel age; when the wheel includes
-``exists``, we delegate to it.
+Kept as a subclass (not a pure re-export) so backend code can rely on
+``exists()`` even if a deployment bind-mounts ``./backend`` against an
+older ``ohsheet-shared`` wheel that predates the method. When the wheel
+already ships ``exists``, we delegate to it; otherwise we fall back to
+the same filesystem check.
+
+Historical context: dev ``docker-compose.yml`` now bind-mounts both
+``./backend`` and ``./shared`` so drift is unlikely, and prod bakes the
+wheel into the image. The shim still costs nothing and removes a class
+of footguns if a future deployment mounts only ``./backend``.
 """
 from __future__ import annotations
 

@@ -202,7 +202,7 @@ def test_get_job_returns_404_for_unknown(client):
 
 
 def test_websocket_streams_events_to_completion(monkeypatch, client):
-    # Default arrange path; local .env may set condense_transform for manual QA.
+    # Default arrange path; local .env may set condense_only for manual QA.
     monkeypatch.setattr(settings, "score_pipeline", "arrange")
 
     midi = client.post(
@@ -235,7 +235,7 @@ def test_websocket_streams_events_to_completion(monkeypatch, client):
 
 
 def test_midi_job_condense_pipeline_emits_condense_and_transform(monkeypatch, client):
-    monkeypatch.setattr(settings, "score_pipeline", "condense_transform")
+    monkeypatch.setattr(settings, "score_pipeline", "condense_only")
 
     midi = client.post(
         "/v1/uploads/midi",
@@ -265,5 +265,5 @@ def test_midi_job_condense_pipeline_emits_condense_and_transform(monkeypatch, cl
 
     completed = [e["stage"] for e in events if e["type"] == "stage_completed"]
     assert "condense" in completed
-    assert "transform" in completed
     assert "arrange" not in completed
+    assert "transform" not in completed
