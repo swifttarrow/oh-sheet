@@ -32,6 +32,14 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Free disk space
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc \
+            /usr/local/share/boost /usr/local/graalvm /usr/local/julia* \
+            /usr/share/swift /opt/hostedtoolcache/CodeQL
+          sudo docker system prune -af
+          df -h /
+
       - name: Authenticate to Google Cloud
         uses: google-github-actions/auth@v2
         with:
@@ -54,7 +62,7 @@ jobs:
         env:
           # TUNECHAT_URL is baked into the Flutter JS bundle at build time
           # via --dart-define (see Dockerfile flutter-build stage).
-          # Pulling through env: is the safe pattern — inline ${{...}}
+          # Pulling through env: is the safe pattern — inline expressions
           # in a run: shell line is a workflow-injection smell.
           TUNECHAT_URL: ${{ vars.OHSHEET_TUNECHAT_URL }}
         run: |
@@ -103,7 +111,7 @@ jobs:
           echo "COMMIT_SHA=${{ github.sha }}" >> /tmp/.env
           echo "DOMAIN=${{ vars.DOMAIN }}" >> /tmp/.env
           # TuneChat — values come from the step env: above (safe shell
-          # expansion of pre-declared env vars, not inline ${{...}}).
+          # expansion of pre-declared env vars, not inline expressions).
           echo "OHSHEET_TUNECHAT_ENABLED=${OHSHEET_TUNECHAT_ENABLED}" >> /tmp/.env
           echo "OHSHEET_TUNECHAT_URL=${OHSHEET_TUNECHAT_URL}" >> /tmp/.env
           echo "OHSHEET_TUNECHAT_API_KEY=${OHSHEET_TUNECHAT_API_KEY}" >> /tmp/.env
@@ -113,24 +121,18 @@ jobs:
           $SCP /tmp/.env "${VM_USER}@${VM_HOST}:~/oh-sheet/.env.tmp"
           $SSH "mv ~/oh-sheet/.env.tmp ~/oh-sheet/.env && mv ~/oh-sheet/docker-compose.prod.yml ~/oh-sheet/docker-compose.yml"
 
-          # Reclaim disk BEFORE pulling the new image. The app image ships
-          # heavy ML deps (torch/transformers via the [pop2piano] extra),
-          # so a single layer can exceed 1.6 GB. Without an aggressive
-          # pre-pull prune, stale tagged images from prior deploys
-          # accumulate and fill /var/lib/containerd, causing `compose
-          # pull` to abort with "no space left on device" — see run
-          # 24407031842 / job 71295904329. `-a` also removes unused
-          # *tagged* images (plain `-f` only touches dangling ones); the
-          # `until=24h` filter keeps the currently-running image safe
-          # from reclamation. The post-pull prune then reclaims the
-          # just-superseded previous deploy, capped at `until=1h` so a
-          # quick rollback within the hour still has layers to pull.
+          # Aggressively reclaim VM disk BEFORE pulling new images.
+          # The app image ships heavy ML deps (torch via [pop2piano])
+          # with a single layer exceeding 1.6 GB. `docker system prune
+          # -af` removes all unused images, build cache, and stopped
+          # containers — images backing running containers are safe.
+          # After pull + restart the old images become unused and the
+          # post-pull prune catches them immediately.
           $SSH "cd ~/oh-sheet && \
-                sudo docker image prune -af --filter 'until=24h' && \
-                sudo docker builder prune -af && \
+                sudo docker system prune -af && \
                 sudo docker compose pull && \
                 sudo docker compose up -d --remove-orphans && \
-                sudo docker image prune -af --filter 'until=1h'"
+                sudo docker system prune -af"
 
       - name: Verify deployment
         env:
