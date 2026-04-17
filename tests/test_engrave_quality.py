@@ -958,6 +958,25 @@ def test_engrave_does_not_leak_music21_defaults():
     assert music21.defaults.divisionsPerQuarter == prior
 
 
+@pytest.mark.parametrize("name", FIXTURE_NAMES)
+def test_l2_part_names_are_empty(name: str, engraved_artifacts):
+    """<part-name> must be empty — the <group-name>Piano</group-name> on
+    the brace is the only instrument label. Non-empty <part-name> causes
+    OSMD to display a redundant label per staff (e.g., "Instr. P-RH").
+    """
+    from lxml import etree
+
+    musicxml, _ = engraved_artifacts[name]
+    root = etree.fromstring(musicxml)
+    for score_part in root.findall("part-list/score-part"):
+        pn = score_part.find("part-name")
+        if pn is None:
+            continue
+        assert pn.text is None or pn.text.strip() == "", (
+            f"{name}: <part-name> should be empty, got {pn.text!r}"
+        )
+
+
 def test_coerce_musicxml_durations_fixes_2048th_tuplet_bracket() -> None:
     """``makeNotation``-style tuplets can use a 2048th normal type; MusicXML rejects that."""
     import music21

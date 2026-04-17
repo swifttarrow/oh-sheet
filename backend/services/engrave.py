@@ -858,10 +858,36 @@ def _render_musicxml_bytes(
         tmp_path.unlink(missing_ok=True)
 
 
+def _clear_part_names(raw: bytes) -> bytes:
+    """Clear ``<part-name>`` text in ``<score-part>`` entries.
+
+    music21 populates ``<part-name>`` with its internal part identifier
+    when no explicit ``partName`` is set on the ``Part`` object. OSMD
+    reads this and displays it as a per-staff instrument label (e.g.
+    "Instr. P-RH"). The ``<part-group>`` wrapper already carries
+    ``<group-name>Piano</group-name>`` from the ``StaffGroup``, which
+    OSMD uses for the brace label — per-part names are redundant.
+    """
+    import xml.etree.ElementTree as ET  # noqa: PLC0415
+
+    root = ET.fromstring(raw)
+    part_list = root.find("part-list")
+    if part_list is not None:
+        for score_part in part_list.findall("score-part"):
+            part_name = score_part.find("part-name")
+            if part_name is not None:
+                part_name.text = ""
+
+    prefix_end = raw.find(b"<score-partwise")
+    prefix = raw[:prefix_end] if prefix_end > 0 else b""
+    body = ET.tostring(root, encoding="utf-8", xml_declaration=False)
+    return prefix + body
+
+
 def _sanitize_musicxml_for_osmd(raw: bytes) -> bytes:
     """Post-process music21 MusicXML to fix OSMD + MuseScore issues.
 
-    Three mechanical fixups after music21 export:
+    Four mechanical fixups after music21 export:
 
     1. ``<voice>0</voice>`` → ``<voice>1</voice>`` — music21 emits 0 when
        a note isn't wrapped in a ``Voice`` sub-stream and the part has
@@ -881,13 +907,18 @@ def _sanitize_musicxml_for_osmd(raw: bytes) -> bytes:
        tie-stop's ``<voice>`` to match the tie-start's voice. The
        voice reassignment only affects the single tied note;
        surrounding voice content keeps its tags.
+    4. ``<part-name>`` clearing — defense-in-depth to ensure per-staff
+       instrument labels stay empty. The ``<part-group>`` brace already
+       carries ``<group-name>Piano</group-name>``; non-empty per-part
+       names would render as "Instr. P-RH" / "Instr. P-LH" in OSMD.
     """
     text = raw.decode("utf-8")
 
     # MusicXML voice=0 is invalid and OSMD rejects it outright.
     text = re.sub(r"<voice>0</voice>", "<voice>1</voice>", text)
     remapped = _remap_voices_per_staff(text.encode("utf-8"))
-    return _align_tie_chain_voices(remapped)
+    cleared = _clear_part_names(remapped)
+    return _align_tie_chain_voices(cleared)
 
 
 def _remap_voices_per_staff(raw: bytes) -> bytes:
