@@ -26,6 +26,8 @@ STUDY_GUIDE.md
 ROADMAP.md
 PRD.md
 coverage.xml
+# Extracted MusicXML debug artifacts (regenerable via tests/extract_musicxml.py)
+tests/fixtures/scores/*.musicxml
 node_modules/
 .openskills/skill-log-architectural-decisions/SKILL.md
 e2e/test-results/.last-run.json
