@@ -94,6 +94,7 @@ jobs:
           OHSHEET_TUNECHAT_ENABLED: ${{ vars.OHSHEET_TUNECHAT_ENABLED }}
           OHSHEET_TUNECHAT_URL: ${{ vars.OHSHEET_TUNECHAT_URL }}
           OHSHEET_TUNECHAT_API_KEY: ${{ secrets.OHSHEET_TUNECHAT_API_KEY }}
+          OHSHEET_ML_API_URL: ${{ vars.OHSHEET_ML_API_URL }}
         run: |
           # Set up SSH
           mkdir -p ~/.ssh
@@ -115,6 +116,7 @@ jobs:
           echo "OHSHEET_TUNECHAT_ENABLED=${OHSHEET_TUNECHAT_ENABLED}" >> /tmp/.env
           echo "OHSHEET_TUNECHAT_URL=${OHSHEET_TUNECHAT_URL}" >> /tmp/.env
           echo "OHSHEET_TUNECHAT_API_KEY=${OHSHEET_TUNECHAT_API_KEY}" >> /tmp/.env
+          echo "OHSHEET_ML_API_URL=${OHSHEET_ML_API_URL}" >> /tmp/.env
 
           # Copy compose files to VM (SCP .env to temp name, then atomic mv)
           $SCP docker-compose.prod.yml Caddyfile "${VM_USER}@${VM_HOST}:~/oh-sheet/"
