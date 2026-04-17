@@ -51,8 +51,18 @@ jobs:
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
 
       - name: Build and push container images
+        env:
+          # TUNECHAT_URL is baked into the Flutter JS bundle at build time
+          # via --dart-define (see Dockerfile flutter-build stage).
+          # Pulling through env: is the safe pattern — inline ${{...}}
+          # in a run: shell line is a workflow-injection smell.
+          TUNECHAT_URL: ${{ vars.OHSHEET_TUNECHAT_URL }}
         run: |
-          docker build --build-arg APP_VERSION=${{ steps.version.outputs.version }} -t ${{ env.IMAGE }}:${{ github.sha }} -t ${{ env.IMAGE }}:latest .
+          docker build \
+            --build-arg APP_VERSION=${{ steps.version.outputs.version }} \
+            --build-arg TUNECHAT_URL="$TUNECHAT_URL" \
+            -t ${{ env.IMAGE }}:${{ github.sha }} \
+            -t ${{ env.IMAGE }}:latest .
           docker push ${{ env.IMAGE }}:${{ github.sha }}
           docker push ${{ env.IMAGE }}:latest
 
