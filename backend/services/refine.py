@@ -103,7 +103,7 @@ class RefineService:
                 self._call_llm(score, title_hint, artist_hint, filename_hint),
                 timeout=settings.refine_budget_sec,
             )
-        except (TimeoutError, asyncio.TimeoutError):
+        except TimeoutError:
             log.warning(
                 "refine: budget exceeded (%ss), passing through",
                 settings.refine_budget_sec,
