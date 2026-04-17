@@ -95,9 +95,7 @@ services:
 
   worker-refine:
     platform: linux/amd64
-    build:
-      context: .
-      dockerfile: Dockerfile.dev
+    image: ${BASE_IMAGE:-ghcr.io/oh-sheet-team/ohsheet-dev-base:latest}
     command: celery -A backend.workers.celery_app worker -Q refine -c 1 --loglevel=info
     environment:
       PYTHONDONTWRITEBYTECODE: "1"

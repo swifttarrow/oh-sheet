@@ -94,6 +94,8 @@ jobs:
           OHSHEET_TUNECHAT_ENABLED: ${{ vars.OHSHEET_TUNECHAT_ENABLED }}
           OHSHEET_TUNECHAT_URL: ${{ vars.OHSHEET_TUNECHAT_URL }}
           OHSHEET_TUNECHAT_API_KEY: ${{ secrets.OHSHEET_TUNECHAT_API_KEY }}
+          # Anthropic API — used by worker-refine for LLM metadata enrichment.
+          OHSHEET_ANTHROPIC_API_KEY: ${{ secrets.OHSHEET_ANTHROPIC_API_KEY }}
         run: |
           # Set up SSH
           mkdir -p ~/.ssh
@@ -115,6 +117,8 @@ jobs:
           echo "OHSHEET_TUNECHAT_ENABLED=${OHSHEET_TUNECHAT_ENABLED}" >> /tmp/.env
           echo "OHSHEET_TUNECHAT_URL=${OHSHEET_TUNECHAT_URL}" >> /tmp/.env
           echo "OHSHEET_TUNECHAT_API_KEY=${OHSHEET_TUNECHAT_API_KEY}" >> /tmp/.env
+          # Anthropic — worker-refine LLM metadata enrichment.
+          echo "OHSHEET_ANTHROPIC_API_KEY=${OHSHEET_ANTHROPIC_API_KEY}" >> /tmp/.env
 
           # Copy compose files to VM (SCP .env to temp name, then atomic mv)
           $SCP docker-compose.prod.yml Caddyfile "${VM_USER}@${VM_HOST}:~/oh-sheet/"
