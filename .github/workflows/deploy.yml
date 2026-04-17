@@ -119,14 +119,22 @@ jobs:
           # pre-pull prune, stale tagged images from prior deploys
           # accumulate and fill /var/lib/containerd, causing `compose
           # pull` to abort with "no space left on device" — see run
-          # 24407031842 / job 71295904329. `-a` also removes unused
-          # *tagged* images (plain `-f` only touches dangling ones); the
-          # `until=24h` filter keeps the currently-running image safe
-          # from reclamation. The post-pull prune then reclaims the
-          # just-superseded previous deploy, capped at `until=1h` so a
-          # quick rollback within the hour still has layers to pull.
+          # 24407031842 / job 71295904329, and again on run 24547994092
+          # after two back-to-back deploys exceeded the old 24h window.
+          #
+          # `-a` also removes unused *tagged* images (plain `-f` only
+          # touches dangling ones); the `until=1h` filter keeps the
+          # currently-running image safe from reclamation while still
+          # freeing anything from the previous hour's deploy churn.
+          #
+          # Rollback tradeoff: with a 1h pre-pull window, rolling back
+          # to a deploy >1h old requires re-pulling from Artifact
+          # Registry (not a re-tag of a local image). Acceptable for qa
+          # where deploy velocity > rollback-without-rebuild grace. If
+          # this workflow ever targets a production VM with stricter
+          # rollback needs, bump this back up (or branch on env name).
           $SSH "cd ~/oh-sheet && \
-                sudo docker image prune -af --filter 'until=24h' && \
+                sudo docker image prune -af --filter 'until=1h' && \
                 sudo docker builder prune -af && \
                 sudo docker compose pull && \
                 sudo docker compose up -d --remove-orphans && \
