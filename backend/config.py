@@ -38,6 +38,13 @@ class Settings(BaseSettings):
     # not appear when you run the API server.
     log_level: str = "INFO"
 
+    # ---- ML inference API (engraver replacement) ----------------------------
+    # When set, the engrave stage POSTs the rendered MIDI to this URL's
+    # /transcribe endpoint and uses the returned MusicXML instead of the
+    # local music21 render. Falls back to music21 on error.
+    ml_api_url: str | None = None
+    ml_api_timeout_sec: int = 60
+
     # ---- Basic Pitch transcription -----------------------------------------
     # Tunable knobs passed through to basic_pitch.inference.predict(). Defaults
     # mirror upstream (basic_pitch.constants.DEFAULT_*). The ONNX model ships
