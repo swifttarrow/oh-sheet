@@ -6,7 +6,16 @@ COPY frontend/ .
 RUN flutter pub get
 # Empty API_BASE_URL → client uses same-origin relative URLs (/v1/...)
 ARG APP_VERSION=dev
-RUN flutter build web --release --dart-define=API_BASE_URL= --dart-define=APP_VERSION=${APP_VERSION}
+# TUNECHAT_URL is read via String.fromEnvironment in result_screen.dart
+# at dart-define time (not runtime), so it's baked into the JS bundle.
+# Empty default is safe — result_screen.dart only uses it when a job
+# has a tunechat_job_id set, which only happens when the backend's
+# OHSHEET_TUNECHAT_ENABLED flag is true.
+ARG TUNECHAT_URL=
+RUN flutter build web --release \
+      --dart-define=API_BASE_URL= \
+      --dart-define=APP_VERSION=${APP_VERSION} \
+      --dart-define=TUNECHAT_URL=${TUNECHAT_URL}
 
 # ---- Stage 2: Shared Python base ----
 # Layers common to both the `api` and `ml` final targets: interpreter,
