@@ -35,6 +35,14 @@ services:
       # time in api/routes/jobs.py); workers just execute whatever stage
       # they're dispatched. Remove after validating condense_only in prod.
       OHSHEET_SCORE_PIPELINE: arrange
+      # TuneChat external transcription. The ingest stage POSTs audio to
+      # TuneChat in parallel with Oh Sheet's own pipeline. Orchestrator
+      # needs these because api/routes/jobs.py reads settings.tunechat_*
+      # when building PipelineConfig at job-creation time. Enabled flag
+      # is the kill switch — unset or set to "false" to short-circuit.
+      OHSHEET_TUNECHAT_ENABLED: ${OHSHEET_TUNECHAT_ENABLED:-false}
+      OHSHEET_TUNECHAT_URL: ${OHSHEET_TUNECHAT_URL:-}
+      OHSHEET_TUNECHAT_API_KEY: ${OHSHEET_TUNECHAT_API_KEY:-}
       COMMIT_SHA: ${COMMIT_SHA:-unknown}
     volumes:
       - blob-data:/app/blob
@@ -55,6 +63,13 @@ services:
     environment:
       OHSHEET_BLOB_ROOT: /app/blob
       OHSHEET_REDIS_URL: redis://redis:6379/0
+      # TuneChat is called from services/ingest.py via the tunechat_client
+      # (async httpx.AsyncClient.post) — see config comment on
+      # tunechat_timeout_sec. Worker must have the env vars or the call
+      # short-circuits to None and Oh Sheet uses its own pipeline only.
+      OHSHEET_TUNECHAT_ENABLED: ${OHSHEET_TUNECHAT_ENABLED:-false}
+      OHSHEET_TUNECHAT_URL: ${OHSHEET_TUNECHAT_URL:-}
+      OHSHEET_TUNECHAT_API_KEY: ${OHSHEET_TUNECHAT_API_KEY:-}
     volumes:
       - blob-data:/app/blob
     depends_on:
