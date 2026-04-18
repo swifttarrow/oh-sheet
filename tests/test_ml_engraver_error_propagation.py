@@ -85,3 +85,49 @@ async def test_ml_engraver_error_fails_midi_upload_job(runner, monkeypatch):
             bundle=bundle,
             config=config,
         )
+
+
+@pytest.mark.asyncio
+async def test_title_lookup_hard_fails_when_tunechat_returns_none(
+    runner, monkeypatch,
+):
+    """Defense-in-depth: the /v1/jobs route rejects title_lookup when
+    TuneChat is disabled, but TuneChat can also be *enabled* and return
+    None (service down, quota exceeded, etc.) mid-pipeline. When that
+    happens the runner walks through to the engrave stage and hits the
+    source-gate guard, which must hard-fail rather than silently route
+    title_lookup through the ML engraver or produce an empty result.
+    """
+    monkeypatch.setattr(settings, "tunechat_enabled", True)
+
+    from backend.services import tunechat_client  # noqa: PLC0415
+
+    async def _tunechat_returns_none(*args, **kwargs):
+        return None
+
+    monkeypatch.setattr(
+        tunechat_client, "transcribe_via_tunechat", _tunechat_returns_none,
+    )
+
+    bundle = InputBundle(
+        audio=RemoteAudioFile(
+            uri="file:///fake/audio.wav",
+            format="wav",
+            sample_rate=44100,
+            duration_sec=10.0,
+            channels=1,
+        ),
+        metadata=InputMetadata(
+            title="Title Lookup Song",
+            artist="Tester",
+            source="title_lookup",
+        ),
+    )
+    config = PipelineConfig(variant="audio_upload", enable_refine=False)
+
+    with pytest.raises(RuntimeError, match="title_lookup job reached the engrave stage"):
+        await runner.run(
+            job_id="title-lookup-tunechat-none",
+            bundle=bundle,
+            config=config,
+        )

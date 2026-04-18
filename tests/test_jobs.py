@@ -8,12 +8,21 @@ from backend.contracts import RemoteAudioFile
 
 
 @pytest.fixture(autouse=True)
-def enable_tunechat_for_title_lookup(monkeypatch):
-    """title_lookup jobs now require TuneChat at the route boundary.
-    Enable it by default for this module so existing tests that exercise
-    title_lookup paths continue to land on their real assertions rather
-    than the 400 rejection. Tests that want the rejection path override
-    this locally.
+def _title_lookup_needs_tunechat(monkeypatch):
+    """Infrastructure fixture — do not rely on its name in test code.
+
+    ``POST /v1/jobs`` rejects title_lookup submissions when
+    ``tunechat_enabled`` is False (that path can't produce a score
+    without a fallback engraver). Several tests in this file exercise
+    title-only job creation, cover_search flags, and YouTube URL flows
+    that all land on the title_lookup code path. Flipping the toggle
+    on by default lets those assertions run; tests that specifically
+    want to exercise the rejection path override locally with
+    ``monkeypatch.setattr(settings, "tunechat_enabled", False)``.
+
+    CAUTION: adding a non-title-lookup test to this file inherits the
+    enabled default silently. If you're asserting behavior that
+    depends on tunechat being off, opt out explicitly.
     """
     monkeypatch.setattr(settings, "tunechat_enabled", True)
 

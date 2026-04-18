@@ -63,11 +63,8 @@ class _FakeClient:
 @pytest.fixture
 def patch_httpx(monkeypatch):
     """Wire up a scripted client so each test controls response shape."""
-    holder: dict[str, _FakeClient] = {}
-
     def _install(scripted):
         client = _FakeClient(scripted)
-        holder["client"] = client
 
         def _factory(*args, **kwargs):
             return client

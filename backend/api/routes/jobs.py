@@ -104,7 +104,11 @@ async def create_job(
     # that can produce a score for these jobs, so reject at creation
     # time rather than burning ~1 minute of ingest/transcribe/arrange/
     # humanize only to hard-fail at engrave.
-    is_title_lookup = body.audio is None and body.midi is None
+    # Explicit title check (not just "neither audio nor midi") so a
+    # future source type doesn't silently classify as title_lookup.
+    is_title_lookup = (
+        body.audio is None and body.midi is None and body.title is not None
+    )
     if is_title_lookup and not settings.tunechat_enabled:
         raise HTTPException(
             status_code=400,

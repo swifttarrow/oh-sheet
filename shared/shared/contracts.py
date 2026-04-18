@@ -351,6 +351,8 @@ class EngravedOutput(BaseModel):
     # Nullable: the ML engraver returns MusicXML only, so pdf_uri is
     # ``None`` for the audio/midi-upload path. Legacy consumers that
     # expected an always-present string should now check for ``None``.
+    # No SCHEMA_VERSION bump — this branch hasn't shipped and no
+    # persisted EngravedOutput blobs depend on the old ``str`` shape.
     pdf_uri: str | None = None
     musicxml_uri: str
     humanized_midi_uri: str
