@@ -145,6 +145,7 @@ PIANO_MODERATE_CHANNELS: tuple[str, ...] = (
     "matty on the keys",
     "flying fingers",
     "piano covers - topic",
+    "pbossonn",             # @pbossonn — added by product owner request
 )
 
 # Tier 3 — virtuoso / concert-level arrangements. Defined here for
