@@ -205,9 +205,11 @@ class TestIngestServiceYoutube:
 # ---------------------------------------------------------------------------
 
 
-def test_youtube_url_job_runs_full_variant(client):
-    """Submitting a YouTube URL as the title should trigger the 'full'
-    pipeline variant and run to completion (with mocked yt-dlp)."""
+def test_youtube_url_job_fails_without_tunechat(client):
+    """Submitting a YouTube URL (title_lookup source) with TuneChat disabled
+    must fail at the engrave stage. There is no heuristic fallback anymore
+    and title_lookup jobs are expected to resolve via TuneChat upstream.
+    """
     with patch("backend.services.ingest._download_youtube_sync") as mock_dl:
         mock_dl.return_value = (
             RemoteAudioFile(
@@ -237,4 +239,4 @@ def test_youtube_url_job_runs_full_variant(client):
                 break
             time.sleep(0.05)
 
-        assert status["status"] == "succeeded", status
+        assert status["status"] == "failed", status

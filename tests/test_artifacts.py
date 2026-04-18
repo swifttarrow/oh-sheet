@@ -25,17 +25,15 @@ def _submit_midi_job(client) -> str:
     return create["job_id"]
 
 
-def test_artifact_download_pdf(client):
+def test_artifact_pdf_not_available(client):
+    """The ML engraver returns MusicXML only — PDF rendering is a client
+    responsibility now, so the /pdf endpoint 404s for every job."""
     job_id = _submit_midi_job(client)
     status = _wait_for_succeeded(client, job_id)
     assert status["status"] == "succeeded", status
 
     response = client.get(f"/v1/artifacts/{job_id}/pdf")
-    assert response.status_code == 200
-    assert response.headers["content-type"] == "application/pdf"
-    assert f'filename="{job_id}-sheet.pdf"' in response.headers["content-disposition"]
-    # Stub engrave service writes a tiny header — we just want non-empty bytes.
-    assert response.content.startswith(b"%PDF")
+    assert response.status_code == 404
 
 
 def test_artifact_download_musicxml(client):
@@ -75,12 +73,12 @@ def test_artifact_unknown_job(client):
 def test_artifact_job_not_yet_succeeded(client):
     """Submit a job and immediately try to download — should be 409 until it finishes.
 
-    The stub services are fast but not instant; we look for a 409 by querying
-    before the runner has had a chance to finish. If we miss the window the
-    test still passes (200), so it's not flaky — it's an opportunistic check.
+    We query musicxml because pdf is a permanent 404 now (ML engraver path
+    doesn't produce PDFs). If we hit the window between submit and finish,
+    we see 409; if we miss it, a successful job returns 200.
     """
     job_id = _submit_midi_job(client)
-    response = client.get(f"/v1/artifacts/{job_id}/pdf")
+    response = client.get(f"/v1/artifacts/{job_id}/musicxml")
     assert response.status_code in (200, 409)
     if response.status_code == 409:
         assert "artifacts unavailable" in response.json()["detail"]

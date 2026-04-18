@@ -43,11 +43,8 @@ services:
       OHSHEET_TUNECHAT_ENABLED: ${OHSHEET_TUNECHAT_ENABLED:-false}
       OHSHEET_TUNECHAT_URL: ${OHSHEET_TUNECHAT_URL:-}
       OHSHEET_TUNECHAT_API_KEY: ${OHSHEET_TUNECHAT_API_KEY:-}
-      # Engraver inference toggle — backend.jobs.runner (living in this
-      # container) branches audio/midi engrave jobs to the ML service when
-      # set. Defaults match backend.config.Settings so an unset GitHub var
-      # means "off, pointing at localhost" rather than a crash.
-      OHSHEET_ENGRAVER_INFERENCE: ${OHSHEET_ENGRAVER_INFERENCE:-false}
+      # Engraver service URL — backend.jobs.runner (living in this container)
+      # always routes audio/midi engrave jobs to this URL. No local fallback.
       OHSHEET_ENGRAVER_SERVICE_URL: ${OHSHEET_ENGRAVER_SERVICE_URL:-http://localhost:8080}
       COMMIT_SHA: ${COMMIT_SHA:-unknown}
     volumes:
@@ -159,22 +156,9 @@ services:
       redis:
         condition: service_healthy
 
-  worker-engrave:
-    image: ${IMAGE}
-    command: celery -A backend.workers.celery_app worker -Q engrave -c 1 --loglevel=warning
-    restart: unless-stopped
-    environment:
-      OHSHEET_BLOB_ROOT: /app/blob
-      OHSHEET_REDIS_URL: redis://redis:6379/0
-      # OHSHEET_ENGRAVER_INFERENCE gates the ML engraver service branch,
-      # which lives in the orchestrator (backend.jobs.runner) — the
-      # worker-engrave container only runs the local music21 fallback
-      # and therefore doesn't need the engraver_service settings.
-    volumes:
-      - blob-data:/app/blob
-    depends_on:
-      redis:
-        condition: service_healthy
+  # worker-engrave has been retired. The engrave stage now runs inline in
+  # the orchestrator as an HTTP call to oh-sheet-ml-pipeline (see
+  # OHSHEET_ENGRAVER_SERVICE_URL on the orchestrator service).
 
   caddy:
     image: caddy:2-alpine

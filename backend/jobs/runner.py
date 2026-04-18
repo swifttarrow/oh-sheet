@@ -43,7 +43,9 @@ log = logging.getLogger(__name__)
 
 EventCallback = Callable[[JobEvent], None]
 
-# Maps execution plan step names to Celery task names.
+# Maps execution plan step names to Celery task names. The engrave stage
+# is NOT in this map — it's handled inline via the ml_engraver HTTP client
+# rather than dispatched as a Celery task.
 STEP_TO_TASK: dict[str, str] = {
     "ingest": "ingest.run",
     "transcribe": "transcribe.run",
@@ -52,7 +54,6 @@ STEP_TO_TASK: dict[str, str] = {
     "transform": "transform.run",
     "humanize": "humanize.run",
     "refine": "refine.run",
-    "engrave": "engrave.run",
 }
 
 
@@ -260,7 +261,9 @@ class PipelineRunner:
                 job_id, step, i + 1, n,
             )
             t0 = time.perf_counter()
-            task_name = STEP_TO_TASK[step]
+            # engrave is handled inline (ML HTTP client) and has no
+            # STEP_TO_TASK entry; other stages still dispatch via Celery.
+            task_name = STEP_TO_TASK.get(step, "")
 
             try:
                 if step == "ingest":
@@ -418,6 +421,18 @@ class PipelineRunner:
                         score_dict = refined["payload"]
 
                 elif step == "engrave":
+                    # title_lookup jobs must resolve upstream (TuneChat) and
+                    # return before this stage runs. If control reaches here
+                    # with source=title_lookup, TuneChat was disabled or
+                    # failed — and there's no local fallback anymore, so we
+                    # hard-fail rather than silently producing a bad score.
+                    if bundle.metadata.source == "title_lookup":
+                        raise RuntimeError(
+                            "title_lookup job reached the engrave stage without "
+                            "a TuneChat result. Enable tunechat or submit the "
+                            "job as an audio/midi upload."
+                        )
+
                     # Title/composer precedence: refined ScoreMetadata > InputMetadata > defaults.
                     refined_md: dict | None = None
                     if perf_dict is not None:
@@ -427,130 +442,90 @@ class PipelineRunner:
                     resolved_title = (refined_md or {}).get("title") or title
                     resolved_composer = (refined_md or {}).get("composer") or composer
 
-                    # OHSHEET_ENGRAVER_INFERENCE toggle: when on, route audio /
-                    # midi uploads through the oh-sheet-ml-pipeline engraver
-                    # service instead of the local music21 engrave stage.
-                    # title_lookup jobs (TuneChat, cover_search) keep the
-                    # existing path regardless.
-                    use_ml_engraver = (
-                        settings.engraver_inference
-                        and bundle.metadata.source in ("audio_upload", "midi_upload")
+                    from backend.contracts import (  # noqa: PLC0415
+                        ExpressionMap,
+                        ExpressiveNote,
+                        HumanizedPerformance,
+                        PianoScore,
+                    )
+                    from backend.services.midi_render import render_midi_bytes  # noqa: PLC0415
+                    from backend.services.ml_engraver_client import (  # noqa: PLC0415
+                        engrave_midi_via_ml_service,
                     )
 
-                    if use_ml_engraver:
-                        # Intentional behavior change vs. the retired
-                        # OHSHEET_ML_API_URL gate: when this branch is taken,
-                        # ML engraver failures PROPAGATE as job errors rather
-                        # than degrading to the local music21 path. The
-                        # boolean toggle itself is the off-switch — operators
-                        # turn it off if the ML service is unhealthy, rather
-                        # than relying on silent fallback.
-                        from backend.contracts import (  # noqa: PLC0415
-                            ExpressionMap,
-                            ExpressiveNote,
-                            HumanizedPerformance,
-                            PianoScore,
-                        )
-                        from backend.services.engrave import _render_midi_bytes  # noqa: PLC0415
-                        from backend.services.ml_engraver_client import (  # noqa: PLC0415
-                            engrave_midi_via_ml_service,
-                        )
-
-                        if perf_dict is not None:
-                            perf_obj = HumanizedPerformance.model_validate(perf_dict)
-                        elif score_dict is not None:
-                            score_obj = PianoScore.model_validate(score_dict)
-                            expressive_notes = [
-                                ExpressiveNote(
-                                    score_note_id=n.id,
-                                    pitch=n.pitch,
-                                    onset_beat=n.onset_beat,
-                                    duration_beat=n.duration_beat,
-                                    velocity=n.velocity,
-                                    hand=hand_name,  # type: ignore[arg-type]
-                                    voice=n.voice,
-                                    timing_offset_ms=0.0,
-                                    velocity_offset=0,
-                                )
-                                for hand_name, notes in (
-                                    ("rh", score_obj.right_hand),
-                                    ("lh", score_obj.left_hand),
-                                )
-                                for n in notes
-                            ]
-                            perf_obj = HumanizedPerformance(
-                                schema_version=SCHEMA_VERSION,
-                                expressive_notes=expressive_notes,
-                                expression=ExpressionMap(),
-                                score=score_obj,
-                                quality=QualitySignal(
-                                    overall_confidence=0.5,
-                                    warnings=["engrave-from-score"],
-                                ),
+                    if perf_dict is not None:
+                        perf_obj = HumanizedPerformance.model_validate(perf_dict)
+                    elif score_dict is not None:
+                        score_obj = PianoScore.model_validate(score_dict)
+                        expressive_notes = [
+                            ExpressiveNote(
+                                score_note_id=n.id,
+                                pitch=n.pitch,
+                                onset_beat=n.onset_beat,
+                                duration_beat=n.duration_beat,
+                                velocity=n.velocity,
+                                hand=hand_name,  # type: ignore[arg-type]
+                                voice=n.voice,
+                                timing_offset_ms=0.0,
+                                velocity_offset=0,
                             )
-                        else:
-                            raise RuntimeError(
-                                "engrave stage requires a score or performance — none was produced"
+                            for hand_name, notes in (
+                                ("rh", score_obj.right_hand),
+                                ("lh", score_obj.left_hand),
                             )
-
-                        # _render_midi_bytes is synchronous (pretty_midi I/O);
-                        # keep the event loop free.
-                        midi_bytes = await asyncio.to_thread(_render_midi_bytes, perf_obj)
-                        musicxml_bytes = await engrave_midi_via_ml_service(midi_bytes)
-
-                        prefix = f"jobs/{job_id}/output"
-                        musicxml_uri = self.blob_store.put_bytes(
-                            f"{prefix}/score.musicxml", musicxml_bytes,
-                        )
-                        midi_uri = self.blob_store.put_bytes(
-                            f"{prefix}/humanized.mid", midi_bytes,
-                        )
-
-                        result_dict = EngravedOutput(
+                            for n in notes
+                        ]
+                        perf_obj = HumanizedPerformance(
                             schema_version=SCHEMA_VERSION,
-                            metadata=EngravedScoreData(
-                                includes_dynamics=False,
-                                includes_pedal_marks=False,
-                                includes_fingering=False,
-                                includes_chord_symbols=False,
-                                title=resolved_title,
-                                composer=resolved_composer,
+                            expressive_notes=expressive_notes,
+                            expression=ExpressionMap(),
+                            score=score_obj,
+                            quality=QualitySignal(
+                                overall_confidence=0.5,
+                                warnings=["engrave-from-score"],
                             ),
-                            pdf_uri="",
-                            musicxml_uri=musicxml_uri,
-                            humanized_midi_uri=midi_uri,
-                            audio_preview_uri=None,
-                        ).model_dump(mode="json")
-                        log.info(
-                            "pipeline engrave via ML service job_id=%s source=%s "
-                            "musicxml_bytes=%d midi_bytes=%d",
-                            job_id,
-                            bundle.metadata.source,
-                            len(musicxml_bytes),
-                            len(midi_bytes),
                         )
                     else:
-                        if perf_dict is not None:
-                            engrave_envelope = {
-                                "payload": perf_dict,
-                                "payload_type": "HumanizedPerformance",
-                                "job_id": job_id,
-                                "title": resolved_title,
-                                "composer": resolved_composer,
-                            }
-                        elif score_dict is not None:
-                            engrave_envelope = {
-                                "payload": score_dict,
-                                "payload_type": "PianoScore",
-                                "job_id": job_id,
-                                "title": resolved_title,
-                                "composer": resolved_composer,
-                            }
-                        else:
-                            raise RuntimeError("engrave stage requires a score or performance — none was produced")
-                        payload_uri = self._serialize_stage_input(job_id, step, engrave_envelope)
-                        output_uri = await self._dispatch_task(task_name, job_id, payload_uri, config.stage_timeout_sec)
-                        result_dict = self.blob_store.get_json(output_uri)
+                        raise RuntimeError(
+                            "engrave stage requires a score or performance — none was produced"
+                        )
+
+                    # render_midi_bytes is synchronous (pretty_midi I/O);
+                    # keep the event loop free.
+                    midi_bytes = await asyncio.to_thread(render_midi_bytes, perf_obj)
+                    musicxml_bytes = await engrave_midi_via_ml_service(midi_bytes)
+
+                    prefix = f"jobs/{job_id}/output"
+                    musicxml_uri = self.blob_store.put_bytes(
+                        f"{prefix}/score.musicxml", musicxml_bytes,
+                    )
+                    midi_uri = self.blob_store.put_bytes(
+                        f"{prefix}/humanized.mid", midi_bytes,
+                    )
+
+                    result_dict = EngravedOutput(
+                        schema_version=SCHEMA_VERSION,
+                        metadata=EngravedScoreData(
+                            includes_dynamics=False,
+                            includes_pedal_marks=False,
+                            includes_fingering=False,
+                            includes_chord_symbols=False,
+                            title=resolved_title,
+                            composer=resolved_composer,
+                        ),
+                        pdf_uri="",
+                        musicxml_uri=musicxml_uri,
+                        humanized_midi_uri=midi_uri,
+                        audio_preview_uri=None,
+                    ).model_dump(mode="json")
+                    log.info(
+                        "pipeline engrave via ML service job_id=%s source=%s "
+                        "musicxml_bytes=%d midi_bytes=%d",
+                        job_id,
+                        bundle.metadata.source,
+                        len(musicxml_bytes),
+                        len(midi_bytes),
+                    )
 
                 else:
                     raise RuntimeError(f"unknown stage in execution plan: {step!r}")

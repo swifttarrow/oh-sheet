@@ -71,46 +71,6 @@ class TestHumanizeTask:
         assert "expression" in result
 
 
-class TestEngraveTask:
-    def test_reads_blob_runs_service_writes_output(self, blob):
-        from shared.contracts import (
-            PianoScore,
-            ScoreMetadata,
-            ScoreNote,
-        )
-
-        from backend.workers.engrave import run as engrave_run
-
-        score = PianoScore(
-            right_hand=[
-                ScoreNote(id="rh-0001", pitch=60, onset_beat=0.0, duration_beat=1.0, velocity=80, voice=1),
-            ],
-            left_hand=[
-                ScoreNote(id="lh-0001", pitch=48, onset_beat=0.0, duration_beat=1.0, velocity=70, voice=1),
-            ],
-            metadata=ScoreMetadata(
-                key="C:major",
-                time_signature=(4, 4),
-                tempo_map=[TempoMapEntry(time_sec=0.0, beat=0.0, bpm=120.0)],
-                difficulty="intermediate",
-            ),
-        )
-        payload_uri = blob.put_json(
-            "jobs/test-job/engrave/input.json",
-            {
-                "payload": score.model_dump(mode="json"),
-                "payload_type": "PianoScore",
-                "job_id": "test-job",
-                "title": "Test Song",
-                "composer": "Test Artist",
-            },
-        )
-        output_uri = engrave_run("test-job", payload_uri)
-        result = blob.get_json(output_uri)
-        assert "pdf_uri" in result
-        assert "musicxml_uri" in result
-
-
 class TestRefineTask:
     def test_passes_through_on_llm_failure(self, blob, monkeypatch):
         """The worker wraps the input envelope and calls RefineService,

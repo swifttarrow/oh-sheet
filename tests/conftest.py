@@ -7,7 +7,6 @@ from fastapi.testclient import TestClient
 
 import backend.workers.arrange  # noqa: F401
 import backend.workers.condense  # noqa: F401
-import backend.workers.engrave  # noqa: F401
 import backend.workers.humanize  # noqa: F401
 
 # Import monolith worker modules so their tasks are registered on the celery_app.
@@ -18,8 +17,14 @@ import backend.workers.transform  # noqa: F401
 from backend.api import deps
 from backend.config import settings
 from backend.main import create_app
+from backend.services import ml_engraver_client as ml_engraver_module
 from backend.services import transcribe as transcribe_module
 from backend.workers.celery_app import celery_app as _celery_app
+
+_FAKE_ML_MUSICXML = (
+    b'<?xml version="1.0" encoding="UTF-8" standalone="no"?>'
+    b'<score-partwise version="3.1"><part id="P1"/></score-partwise>'
+)
 
 
 @pytest.fixture(autouse=True)
@@ -71,6 +76,23 @@ def celery_eager_mode():
     yield
     _celery_app.conf.task_always_eager = False
     _celery_app.conf.task_eager_propagates = False
+
+
+@pytest.fixture(autouse=True)
+def stub_ml_engraver(monkeypatch):
+    """Replace the ML engraver HTTP client with a deterministic fake.
+
+    The engrave stage always routes through this client now (no local
+    fallback), so without this stub every pipeline test would try to
+    reach a real ML service. Tests that want to exercise error paths
+    override this within their own monkeypatch scope.
+    """
+    async def fake_engrave(midi_bytes: bytes) -> bytes:
+        return _FAKE_ML_MUSICXML
+
+    monkeypatch.setattr(
+        ml_engraver_module, "engrave_midi_via_ml_service", fake_engrave,
+    )
 
 
 @pytest.fixture(autouse=True)

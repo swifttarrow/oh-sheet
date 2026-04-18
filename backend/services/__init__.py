@@ -2,7 +2,6 @@
 
 from backend.services.arrange import ArrangeService
 from backend.services.condense import CondenseService
-from backend.services.engrave import EngraveService
 from backend.services.humanize import HumanizeService
 from backend.services.ingest import IngestService
 from backend.services.transcribe import TranscribeService
@@ -15,5 +14,4 @@ __all__ = [
     "CondenseService",
     "TransformService",
     "HumanizeService",
-    "EngraveService",
 ]

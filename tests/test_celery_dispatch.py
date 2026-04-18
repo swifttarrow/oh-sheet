@@ -17,7 +17,13 @@ from shared.storage.local import LocalBlobStore
 from backend.config import settings
 from backend.jobs.events import JobEvent
 from backend.jobs.runner import PipelineRunner
+from backend.services import ml_engraver_client
 from backend.workers.celery_app import celery_app
+
+_FAKE_MUSICXML = (
+    b'<?xml version="1.0" encoding="UTF-8" standalone="no"?>'
+    b'<score-partwise version="3.1"><part id="P1"/></score-partwise>'
+)
 
 
 @pytest.fixture
@@ -29,6 +35,17 @@ def blob():
 @pytest.fixture
 def runner(blob):
     return PipelineRunner(blob_store=blob, celery_app=celery_app)
+
+
+@pytest.fixture(autouse=True)
+def mock_ml_engraver(monkeypatch):
+    """Stub the engraver HTTP client so pipeline tests don't need a live
+    ML backend. The engrave stage always routes through this client now —
+    there is no local fallback."""
+    async def fake_engrave(midi_bytes: bytes) -> bytes:
+        return _FAKE_MUSICXML
+
+    monkeypatch.setattr(ml_engraver_client, "engrave_midi_via_ml_service", fake_engrave)
 
 
 @pytest.mark.asyncio
@@ -55,7 +72,7 @@ async def test_full_pipeline_via_celery(runner):
         on_event=events.append,
     )
 
-    assert result.pdf_uri
+    # pdf_uri is intentionally empty — the ML engraver returns MusicXML only.
     assert result.musicxml_uri
     assert result.humanized_midi_uri
 
@@ -109,7 +126,6 @@ async def test_midi_upload_pipeline_via_celery(runner):
         on_event=events.append,
     )
 
-    assert result.pdf_uri
     assert result.musicxml_uri
     assert result.humanized_midi_uri
 
@@ -141,7 +157,6 @@ async def test_sheet_only_pipeline_via_celery(runner):
         on_event=events.append,
     )
 
-    assert result.pdf_uri
     assert result.musicxml_uri
 
     stage_names = [e.stage for e in events if e.type == "stage_completed"]

@@ -110,18 +110,5 @@ services:
       redis:
         condition: service_healthy
 
-  worker-engrave:
-    platform: linux/amd64
-    image: ${BASE_IMAGE:-ghcr.io/oh-sheet-team/ohsheet-dev-base:latest}
-    command: celery -A backend.workers.celery_app worker -Q engrave -c 1 --loglevel=info
-    environment:
-      PYTHONDONTWRITEBYTECODE: "1"
-      OHSHEET_BLOB_ROOT: /app/blob
-      OHSHEET_REDIS_URL: redis://redis:6379/0
-    volumes:
-      - ./blob:/app/blob
-      - ./backend:/app/backend
-      - ./shared:/app/shared
-    depends_on:
-      redis:
-        condition: service_healthy
+  # worker-engrave retired: engrave runs inline in the orchestrator as an
+  # HTTP call to oh-sheet-ml-pipeline (OHSHEET_ENGRAVER_SERVICE_URL).

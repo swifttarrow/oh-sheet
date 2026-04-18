@@ -1,13 +1,8 @@
 """HTTP client for the oh-sheet-ml-pipeline engraver service.
 
 Oh Sheet POSTs MIDI bytes to the service's ``/engrave`` endpoint and
-receives MusicXML bytes in response. Gated by
-``settings.engraver_inference``.
-
-Unlike ``tunechat_client``, this raises on failure: the engraver-inference
-toggle is operator-controlled and an outage should surface loudly rather
-than silently falling back to the pretty_midi path — that's what
-``OHSHEET_ENGRAVER_INFERENCE=false`` is for.
+receives MusicXML bytes in response. This is the only engrave path —
+there is no local fallback — so failures propagate as job errors.
 """
 from __future__ import annotations
 
@@ -63,9 +58,8 @@ async def engrave_midi_via_ml_service(midi_bytes: bytes) -> bytes:
     musicxml = response.content
     if _looks_like_stub(musicxml):
         log.warning(
-            "ml_engraver: engraver_inference=true but response appears to be "
-            "the ML pipeline stub placeholder (bytes_out=%d < %d). Confirm "
-            "a real model is deployed before trusting these artifacts.",
+            "ml_engraver: response is suspiciously small (bytes_out=%d < %d). "
+            "Confirm the service is returning real MusicXML, not a placeholder.",
             len(musicxml),
             _STUB_MUSICXML_BYTE_CEILING,
         )

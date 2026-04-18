@@ -597,21 +597,14 @@ class Settings(BaseSettings):
     tunechat_api_key: str = ""
     tunechat_timeout_sec: int = 300
 
-    # ---- ML engraver service toggle ---------------------------------------
-    # When ``engraver_inference`` is enabled, jobs whose input came in via
-    # ``audio_upload`` or ``midi_upload`` route their engraving through the
-    # oh-sheet-ml-pipeline HTTP service (POST {url}/engrave, MIDI bytes →
-    # MusicXML bytes) instead of the local music21-based ``engrave`` stage.
-    # ``title_lookup`` jobs (TuneChat + cover_search) are unaffected — they
-    # keep their existing paths.
+    # ---- ML engraver service ----------------------------------------------
+    # audio_upload and midi_upload jobs always route their engraving through
+    # the oh-sheet-ml-pipeline HTTP service (POST {url}/engrave, MIDI bytes →
+    # MusicXML bytes). There is no local fallback — an outage here fails the
+    # job. title_lookup jobs are expected to resolve upstream via TuneChat;
+    # if they reach the engrave stage, the job hard-fails with a clear error.
     #
-    # The ML service is stubbed initially and returns a near-empty MusicXML
-    # placeholder, so enabling this in production without a real model on
-    # the other end will produce blank scores. Default off.
-    #
-    # Env: OHSHEET_ENGRAVER_INFERENCE, OHSHEET_ENGRAVER_SERVICE_URL,
-    #      OHSHEET_ENGRAVER_SERVICE_TIMEOUT_SEC
-    engraver_inference: bool = False
+    # Env: OHSHEET_ENGRAVER_SERVICE_URL, OHSHEET_ENGRAVER_SERVICE_TIMEOUT_SEC
     engraver_service_url: str = "http://localhost:8080"
     engraver_service_timeout_sec: int = 60
 

@@ -200,23 +200,6 @@ def test_stage_humanize_success(client):
     assert "expressive_notes" in output
 
 
-def test_stage_engrave_success(client):
-    blob = _blob(client)
-    cmd = _cmd(blob, _humanized_performance())
-
-    resp = client.post("/v1/stages/engrave", json=cmd)
-
-    assert resp.status_code == 200
-    body = resp.json()
-    assert body["status"] == "success"
-    assert body["output_uri"] is not None
-    output = blob.get_json(body["output_uri"])
-    assert output["schema_version"] == SCHEMA_VERSION
-    assert "pdf_uri" in output
-    assert "musicxml_uri" in output
-    assert "humanized_midi_uri" in output
-
-
 # ---------------------------------------------------------------------------
 # Schema version mismatch → 409
 # ---------------------------------------------------------------------------

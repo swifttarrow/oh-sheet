@@ -55,11 +55,13 @@ def download_artifact(
 
     attr, media_type, suffix = _KIND_INFO[kind]
     uri = getattr(record.result, attr)
-    if uri is None:
-        # Optional artifacts (e.g. transcription_midi) won't exist for
-        # every variant — midi_upload skips transcription, and the stub
-        # fallback doesn't persist a MIDI file. Return 404 so clients can
-        # distinguish "never produced" from "job failed".
+    if not uri:
+        # Optional artifacts won't exist for every variant:
+        #   * transcription_midi — absent on midi_upload / stub paths
+        #   * pdf — the ML engraver returns MusicXML only; rendering is
+        #     a client-side responsibility
+        # Return 404 so clients can distinguish "never produced" from
+        # "job failed".
         raise HTTPException(
             status_code=404,
             detail=f"Job {job_id} has no {kind!r} artifact.",

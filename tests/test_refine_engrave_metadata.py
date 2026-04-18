@@ -11,8 +11,24 @@ from shared.storage.local import LocalBlobStore
 
 from backend.config import settings
 from backend.jobs.runner import PipelineRunner
+from backend.services import ml_engraver_client
 from backend.services import refine as refine_module
 from backend.workers.celery_app import celery_app
+
+_FAKE_MUSICXML = (
+    b'<?xml version="1.0" encoding="UTF-8" standalone="no"?>'
+    b'<score-partwise version="3.1"><part id="P1"/></score-partwise>'
+)
+
+
+@pytest.fixture(autouse=True)
+def mock_ml_engraver(monkeypatch):
+    """Stub the engraver service so these metadata-propagation tests don't
+    require a live ML backend."""
+    async def fake_engrave(midi_bytes: bytes) -> bytes:
+        return _FAKE_MUSICXML
+
+    monkeypatch.setattr(ml_engraver_client, "engrave_midi_via_ml_service", fake_engrave)
 
 
 @pytest.mark.asyncio

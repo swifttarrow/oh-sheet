@@ -13,13 +13,31 @@ from shared.storage.local import LocalBlobStore
 
 from backend.config import settings
 from backend.jobs.runner import PipelineRunner
+from backend.services import ml_engraver_client
 from backend.workers.celery_app import celery_app
+
+_FAKE_MUSICXML = (
+    b'<?xml version="1.0" encoding="UTF-8" standalone="no"?>'
+    b'<score-partwise version="3.1"><part id="P1"/></score-partwise>'
+)
+
+
+@pytest.fixture(autouse=True)
+def mock_ml_engraver(monkeypatch):
+    async def fake_engrave(midi_bytes: bytes) -> bytes:
+        return _FAKE_MUSICXML
+
+    monkeypatch.setattr(ml_engraver_client, "engrave_midi_via_ml_service", fake_engrave)
 
 
 @pytest.mark.asyncio
 async def test_runner_invokes_refine_before_engrave():
-    """With enable_refine=True, the runner dispatches refine before engrave
-    and the refined envelope is what engrave receives."""
+    """With enable_refine=True, the runner dispatches refine before engrave.
+
+    Engrave no longer flows through Celery — it's an inline ML HTTP call —
+    so we assert refine.run was dispatched and that the pipeline produced
+    a MusicXML artifact after refine ran.
+    """
     stages_dispatched: list[str] = []
 
     original_dispatch = PipelineRunner._dispatch_task
@@ -38,9 +56,9 @@ async def test_runner_invokes_refine_before_engrave():
         result = await runner.run(job_id="t-refine", bundle=bundle, config=config)
 
     assert "refine.run" in stages_dispatched
-    # Ordering: refine dispatched strictly before engrave.
-    assert stages_dispatched.index("refine.run") < stages_dispatched.index("engrave.run")
-    assert result.pdf_uri  # engrave still produced an output
+    # engrave is no longer dispatched as a Celery task — it runs inline.
+    assert "engrave.run" not in stages_dispatched
+    assert result.musicxml_uri
 
 
 @pytest.mark.asyncio
