@@ -141,6 +141,8 @@ jobs:
           # size > 0 before using it, so empty = run anonymously.
           printf '%s' "$OHSHEET_YTDLP_COOKIES" > /tmp/youtube-cookies.txt
           chmod 600 /tmp/youtube-cookies.txt
+          COOKIE_SIZE=$(wc -c < /tmp/youtube-cookies.txt)
+          echo "diagnostic-cookies-size=${COOKIE_SIZE}"
 
           # Copy compose files + cookies to VM (SCP tmp names, then atomic mv)
           $SCP docker-compose.prod.yml Caddyfile "${VM_USER}@${VM_HOST}:~/oh-sheet/"
