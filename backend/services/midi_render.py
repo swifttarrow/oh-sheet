@@ -2,6 +2,12 @@
 
 Used by PipelineRunner to produce the MIDI payload shipped to the
 ML engraver service.
+
+Failure modes raise ``MidiRenderError`` rather than emitting a stub
+MIDI file. A stub would travel to the engraver and come back as a
+blank MusicXML — the same silent-failure shape this PR set out to
+kill on the response side. The symmetric fix is to fail loudly on the
+request side.
 """
 from __future__ import annotations
 
@@ -14,23 +20,34 @@ from backend.contracts import HumanizedPerformance, beat_to_sec
 log = logging.getLogger(__name__)
 
 
-_STUB_MIDI = (
-    b"MThd\x00\x00\x00\x06\x00\x00\x00\x01\x01\xe0"   # header chunk: format 0, 1 track, 480 tpq
-    b"MTrk\x00\x00\x00\x04\x00\xff\x2f\x00"            # one empty track ending in End-Of-Track
-)
+class MidiRenderError(RuntimeError):
+    """Raised when a HumanizedPerformance cannot be rendered to MIDI.
+
+    Two cases:
+      * ``pretty_midi`` isn't importable — deploy configuration error
+        (pretty_midi is a top-level dependency in pyproject.toml).
+      * The performance contains no renderable notes after overlap
+        resolution and min-duration filtering — likely a transcription
+        regression or a silent audio file. Either way, a blank engrave
+        isn't a useful artifact, so fail loudly.
+    """
 
 
 def render_midi_bytes(perf: HumanizedPerformance) -> bytes:
     """Render the humanized performance to MIDI bytes via pretty_midi.
 
-    Falls back to ``_STUB_MIDI`` when pretty_midi isn't installed or the
-    score is empty enough that pretty_midi would write a no-op file.
+    Raises ``MidiRenderError`` when pretty_midi is unavailable or the
+    performance contains no renderable notes.
     """
     try:
         import pretty_midi  # noqa: PLC0415 — optional dep
-    except ImportError:
-        log.warning("pretty_midi not installed — MIDI output will be a stub. Install with: pip install pretty_midi")
-        return _STUB_MIDI
+    except ImportError as exc:
+        raise MidiRenderError(
+            "pretty_midi is not installed; cannot render MIDI. "
+            "This is a deploy configuration error — pretty_midi is a "
+            "top-level dependency in pyproject.toml. Refusing to send a "
+            "stub MIDI to the engraver (would round-trip as blank MusicXML)."
+        ) from exc
 
     tempo_map = perf.score.metadata.tempo_map
     initial_bpm = tempo_map[0].bpm if tempo_map else 120.0
@@ -102,7 +119,13 @@ def render_midi_bytes(perf: HumanizedPerformance) -> bytes:
     midi.instruments.append(piano)
 
     if not piano.notes:
-        return _STUB_MIDI
+        raise MidiRenderError(
+            f"humanized performance contained no renderable notes after "
+            f"overlap resolution and min-duration filtering "
+            f"(input expressive_notes={len(perf.expressive_notes)}). "
+            f"Likely a transcription regression or silent audio; refusing "
+            f"to send a stub MIDI to the engraver."
+        )
 
     with tempfile.NamedTemporaryFile(suffix=".mid", delete=False) as tmp:
         tmp_path = Path(tmp.name)
