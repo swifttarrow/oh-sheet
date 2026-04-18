@@ -38,13 +38,6 @@ class Settings(BaseSettings):
     # not appear when you run the API server.
     log_level: str = "INFO"
 
-    # ---- ML inference API (engraver replacement) ----------------------------
-    # When set, the engrave stage POSTs the rendered MIDI to this URL's
-    # /transcribe endpoint and uses the returned MusicXML instead of the
-    # local music21 render. Falls back to music21 on error.
-    ml_api_url: str | None = None
-    ml_api_timeout_sec: int = 60
-
     # ---- Basic Pitch transcription -----------------------------------------
     # Tunable knobs passed through to basic_pitch.inference.predict(). Defaults
     # mirror upstream (basic_pitch.constants.DEFAULT_*). The ONNX model ships
@@ -603,6 +596,24 @@ class Settings(BaseSettings):
     tunechat_url: str = "http://localhost:3000"
     tunechat_api_key: str = ""
     tunechat_timeout_sec: int = 300
+
+    # ---- ML engraver service toggle ---------------------------------------
+    # When ``engraver_inference`` is enabled, jobs whose input came in via
+    # ``audio_upload`` or ``midi_upload`` route their engraving through the
+    # oh-sheet-ml-pipeline HTTP service (POST {url}/engrave, MIDI bytes →
+    # MusicXML bytes) instead of the local music21-based ``engrave`` stage.
+    # ``title_lookup`` jobs (TuneChat + cover_search) are unaffected — they
+    # keep their existing paths.
+    #
+    # The ML service is stubbed initially and returns a near-empty MusicXML
+    # placeholder, so enabling this in production without a real model on
+    # the other end will produce blank scores. Default off.
+    #
+    # Env: OHSHEET_ENGRAVER_INFERENCE, OHSHEET_ENGRAVER_SERVICE_URL,
+    #      OHSHEET_ENGRAVER_SERVICE_TIMEOUT_SEC
+    engraver_inference: bool = False
+    engraver_service_url: str = "http://localhost:8080"
+    engraver_service_timeout_sec: int = 60
 
     # ---- Arrange backend (rules vs HF MIDI path) ---------------------------
     # ``rules`` — existing hand assignment + quantization in arrange.

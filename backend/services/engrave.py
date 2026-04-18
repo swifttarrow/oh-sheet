@@ -1338,41 +1338,6 @@ def _render_pdf_bytes(musicxml_bytes: bytes) -> bytes:
 
 
 # ---------------------------------------------------------------------------
-# ML API integration
-# ---------------------------------------------------------------------------
-
-def _transcribe_via_ml_api(midi_bytes: bytes) -> bytes | None:
-    """POST MIDI to the ML inference API, return MusicXML or None on failure."""
-    from backend.config import settings  # noqa: PLC0415
-
-    if not settings.ml_api_url:
-        return None
-    if midi_bytes == _STUB_MIDI:
-        return None
-
-    import httpx  # noqa: PLC0415
-
-    url = f"{settings.ml_api_url.rstrip('/')}/transcribe"
-    try:
-        resp = httpx.post(
-            url,
-            content=midi_bytes,
-            headers={"Content-Type": "application/octet-stream"},
-            timeout=settings.ml_api_timeout_sec,
-        )
-        resp.raise_for_status()
-        body = resp.content
-        if body and b"score-partwise" in body:
-            log.info("engrave: ML API returned %d bytes of MusicXML", len(body))
-            return body
-        log.warning("engrave: ML API response missing score-partwise — falling back to local")
-        return None
-    except Exception as exc:  # noqa: BLE001
-        log.warning("engrave: ML API call failed (%s) — falling back to local render", exc)
-        return None
-
-
-# ---------------------------------------------------------------------------
 # Service
 # ---------------------------------------------------------------------------
 
@@ -1423,14 +1388,9 @@ def _engrave_sync(
         )
 
     midi_bytes = _render_midi_bytes(perf)
-    ml_musicxml = _transcribe_via_ml_api(midi_bytes)
-    if ml_musicxml is not None:
-        musicxml_bytes = ml_musicxml
-        chord_symbols_rendered = 0
-    else:
-        musicxml_bytes, chord_symbols_rendered = _render_musicxml_bytes(
-            score, perf, title, composer,
-        )
+    musicxml_bytes, chord_symbols_rendered = _render_musicxml_bytes(
+        score, perf, title, composer,
+    )
     pdf_bytes = _render_pdf_bytes(musicxml_bytes)
     return pdf_bytes, musicxml_bytes, midi_bytes, chord_symbols_rendered
 
