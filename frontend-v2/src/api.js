@@ -75,17 +75,80 @@ function buildWsUrl(path) {
   return path;
 }
 
+/**
+ * Subscribe to a job's event stream over WebSocket.
+ *
+ * The caller's `onEvent` receives each parsed event frame as-is. When
+ * the socket drops before a terminal event (job_succeeded / job_failed)
+ * has been seen, we synthesize a local `job_failed`-shaped event with
+ * a retryable error message so the UI can land in a recoverable state
+ * instead of spinning forever on the last "working:..." phase.
+ *
+ * Terminal events seen during normal flow (job_succeeded/failed) flip
+ * the `sawTerminal` flag so the same close/error handlers become a
+ * no-op — we only synthesize when the socket actually dropped early.
+ *
+ * @param {string} jobId
+ * @param {(event: object) => void} onEvent
+ * @returns {() => void} unsubscribe function (closes the socket; safe
+ *   to call multiple times; once called, subsequent close events are
+ *   treated as intentional and no synthesized error fires)
+ */
 export function subscribeToJob(jobId, onEvent) {
   const ws = new WebSocket(buildWsUrl(`/v1/jobs/${jobId}/ws`));
+  let sawTerminal = false;
+  let unsubscribed = false;
+
   ws.onmessage = (ev) => {
     try {
       const parsed = JSON.parse(ev.data);
+      if (parsed && (parsed.type === "job_succeeded" || parsed.type === "job_failed")) {
+        sawTerminal = true;
+      }
       onEvent(parsed);
     } catch {
       // Ignore malformed frames — server should never send non-JSON.
     }
   };
+
+  // Fires once per socket; both onclose and onerror can lead here
+  // (Chrome fires onerror THEN onclose on network drops; Firefox often
+  // just onclose with code 1006). De-duplicated via the `closed` flag.
+  let closed = false;
+  const handleEarlyClose = (message) => {
+    if (closed) return;
+    closed = true;
+    if (unsubscribed || sawTerminal) return;
+    try {
+      onEvent({
+        job_id: jobId,
+        type: "job_failed",
+        stage: null,
+        message,
+        progress: null,
+        data: { synthesized: true, reason: "ws_early_close" },
+      });
+    } catch {
+      // swallow — subscriber failure shouldn't crash the WS cleanup
+    }
+  };
+
+  ws.onclose = (ev) => {
+    // A graceful close (1000) after a terminal event is normal cleanup.
+    // Anything else (1006 abnormal, server-initiated close mid-job,
+    // proxy timeout) should surface as a retryable error to the user.
+    handleEarlyClose(
+      ev && ev.code === 1000
+        ? "Connection closed"
+        : "Connection lost — try again",
+    );
+  };
+  ws.onerror = () => {
+    handleEarlyClose("Connection error — try again");
+  };
+
   return () => {
+    unsubscribed = true;
     try {
       ws.close();
     } catch {

@@ -219,15 +219,10 @@ function idleBody(source, handlers) {
     artistInput = a.input;
     wrap.appendChild(t.wrap);
     wrap.appendChild(a.wrap);
-  } else if (source === "title") {
-    const t = field("Song title", "search");
-    const a = field("Artist (optional)");
-    titleInput = t.input;
-    artistInput = a.input;
-    wrap.appendChild(t.wrap);
-    wrap.appendChild(a.wrap);
   } else {
-    // youtube
+    // youtube (default — also the fallback for any unknown source
+    // value, since the segmented picker only exposes audio/midi/
+    // youtube after PR #83's UI simplification)
     const u = field("YouTube URL", "play_circle");
     const a = field("Artist (optional)");
     urlInput = u.input;
@@ -279,12 +274,8 @@ function idleBody(source, handlers) {
       payload.file = file;
       if (titleInput && titleInput.value) payload.title = titleInput.value;
       if (artistInput && artistInput.value) payload.artist = artistInput.value;
-    } else if (source === "title") {
-      const title = titleInput && titleInput.value.trim();
-      if (!title) return;
-      payload.title = title;
-      if (artistInput && artistInput.value) payload.artist = artistInput.value;
     } else {
+      // youtube (and fallback for any unknown source)
       const url = urlInput && urlInput.value.trim();
       if (!url) return;
       // Client-side guard: non-video YouTube URLs (search pages,
