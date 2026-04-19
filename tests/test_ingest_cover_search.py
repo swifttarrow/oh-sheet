@@ -412,3 +412,174 @@ class TestFromTitleLookupBuilder:
         import pytest
         with pytest.raises(TypeError):
             IngestService.from_title_lookup("Yesterday", "The Beatles", True)  # type: ignore[misc]
+
+
+# ---------------------------------------------------------------------------
+# Metadata threading: cover_search's split-extracted title/artist win
+# over the downloaded video's raw yt_title/yt_uploader.
+# ---------------------------------------------------------------------------
+#
+# The engraved sheet's <work-title> and <creator type="composer">
+# are filled from whatever ends up in ``payload.metadata.title`` and
+# ``.artist`` after ingest. Before this change, both fields came from
+# ``_download_youtube_sync`` — which returns the DOWNLOADED video's
+# raw title. For a user who pastes the official "Michael Jackson -
+# Beat It (Official Video)" URL and gets their job routed to Peter
+# Bence's cover ("BEAT IT - Michael Jackson x Peter Bence (Piano
+# Cover)"), the resulting sheet read "BEAT IT - Michael Jackson x
+# Peter Bence (Piano Cover)" as the title and "Peter Bence" as the
+# composer — neither of which is what the user searched for.
+#
+# After the change, ``_maybe_swap_for_cover_sync`` returns the
+# ORIGINAL URL's probed title/artist (split on the first " - " / " – "
+# / " | " separator, with trailing parens stripped). The caller
+# prefers those values over the raw yt_title/yt_uploader.
+
+
+class TestMetadataFromCoverSearchWinsOverDownload:
+    """When cover_search extracts clean title/artist from the original
+    URL, those values must appear in the final metadata — not the
+    downloaded cover's raw yt_title/yt_uploader."""
+
+    def test_extracted_title_and_artist_populate_metadata(self, service):
+        # Scenario: user pastes MJ's official Beat It URL. Probe returns
+        # "Michael Jackson - Beat It (Official Video)" which splits to
+        # artist="Michael Jackson" + title="Beat It (Official Video)",
+        # then trailing paren strips to "Beat It". Cover_search swaps to
+        # Peter Bence's cover. Download returns the cover's raw title,
+        # which we must IGNORE in favour of the extracted values.
+        original_url = "https://youtu.be/kOn-HdEg6AQ"  # official MJ Beat It
+        cover_url = "https://www.youtube.com/watch?v=TjouNZZNE3g"  # Peter Bence
+        bundle = _make_bundle(original_url, prefer_clean_source=True)
+
+        with (
+            patch("backend.services.ingest.probe_youtube_metadata") as mock_probe,
+            patch("backend.services.ingest.find_clean_source") as mock_find,
+            patch("backend.services.ingest._download_youtube_sync") as mock_dl,
+        ):
+            # Probe returns "Artist - Song (Official Video)" shape
+            mock_probe.return_value = (
+                "Michael Jackson - Beat It (Official Video)",
+                "Michael Jackson",
+            )
+            mock_find.return_value = CoverSearchResult(
+                url=cover_url,
+                score=100,
+                channel="Peter Bence",
+                title="BEAT IT - Michael Jackson x Peter Bence (Piano Cover)",
+            )
+            # Download returns the COVER's messy raw title — which must
+            # NOT end up in the final metadata.
+            mock_dl.return_value = (
+                RemoteAudioFile(
+                    uri="file:///tmp/fake.wav",
+                    format="wav",
+                    sample_rate=44100,
+                    duration_sec=193.0,
+                    channels=2,
+                    content_hash="hash-for-cover",
+                ),
+                "BEAT IT - Michael Jackson x Peter Bence (Piano Cover)",
+                "Peter Bence",
+            )
+
+            result = asyncio.run(service.run(bundle))
+
+        # Extracted (split + trailing-paren-stripped) values win
+        assert result.metadata.title == "Beat It"
+        assert result.metadata.artist == "Michael Jackson"
+
+    def test_no_dash_separator_passes_full_title_as_title(self, service):
+        # Video title without an "Artist - Song" separator — the full
+        # string becomes the title, artist stays None, and the
+        # downloaded video's yt_uploader is used as the fallback artist
+        # (only because cover_search's extracted artist is None).
+        bundle = _make_bundle(prefer_clean_source=True)
+
+        with (
+            patch("backend.services.ingest.probe_youtube_metadata") as mock_probe,
+            patch("backend.services.ingest.find_clean_source") as mock_find,
+            patch("backend.services.ingest._download_youtube_sync") as mock_dl,
+        ):
+            # No " - " separator anywhere in the title
+            mock_probe.return_value = ("Someday", "the beatles vevo")
+            mock_find.return_value = None  # no swap
+            mock_dl.return_value = (
+                RemoteAudioFile(
+                    uri="file:///tmp/fake.wav",
+                    format="wav",
+                    sample_rate=44100,
+                    duration_sec=60.0,
+                    channels=2,
+                    content_hash="hash",
+                ),
+                "yt_title_from_download",  # would be wrong
+                "yt_uploader_from_download",  # fallback when extracted artist is None
+            )
+
+            result = asyncio.run(service.run(bundle))
+
+        # Full probed title is used as title (no split possible)
+        assert result.metadata.title == "Someday"
+        # Cover_search's extracted artist is None, so caller falls back
+        # to the downloaded uploader — acceptable floor behaviour.
+        assert result.metadata.artist == "yt_uploader_from_download"
+
+    def test_trailing_bracket_is_stripped(self, service):
+        # "(Official Video)" / "[Remastered]" / "(Live at Wembley)" are
+        # parenthetical provenance tags that pollute sheet music headers
+        # but don't change what song it is. They should be stripped.
+        bundle = _make_bundle(prefer_clean_source=True)
+
+        with (
+            patch("backend.services.ingest.probe_youtube_metadata") as mock_probe,
+            patch("backend.services.ingest.find_clean_source") as mock_find,
+            patch("backend.services.ingest._download_youtube_sync") as mock_dl,
+        ):
+            mock_probe.return_value = (
+                "Queen - Bohemian Rhapsody (Official Video)",
+                "Queen",
+            )
+            mock_find.return_value = None
+            mock_dl.side_effect = lambda url, _bs: _fake_downloaded_audio(url)
+
+            result = asyncio.run(service.run(bundle))
+
+        assert result.metadata.title == "Bohemian Rhapsody"
+        assert result.metadata.artist == "Queen"
+
+    def test_extracted_values_survive_when_no_swap_happens(self, service):
+        # Even when cover_search finds no match (returns None), the
+        # extracted title/artist should still propagate — they're
+        # derived from the probe, not from the swap, and are always a
+        # better sheet header than the raw download title.
+        bundle = _make_bundle(prefer_clean_source=True)
+
+        with (
+            patch("backend.services.ingest.probe_youtube_metadata") as mock_probe,
+            patch("backend.services.ingest.find_clean_source") as mock_find,
+            patch("backend.services.ingest._download_youtube_sync") as mock_dl,
+        ):
+            mock_probe.return_value = (
+                "Coldplay - Yellow (Official Audio)",
+                "Coldplay",
+            )
+            mock_find.return_value = None  # no swap
+            mock_dl.return_value = (
+                RemoteAudioFile(
+                    uri="file:///tmp/fake.wav",
+                    format="wav",
+                    sample_rate=44100,
+                    duration_sec=60.0,
+                    channels=2,
+                    content_hash="hash",
+                ),
+                "Coldplay - Yellow (Official Audio) 4K UHD",  # even messier raw
+                "Coldplay",
+            )
+
+            result = asyncio.run(service.run(bundle))
+
+        # Extracted clean values, not the raw 4K UHD nonsense from download
+        assert result.metadata.title == "Yellow"
+        assert result.metadata.artist == "Coldplay"
