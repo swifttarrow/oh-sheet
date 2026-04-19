@@ -13,7 +13,8 @@ from backend.api.routes import artifacts, health, jobs, stages, uploads, ws
 from backend.config import settings
 from backend.contracts import SCHEMA_VERSION
 
-# Flutter web build output — present in the Docker image at /app/static.
+# frontend-v2 (vanilla-JS + Vite) build output — present in the Docker
+# image at /app/static (see Dockerfile stage `frontend-build`).
 _STATIC_DIR = Path(__file__).resolve().parent.parent / "static"
 
 

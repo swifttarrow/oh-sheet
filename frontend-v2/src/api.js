@@ -100,6 +100,12 @@ export function subscribeToJob(jobId, onEvent) {
   let unsubscribed = false;
 
   ws.onmessage = (ev) => {
+    // Late-frame guard: between unsubscribe() calling ws.close() and the
+    // browser actually tearing down the socket, a queued frame can still
+    // fire and overwrite a fresh idle phase via the reducer. Chromium
+    // cancels pending tasks synchronously in practice, but the WebSocket
+    // spec doesn't require it (RFC 6455 §7.1.1) — cheap to harden.
+    if (unsubscribed) return;
     try {
       const parsed = JSON.parse(ev.data);
       if (parsed && (parsed.type === "job_succeeded" || parsed.type === "job_failed")) {
@@ -120,6 +126,11 @@ export function subscribeToJob(jobId, onEvent) {
     closed = true;
     if (unsubscribed || sawTerminal) return;
     try {
+      // stage/progress are intentionally null — this event is synthesized
+      // client-side, not emitted by the pipeline. The reducer (state.js)
+      // only reads `message`, so null fields are harmless today; the
+      // `data.synthesized` flag is the signal for any future consumer
+      // that wants to distinguish a real failure from a WS drop.
       onEvent({
         job_id: jobId,
         type: "job_failed",
