@@ -419,10 +419,40 @@ function completeBody(job) {
       // allow= hints for AudioContext autoplay on first gesture inside
       // the iframe (Chrome/Firefox respect; Safari uses user-gesture heuristic)
       allow: "autoplay; clipboard-write",
+      // allowfullscreen enables the Fullscreen API path below; without
+      // it, iframe.requestFullscreen() rejects on Safari.
+      allowfullscreen: "true",
+    });
+    // Fullscreen toggle. Uses the browser Fullscreen API — Escape key
+    // handling, iOS Safari chrome hiding, and screen-reader mode
+    // announcements all come for free. The button sits as an overlay
+    // in the top-right corner of the iframe wrap (matching YouTube /
+    // Vimeo / Figma convention) so the semantic is "expand this
+    // frame", not "another action on this result".
+    const fullscreenBtn = el("button", {
+      class: "fullscreen-btn",
+      type: "button",
+      "aria-label": "Toggle fullscreen",
+      title: "Fullscreen",
+    }, icon("fullscreen"));
+    fullscreenBtn.addEventListener("click", () => {
+      // Exit if already fullscreen, otherwise enter. Swallow the
+      // returned promise — failures are surfaced by the browser as
+      // permission errors, and we don't want to pop an app-level
+      // error toast for what's essentially a UI affordance.
+      try {
+        if (document.fullscreenElement) {
+          document.exitFullscreen();
+        } else if (typeof frame.requestFullscreen === "function") {
+          frame.requestFullscreen();
+        }
+      } catch {
+        // Older browsers / sandboxed iframes — silent no-op.
+      }
     });
     // .iframe-stub.tunechat triggers the fullscreen-ish mobile CSS
     // where the iframe fills the viewport and the card sheds its padding.
-    wrap.appendChild(el("div", { class: "iframe-stub tunechat" }, frame));
+    wrap.appendChild(el("div", { class: "iframe-stub tunechat" }, frame, fullscreenBtn));
   } else {
     wrap.appendChild(
       el(

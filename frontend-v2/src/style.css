@@ -223,11 +223,49 @@ body[data-phase="submitting"] .tagline { display: none; }
   height: min(70vh, 720px); background: var(--surface);
   border: 2px solid var(--stroke); border-radius: 20px;
   margin-bottom: 16px; overflow: hidden;
+  /* position:relative anchors the fullscreen overlay button. */
+  position: relative;
 }
 .iframe-stub iframe {
   width: 100%; height: 100%; border: 0; display: block;
 }
 .iframe-stub.tunechat { height: min(80vh, 760px); }
+
+/* Fullscreen overlay button — top-right corner of the iframe wrap,
+   matching YouTube / Vimeo / Figma convention. Hover-reveals on
+   desktop so the chrome stays minimal; always visible on touch. */
+.fullscreen-btn {
+  position: absolute;
+  top: 12px; right: 12px;
+  width: 36px; height: 36px;
+  display: inline-flex; align-items: center; justify-content: center;
+  background: rgba(0, 0, 0, 0.55);
+  color: #fff;
+  border: 0;
+  border-radius: 8px;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity .15s ease, background .15s ease;
+  z-index: 2;
+}
+.fullscreen-btn .material-symbols-rounded { font-size: 20px; color: #fff; }
+.iframe-stub:hover .fullscreen-btn,
+.fullscreen-btn:focus-visible { opacity: 1; }
+.fullscreen-btn:hover { background: rgba(0, 0, 0, 0.75); }
+/* When the iframe itself is fullscreen, the button rides along in
+   the top-right of the fullscreen viewport. */
+.iframe-stub iframe:fullscreen { background: var(--surface); }
+
+/* Desktop results page — let the card breathe so OSMD can lay staves
+   out at a readable width. Typical "reading width" territory; the card
+   still caps at 90vw so there's visual margin on ultrawides. */
+body[data-phase="complete"] .card {
+  width: min(1200px, 90vw);
+  padding: 16px;
+}
+body[data-phase="complete"] .iframe-stub.tunechat {
+  height: min(85vh, 900px);
+}
 .inline-render {
   display: flex; flex-direction: column; align-items: center; justify-content: center;
   color: var(--on-surface-variant); gap: 8px;
@@ -364,4 +402,7 @@ body[data-phase="submitting"] .tagline { display: none; }
 /* Touch targets — ensure 44×44 on any touch device */
 @media (hover: none) {
   .btn-outlined, .btn-filled, .btn-text, .seg, .assist-chip { min-height: 44px; }
+  /* Hover-reveal doesn't work on touch — always show the fullscreen
+     overlay on phones/tablets, and upsize it to hit the 44×44 target. */
+  .fullscreen-btn { opacity: 1; width: 44px; height: 44px; }
 }

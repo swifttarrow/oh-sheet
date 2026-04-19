@@ -244,6 +244,42 @@ describe("renderPhase — complete (with tunechat_job_id)", () => {
     expect(text).toContain("MusicXML");
     expect(text).toContain("MIDI");
   });
+
+  it("renders a fullscreen button inside the iframe wrap", () => {
+    // Overlay lives in the iframe container, not in the downloads row,
+    // so the semantic is "expand this frame" (like YouTube) not
+    // "another download action". Convention > discoverability-in-context.
+    const wrap = container.querySelector(".iframe-stub.tunechat");
+    expect(wrap).toBeTruthy();
+    const btn = wrap.querySelector(".fullscreen-btn");
+    expect(btn).toBeTruthy();
+    expect(btn.getAttribute("aria-label")).toMatch(/fullscreen/i);
+  });
+
+  it("fullscreen button calls requestFullscreen on the iframe", () => {
+    const iframe = container.querySelector("iframe");
+    const spy = vi.fn().mockResolvedValue(undefined);
+    iframe.requestFullscreen = spy;
+    // No existing fullscreen element — click should enter fullscreen.
+    Object.defineProperty(document, "fullscreenElement", {
+      configurable: true,
+      get: () => null,
+    });
+    container.querySelector(".fullscreen-btn").click();
+    expect(spy).toHaveBeenCalledTimes(1);
+  });
+
+  it("fullscreen button calls exitFullscreen when already fullscreen", () => {
+    const iframe = container.querySelector("iframe");
+    const exitSpy = vi.fn().mockResolvedValue(undefined);
+    document.exitFullscreen = exitSpy;
+    Object.defineProperty(document, "fullscreenElement", {
+      configurable: true,
+      get: () => iframe,
+    });
+    container.querySelector(".fullscreen-btn").click();
+    expect(exitSpy).toHaveBeenCalledTimes(1);
+  });
 });
 
 describe("renderPhase — complete (without tunechat_job_id)", () => {
