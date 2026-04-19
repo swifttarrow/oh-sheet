@@ -43,6 +43,11 @@ services:
       OHSHEET_TUNECHAT_ENABLED: ${OHSHEET_TUNECHAT_ENABLED:-false}
       OHSHEET_TUNECHAT_URL: ${OHSHEET_TUNECHAT_URL:-}
       OHSHEET_TUNECHAT_API_KEY: ${OHSHEET_TUNECHAT_API_KEY:-}
+      # Client-side timeout for the httpx POST to TuneChat. 300 s default
+      # is short for 10+ min tracks — tuned higher on qa/prod via the
+      # deploy.yml → .env pipeline. Default falls through to
+      # backend/config.py's 300 s if the env var is unset.
+      OHSHEET_TUNECHAT_TIMEOUT_SEC: ${OHSHEET_TUNECHAT_TIMEOUT_SEC:-300}
       # Engraver service URL — backend.jobs.runner (living in this container)
       # always routes audio/midi engrave jobs to this URL. No local fallback.
       # REQUIRED: ``${VAR:?msg}`` makes docker compose refuse to start when
@@ -86,6 +91,11 @@ services:
       OHSHEET_TUNECHAT_ENABLED: ${OHSHEET_TUNECHAT_ENABLED:-false}
       OHSHEET_TUNECHAT_URL: ${OHSHEET_TUNECHAT_URL:-}
       OHSHEET_TUNECHAT_API_KEY: ${OHSHEET_TUNECHAT_API_KEY:-}
+      # Client-side timeout for the httpx POST to TuneChat. 300 s default
+      # is short for 10+ min tracks — tuned higher on qa/prod via the
+      # deploy.yml → .env pipeline. Default falls through to
+      # backend/config.py's 300 s if the env var is unset.
+      OHSHEET_TUNECHAT_TIMEOUT_SEC: ${OHSHEET_TUNECHAT_TIMEOUT_SEC:-300}
       # YouTube bot-detection bypass — worker-ingest is where the actual
       # yt-dlp download happens (services/ingest.py::_download_youtube_sync).
       # Same bind-mount as orchestrator for cover_search probes that also

@@ -70,6 +70,12 @@ store.onChange((phase) => {
 // ── Handlers bridge views → api ─────────────────────────────────
 const handlers = {
   onSourceChange(source) {
+    // If the user tabs between sources while a job is in flight, the
+    // old WS would otherwise keep delivering events after we've
+    // already transitioned back to idle — and a late job_succeeded
+    // would clobber the fresh idle state with a stale Complete phase.
+    // Close the socket first so the subscriber is a no-op.
+    if (unsubscribeWs) { unsubscribeWs(); unsubscribeWs = null; }
     store.setPhase({ name: "idle", source });
   },
 
@@ -91,8 +97,6 @@ const handlers = {
       } else if (formData.source === "midi") {
         const ref = await api.uploadMidi(formData.file);
         jobPayload = { midi: ref, title: formData.title, artist: formData.artist };
-      } else if (formData.source === "title") {
-        jobPayload = { title: formData.title, artist: formData.artist };
       } else if (formData.source === "youtube") {
         jobPayload = {
           title: formData.url,

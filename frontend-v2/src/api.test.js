@@ -235,4 +235,60 @@ describe("subscribeToJob", () => {
     unsub();
     expect(ws.closed).toBe(true);
   });
+
+  it("synthesizes a retryable job_failed when the socket drops before terminal", () => {
+    // If the WS closes with an abnormal code (1006 network drop, or
+    // anything non-1000) before we've seen job_succeeded/job_failed,
+    // the UI would otherwise spin forever on the last "working:..."
+    // phase. The subscriber must surface a job_failed so the state
+    // machine can transition to an error/retryable phase.
+    const onEvent = vi.fn();
+    subscribeToJob("j1", onEvent);
+    const ws = instances[0];
+    ws.onclose({ code: 1006 });
+    expect(onEvent).toHaveBeenCalledTimes(1);
+    const evt = onEvent.mock.calls[0][0];
+    expect(evt.type).toBe("job_failed");
+    expect(evt.job_id).toBe("j1");
+    expect(evt.message).toMatch(/connection lost|try again/i);
+    expect(evt.data.synthesized).toBe(true);
+  });
+
+  it("does NOT synthesize job_failed after a real job_succeeded event", () => {
+    // Terminal event received → subsequent close is normal cleanup,
+    // not a failure. Synthesizing here would double-emit and confuse
+    // the reducer (the real job_succeeded already transitioned the UI
+    // to Complete).
+    const onEvent = vi.fn();
+    subscribeToJob("j1", onEvent);
+    const ws = instances[0];
+    ws._fireMessage({ job_id: "j1", type: "job_succeeded", data: {} });
+    onEvent.mockClear();
+    ws.onclose({ code: 1000 });
+    expect(onEvent).not.toHaveBeenCalled();
+  });
+
+  it("does NOT synthesize job_failed after unsubscribe (user-initiated close)", () => {
+    // The unsubscribe fn calls ws.close(), which in the mock fires
+    // onclose. That must not synthesize an error — the user asked to
+    // stop listening, they don't want a spurious "Connection lost".
+    const onEvent = vi.fn();
+    const unsub = subscribeToJob("j1", onEvent);
+    unsub();
+    expect(onEvent).not.toHaveBeenCalled();
+  });
+
+  it("synthesizes job_failed on WS error event too (not just close)", () => {
+    // Firefox often fires only onclose with code 1006; Chrome fires
+    // onerror THEN onclose. Both paths must land in the same error
+    // state, and the dedupe (closed flag) must prevent double-emit.
+    const onEvent = vi.fn();
+    subscribeToJob("j1", onEvent);
+    const ws = instances[0];
+    ws.onerror(new Event("error"));
+    expect(onEvent).toHaveBeenCalledTimes(1);
+    // Follow-up onclose after onerror must NOT emit a second event.
+    ws.onclose({ code: 1006 });
+    expect(onEvent).toHaveBeenCalledTimes(1);
+  });
 });

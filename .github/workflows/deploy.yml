@@ -112,6 +112,11 @@ jobs:
           OHSHEET_TUNECHAT_ENABLED: ${{ vars.OHSHEET_TUNECHAT_ENABLED }}
           OHSHEET_TUNECHAT_URL: ${{ vars.OHSHEET_TUNECHAT_URL }}
           OHSHEET_TUNECHAT_API_KEY: ${{ secrets.OHSHEET_TUNECHAT_API_KEY }}
+          # Long YouTube tracks (up to ~20 min) need a client timeout
+          # higher than the default 300 s — TuneChat can take 6-10 min
+          # to transcribe a 10-min audio file. 900 s is recommended for
+          # qa / prod. Unset falls back to 300 s (backend/config.py).
+          OHSHEET_TUNECHAT_TIMEOUT_SEC: ${{ vars.OHSHEET_TUNECHAT_TIMEOUT_SEC }}
           # Anthropic API — used by worker-refine for LLM metadata enrichment.
           OHSHEET_ANTHROPIC_API_KEY: ${{ secrets.OHSHEET_ANTHROPIC_API_KEY }}
           # Base URL of oh-sheet-ml-pipeline engraver service. The engrave
@@ -148,6 +153,7 @@ jobs:
           echo "OHSHEET_TUNECHAT_ENABLED=${OHSHEET_TUNECHAT_ENABLED}" >> /tmp/.env
           echo "OHSHEET_TUNECHAT_URL=${OHSHEET_TUNECHAT_URL}" >> /tmp/.env
           echo "OHSHEET_TUNECHAT_API_KEY=${OHSHEET_TUNECHAT_API_KEY}" >> /tmp/.env
+          echo "OHSHEET_TUNECHAT_TIMEOUT_SEC=${OHSHEET_TUNECHAT_TIMEOUT_SEC}" >> /tmp/.env
           # Anthropic — worker-refine LLM metadata enrichment.
           echo "OHSHEET_ANTHROPIC_API_KEY=${OHSHEET_ANTHROPIC_API_KEY}" >> /tmp/.env
           echo "OHSHEET_ENGRAVER_SERVICE_URL=${OHSHEET_ENGRAVER_SERVICE_URL}" >> /tmp/.env
