@@ -278,6 +278,22 @@ describe("subscribeToJob", () => {
     expect(onEvent).not.toHaveBeenCalled();
   });
 
+  it("drops late frames that arrive after unsubscribe", () => {
+    // Between unsubscribe() calling ws.close() and the browser tearing
+    // down the socket, a queued frame can still fire onmessage. That
+    // frame must not reach the subscriber — otherwise a stale late
+    // job event could clobber the fresh phase the caller just set
+    // (e.g. on source-tab switch, where main.js unsubscribes and then
+    // resets to idle).
+    const onEvent = vi.fn();
+    const unsub = subscribeToJob("j1", onEvent);
+    const ws = instances[0];
+    unsub();
+    onEvent.mockClear(); // ignore any close-path side effects
+    ws._fireMessage({ job_id: "j1", type: "stage_progress", stage: "ingest", progress: 0.5 });
+    expect(onEvent).not.toHaveBeenCalled();
+  });
+
   it("synthesizes job_failed on WS error event too (not just close)", () => {
     // Firefox often fires only onclose with code 1006; Chrome fires
     // onerror THEN onclose. Both paths must land in the same error
