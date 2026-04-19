@@ -100,6 +100,7 @@ PIANO_EASY_CHANNELS: tuple[str, ...] = (
     "tutorialsbyhugo",
     "bitesize piano",
     "rainbow piano tuto",
+    "pianotutorialeasy",    # @PianoTutorialEasy — added 2026-04-18 (demo audit)
 )
 
 # Tier 2 — moderate / intermediate arrangements. Playable for a
@@ -162,6 +163,8 @@ PIANO_ADVANCED_CHANNELS: tuple[str, ...] = (
     "david solís",
     "david solis",          # ASCII fallback
     "the piano guys",
+    "peter bence",          # added 2026-04-18 (Beat It audit: high-quality
+                            # arrangements, ~3M subs, was scoring 50 without bonus)
 )
 
 # Active piano allowlist = easy + moderate + advanced. All three tiers
