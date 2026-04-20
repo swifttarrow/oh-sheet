@@ -37,11 +37,12 @@ ArtifactKind = Literal["pdf", "musicxml", "midi", "transcription_midi"]
 # when the TuneChat field is empty (e.g. audio_upload / midi_upload paths
 # that never touch TuneChat). ``transcription_midi`` has no TuneChat
 # counterpart — it's the pre-engrave MIDI from Oh Sheet's own pipeline.
+_MUSICXML_MIME = "application/vnd.recordare.musicxml+xml"
 _KIND_INFO: dict[str, tuple[str, str | None, str, str]] = {
-    "pdf":                ("pdf_uri",                "tunechat_pdf_url",      "application/pdf",                       "sheet.pdf"),
-    "musicxml":           ("musicxml_uri",           "tunechat_musicxml_url", "application/vnd.recordare.musicxml+xml", "score.musicxml"),
-    "midi":               ("humanized_midi_uri",     "tunechat_midi_url",     "audio/midi",                            "humanized.mid"),
-    "transcription_midi": ("transcription_midi_uri", None,                    "audio/midi",                            "transcription.mid"),
+    "pdf":                ("pdf_uri",                "tunechat_pdf_url",      "application/pdf", "sheet.pdf"),
+    "musicxml":           ("musicxml_uri",           "tunechat_musicxml_url", _MUSICXML_MIME,    "score.musicxml"),
+    "midi":               ("humanized_midi_uri",     "tunechat_midi_url",     "audio/midi",      "humanized.mid"),
+    "transcription_midi": ("transcription_midi_uri", None,                    "audio/midi",      "transcription.mid"),
 }
 
 # httpx timeout for the TuneChat proxy fetch. Short because the file

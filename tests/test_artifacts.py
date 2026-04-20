@@ -96,8 +96,8 @@ def _install_tunechat_job(client, *, pdf: str | None, musicxml: str | None, midi
     """Submit a midi job and patch its EngravedOutput to look like a
     TuneChat-fast-path result: empty blob URIs + populated tunechat URLs.
     Returns the job_id."""
-    from backend.jobs.manager import JobManager
     from backend.api.deps import get_job_manager
+    from backend.jobs.manager import JobManager
 
     job_id = _submit_midi_job(client)
     _wait_for_succeeded(client, job_id)
@@ -123,8 +123,6 @@ def _install_tunechat_job(client, *, pdf: str | None, musicxml: str | None, midi
 def test_artifact_proxies_musicxml_from_tunechat(client, monkeypatch):
     """When tunechat_musicxml_url is set, the endpoint proxies the fetch
     and returns the bytes with Content-Disposition: attachment."""
-    import httpx
-
     upstream_body = b"<?xml version='1.0'?><score-partwise/>"
 
     class FakeResponse:
