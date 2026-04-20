@@ -365,6 +365,16 @@ class EngravedOutput(BaseModel):
     # TuneChat's rendered score for display in Oh Sheet's result screen.
     tunechat_job_id: str | None = None
     tunechat_preview_image_url: str | None = None
+    # Artifact URLs hosted on TuneChat's server. When Oh Sheet's
+    # pipeline skipped local engraving (TuneChat-only path), these
+    # are the only place the rendered artifacts exist. The artifacts
+    # endpoint (backend/api/routes/artifacts.py) proxies downloads
+    # through these when ``pdf_uri`` / ``musicxml_uri`` / ``humanized_midi_uri``
+    # are empty, so /v1/artifacts/{job}/{kind} keeps working
+    # regardless of which engraver produced the files.
+    tunechat_midi_url: str | None = None
+    tunechat_musicxml_url: str | None = None
+    tunechat_pdf_url: str | None = None
 
 
 # ---------------------------------------------------------------------------

@@ -22,10 +22,20 @@ log = logging.getLogger(__name__)
 
 @dataclass(frozen=True)
 class TuneChatResult:
-    """The two things Oh Sheet needs from TuneChat."""
+    """What Oh Sheet captures from TuneChat's transcribe response.
+
+    Artifact URLs (midi / musicxml / pdf) point at files hosted on
+    TuneChat's server — e.g. ``https://tunechat.raqdrobinson.com/pipeline/<id>/notation.mid``.
+    They may be None for any individual kind (TuneChat sometimes
+    produces MusicXML + MIDI but no PDF if MuseScore fails; the PDF
+    field being None is the signal to not offer that download).
+    """
 
     job_id: str
     preview_image_url: str | None
+    midi_url: str | None = None
+    musicxml_url: str | None = None
+    pdf_url: str | None = None
 
 
 async def transcribe_via_tunechat(
@@ -72,8 +82,18 @@ async def transcribe_via_tunechat(
             result = TuneChatResult(
                 job_id=data["jobId"],
                 preview_image_url=data.get("previewImageUrl"),
+                midi_url=data.get("fullMidiUrl"),
+                musicxml_url=data.get("fullMusicxmlUrl"),
+                pdf_url=data.get("fullPdfUrl"),
             )
-            log.info("tunechat: success job_id=%s has_image=%s", result.job_id, result.preview_image_url is not None)
+            log.info(
+                "tunechat: success job_id=%s has_image=%s has_midi=%s has_xml=%s has_pdf=%s",
+                result.job_id,
+                result.preview_image_url is not None,
+                result.midi_url is not None,
+                result.musicxml_url is not None,
+                result.pdf_url is not None,
+            )
             return result
 
     except httpx.TimeoutException:

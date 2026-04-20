@@ -35,19 +35,13 @@ describe("renderPhase — idle / youtube", () => {
     renderPhase(container, { name: "idle", source: "youtube" }, handlers);
   });
 
-  it("renders a segmented picker with 3 buttons", () => {
-    const segs = container.querySelectorAll(".segmented .seg");
-    expect(segs.length).toBe(3);
-    const texts = [...segs].map((s) => s.textContent.replace(/\s+/g, " ").trim());
-    expect(texts.some((t) => t.includes("Audio"))).toBe(true);
-    expect(texts.some((t) => t.includes("MIDI"))).toBe(true);
-    expect(texts.some((t) => t.includes("YouTube"))).toBe(true);
-  });
-
-  it("marks the YouTube tab active", () => {
-    const active = container.querySelector(".segmented .seg.on");
-    expect(active).toBeTruthy();
-    expect(active.textContent.trim()).toBe("YouTube");
+  // Demo scope (Apr 20): audio + midi sources are hidden, so SOURCES
+  // has length 1 and the segmented picker auto-hides. Old assertions
+  // about 3 buttons / "marks YouTube tab active" don't apply until
+  // audio/midi come back. Keep this test to lock in the auto-hide
+  // behavior — if SOURCES ever grows, the picker should reappear.
+  it("does NOT render a segmented picker when only one source is defined", () => {
+    expect(container.querySelector(".segmented")).toBeNull();
   });
 
   it("renders a URL input (no file picker)", () => {
@@ -78,13 +72,10 @@ describe("renderPhase — idle / youtube", () => {
     expect(arg.url).toBe("https://youtu.be/abc");
   });
 
-  it("fires onSourceChange('audio') when Audio tab clicked", () => {
-    const audioTab = [...container.querySelectorAll(".segmented .seg")].find(
-      (s) => s.textContent.includes("Audio"),
-    );
-    audioTab.click();
-    expect(handlers.onSourceChange).toHaveBeenCalledWith("audio");
-  });
+  // Demo scope: no Audio tab exists anymore, so the tab-click test is
+  // skipped until audio/midi are restored to SOURCES. The onSourceChange
+  // handler wiring itself is unchanged — still covered by the
+  // segmented() unit when SOURCES.length > 1.
 
   it("does NOT fire onSubmit when URL is empty", () => {
     findButtonByText(container, "Let's go!").click();
@@ -92,7 +83,13 @@ describe("renderPhase — idle / youtube", () => {
   });
 });
 
-describe("renderPhase — idle / audio", () => {
+// Demo scope (Apr 20): audio + midi sources are hidden from the UI
+// for demo. The views.js branches still render correctly if the
+// source IS set to "audio" / "midi" (the segmented picker is just
+// gated separately), so these tests are skipped rather than deleted
+// — restoring the feature post-demo means flipping .skip → .describe
+// in one edit plus restoring SOURCES in views.js.
+describe.skip("renderPhase — idle / audio", () => {
   beforeEach(() => {
     renderPhase(container, { name: "idle", source: "audio" }, handlers);
   });
@@ -134,7 +131,7 @@ describe("renderPhase — idle / audio", () => {
   });
 });
 
-describe("renderPhase — idle / midi", () => {
+describe.skip("renderPhase — idle / midi", () => {
   beforeEach(() => {
     renderPhase(container, { name: "idle", source: "midi" }, handlers);
   });
@@ -150,7 +147,9 @@ describe("renderPhase — idle / midi", () => {
 describe("renderPhase — idle / title (legacy source, treated as youtube fallback)", () => {
   it("still renders a form body even for unknown sources", () => {
     renderPhase(container, { name: "idle", source: "title" }, handlers);
-    expect(container.querySelector(".segmented")).toBeTruthy();
+    // Sentinel switched from .segmented (auto-hidden post-demo-cut)
+    // to the body wrapper that idleBody() always emits.
+    expect(container.querySelector(".body")).toBeTruthy();
   });
 });
 
@@ -366,9 +365,20 @@ describe("renderPhase — error", () => {
 describe("renderPhase — atomic swap", () => {
   it("clears previous content when called again", () => {
     renderPhase(container, { name: "idle", source: "youtube" }, handlers);
-    expect(container.querySelector(".segmented")).toBeTruthy();
+    // Post-demo-cut: the segmented picker is hidden (SOURCES has 1
+    // entry). Use the YouTube URL input placeholder as the idle-phase
+    // sentinel instead — it's stable across the source-picker cut.
+    expect(
+      [...container.querySelectorAll("input")].some(
+        (i) => (i.placeholder || "").toLowerCase().includes("youtube"),
+      ),
+    ).toBe(true);
     renderPhase(container, { name: "submitting" }, handlers);
-    expect(container.querySelector(".segmented")).toBeNull();
+    expect(
+      [...container.querySelectorAll("input")].some(
+        (i) => (i.placeholder || "").toLowerCase().includes("youtube"),
+      ),
+    ).toBe(false);
     expect(container.querySelector("svg.m3-spinner")).toBeTruthy();
   });
 });

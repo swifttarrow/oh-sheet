@@ -339,6 +339,14 @@ class PipelineRunner:
                                         humanized_midi_uri="",
                                         tunechat_job_id=tc_result.job_id,
                                         tunechat_preview_image_url=tc_result.preview_image_url,
+                                        # Capture the hosted artifact URLs so
+                                        # /v1/artifacts/{job}/{kind} can proxy
+                                        # downloads (see artifacts.py). Without
+                                        # these the download chips 404 on every
+                                        # TuneChat-fast-path job.
+                                        tunechat_midi_url=tc_result.midi_url,
+                                        tunechat_musicxml_url=tc_result.musicxml_url,
+                                        tunechat_pdf_url=tc_result.pdf_url,
                                     )
                                 else:
                                     log.warning("tunechat-only: returned None, falling back to Oh Sheet pipeline")

@@ -37,9 +37,15 @@ function isYoutubeVideoUrl(s) {
   return typeof s === "string" && YOUTUBE_VIDEO_RE.test(s.trim());
 }
 
+// Demo-day scope (Apr 20): YouTube is the only source routed through
+// TuneChat for transcription. Audio + MIDI uploads still exist in the
+// backend but aren't plumbed through the TuneChat fast-path yet, and
+// we don't want the landing page advertising options we can't run on
+// stage. The segmented picker auto-hides when SOURCES has <= 1 entry
+// (see `segmented()`), so reducing to a single entry is enough to
+// kill the picker entirely without touching CSS or the branch logic
+// in `idleBody()`. Re-adding audio/midi later is a 2-line restore.
 const SOURCES = [
-  { key: "audio", label: "Audio" },
-  { key: "midi", label: "MIDI" },
   { key: "youtube", label: "YouTube" },
 ];
 
@@ -89,6 +95,11 @@ function icon(name) {
 // ── sub-components ───────────────────────────────────────────────────
 
 function segmented(activeSource, onSourceChange) {
+  // Auto-hide when only one source is available — a segmented picker
+  // with a single button is UX noise, not a choice. Callers can still
+  // unconditionally append the returned node; `null` is tolerated by
+  // appendChild() below.
+  if (SOURCES.length <= 1) return null;
   const wrap = el("div", { class: "segmented" });
   for (const src of SOURCES) {
     const isActive = src.key === activeSource;
@@ -175,7 +186,10 @@ function tryPasteYoutube(input) {
 
 function idleBody(source, handlers) {
   const wrap = el("div", { class: "body" });
-  wrap.appendChild(segmented(source, handlers.onSourceChange));
+  // segmented() returns null when SOURCES.length <= 1 (auto-hide);
+  // native appendChild() rejects null, so guard the call.
+  const picker = segmented(source, handlers.onSourceChange);
+  if (picker) wrap.appendChild(picker);
 
   let fileInput = null;
   let selectedFile = null;
