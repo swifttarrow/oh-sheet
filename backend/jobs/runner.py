@@ -429,16 +429,16 @@ class PipelineRunner:
                         score_dict = refined["payload"]
 
                 elif step == "engrave":
-                    # title_lookup jobs must resolve upstream (TuneChat) and
-                    # return before this stage runs. If control reaches here
-                    # with source=title_lookup, TuneChat was disabled or
-                    # failed — and there's no local fallback anymore, so we
-                    # hard-fail rather than silently producing a bad score.
+                    # title_lookup jobs normally resolve via TuneChat and
+                    # return before reaching this stage. If TuneChat failed
+                    # or returned None, the pipeline falls through to Oh
+                    # Sheet's own stages. Let the local engrave run — a
+                    # lower-quality result is better than a user-facing crash.
                     if bundle.metadata.source == "title_lookup":
-                        raise RuntimeError(
-                            "title_lookup job reached the engrave stage without "
-                            "a TuneChat result. Enable tunechat or submit the "
-                            "job as an audio/midi upload."
+                        log.warning(
+                            "title_lookup job reached engrave without TuneChat result — "
+                            "proceeding with local pipeline for job_id=%s",
+                            job_id,
                         )
 
                     # Title/composer precedence: refined ScoreMetadata > InputMetadata > defaults.

@@ -88,15 +88,13 @@ async def test_ml_engraver_error_fails_midi_upload_job(runner, monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_title_lookup_hard_fails_when_tunechat_disabled(
+async def test_title_lookup_falls_through_to_local_engrave_when_tunechat_disabled(
     runner, monkeypatch,
 ):
-    """Direct runner-level guard. The /v1/jobs route already rejects
-    title_lookup when TuneChat is disabled (400 at the boundary), but
-    the runner guard is defense-in-depth — a future refactor that
-    moves or removes the API-level gate must not silently let
-    title_lookup flow through the engrave stage. Calling the runner
-    directly bypasses the route layer and pins the invariant.
+    """When TuneChat is disabled, title_lookup jobs fall through to the
+    local Oh Sheet pipeline (transcribe → arrange → humanize → engrave)
+    and produce a result rather than crashing. A lower-quality local
+    result is better than a user-facing error.
     """
     monkeypatch.setattr(settings, "tunechat_enabled", False)
 
@@ -116,24 +114,22 @@ async def test_title_lookup_hard_fails_when_tunechat_disabled(
     )
     config = PipelineConfig(variant="audio_upload", enable_refine=False)
 
-    with pytest.raises(RuntimeError, match="title_lookup job reached the engrave stage"):
-        await runner.run(
-            job_id="title-lookup-tunechat-disabled",
-            bundle=bundle,
-            config=config,
-        )
+    result = await runner.run(
+        job_id="title-lookup-tunechat-disabled",
+        bundle=bundle,
+        config=config,
+    )
+    assert result is not None
+    assert result.musicxml_uri or result.tunechat_job_id
 
 
 @pytest.mark.asyncio
-async def test_title_lookup_hard_fails_when_tunechat_returns_none(
+async def test_title_lookup_falls_through_to_local_engrave_when_tunechat_returns_none(
     runner, monkeypatch,
 ):
-    """Defense-in-depth: the /v1/jobs route rejects title_lookup when
-    TuneChat is disabled, but TuneChat can also be *enabled* and return
-    None (service down, quota exceeded, etc.) mid-pipeline. When that
-    happens the runner walks through to the engrave stage and hits the
-    source-gate guard, which must hard-fail rather than silently route
-    title_lookup through the ML engraver or produce an empty result.
+    """When TuneChat is enabled but returns None (service down, quota
+    exceeded, etc.), title_lookup jobs fall through to the local Oh Sheet
+    pipeline and produce a result instead of crashing.
     """
     monkeypatch.setattr(settings, "tunechat_enabled", True)
 
@@ -162,9 +158,10 @@ async def test_title_lookup_hard_fails_when_tunechat_returns_none(
     )
     config = PipelineConfig(variant="audio_upload", enable_refine=False)
 
-    with pytest.raises(RuntimeError, match="title_lookup job reached the engrave stage"):
-        await runner.run(
-            job_id="title-lookup-tunechat-none",
-            bundle=bundle,
-            config=config,
-        )
+    result = await runner.run(
+        job_id="title-lookup-tunechat-none",
+        bundle=bundle,
+        config=config,
+    )
+    assert result is not None
+    assert result.musicxml_uri or result.tunechat_job_id
