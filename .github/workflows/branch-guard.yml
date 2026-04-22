@@ -6,7 +6,7 @@ name: Branch Guard
 
 on:
   pull_request:
-    branches: [main]
+    branches: [qa, main]
     types: [opened, reopened, synchronize, edited]
 
 jobs:
@@ -14,7 +14,13 @@ jobs:
     name: PR to main must come from qa
     runs-on: ubuntu-latest
     steps:
+      - name: Skip when target branch is not main
+        if: ${{ github.event.pull_request.base.ref != 'main' }}
+        run: |
+          echo "PR targets '${{ github.event.pull_request.base.ref }}' — branch guard only applies to main."
+
       - name: Verify source branch is qa
+        if: ${{ github.event.pull_request.base.ref == 'main' }}
         run: |
           if [[ "${{ github.event.pull_request.head.ref }}" != "qa" ]]; then
             echo "::error::PRs to main must originate from the 'qa' branch."
