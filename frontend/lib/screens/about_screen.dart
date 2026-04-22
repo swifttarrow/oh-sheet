@@ -79,16 +79,16 @@ class AboutScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
+    return const Scaffold(
       backgroundColor: OhSheetColors.cream,
       body: SafeArea(
         child: SingleChildScrollView(
           child: OhSheetResponsiveBody(
             maxWidth: 1080,
-            padding: const EdgeInsets.fromLTRB(16, 20, 16, 28),
+            padding: EdgeInsets.fromLTRB(16, 20, 16, 28),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: const [
+              children: [
                 _AboutHero(),
                 SizedBox(height: 22),
                 OhSheetStickerSectionTitle(
@@ -207,7 +207,7 @@ class _AboutHero extends StatelessWidget {
                 ],
               );
 
-              final callout = const _HeroCallout();
+              const callout = _HeroCallout();
 
               if (stacked) {
                 return Column(
@@ -241,13 +241,13 @@ class _HeroCallout extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return OhSheetSticker(
-      backgroundColor: const Color(0xFFEFFFFA),
-      padding: const EdgeInsets.all(18),
+    return const OhSheetSticker(
+      backgroundColor: Color(0xFFEFFFFA),
+      padding: EdgeInsets.all(18),
       radius: 22,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
-        children: const [
+        children: [
           Row(
             children: [
               Icon(Icons.auto_awesome_rounded, color: OhSheetColors.orange),
