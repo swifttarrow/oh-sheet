@@ -86,6 +86,135 @@ body[data-phase="complete"] .tagline,
 body[data-phase="error"] .tagline,
 body[data-phase="submitting"] .tagline { display: none; }
 
+body.legal-modal-open {
+  overflow: hidden;
+}
+
+/* ── Legal modal ──────────────────────────────────────────────── */
+.legal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px 16px;
+  background: rgba(45, 45, 68, 0.52);
+  backdrop-filter: blur(6px);
+}
+
+.legal-modal {
+  position: relative;
+  width: min(640px, 100%);
+  max-height: min(88vh, 760px);
+  overflow: auto;
+  padding: 24px;
+  border: 2px solid var(--stroke);
+  border-radius: 28px;
+  background:
+    radial-gradient(circle at top right, rgba(63, 192, 179, 0.16), transparent 34%),
+    radial-gradient(circle at top left, rgba(236, 107, 123, 0.12), transparent 28%),
+    var(--surface);
+  box-shadow:
+    0 20px 50px rgba(45, 45, 68, 0.24),
+    0 4px 0 var(--stroke);
+}
+
+.legal-dismiss {
+  position: absolute;
+  top: 14px;
+  right: 14px;
+  width: 40px;
+  height: 40px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 2px solid var(--stroke);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--ink);
+  cursor: pointer;
+}
+
+.legal-dismiss:hover {
+  background: var(--surface-container-high);
+}
+
+.legal-badge {
+  width: fit-content;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 14px;
+  padding: 8px 12px;
+  border: 2px solid var(--stroke);
+  border-radius: 999px;
+  background: var(--warn-container);
+  color: var(--ink);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+
+.legal-badge .material-symbols-rounded {
+  font-size: 18px;
+  color: var(--warn);
+}
+
+.legal-title {
+  margin: 0 48px 10px 0;
+  font-size: 28px;
+  line-height: 1.1;
+  color: var(--ink);
+}
+
+.legal-intro,
+.legal-acknowledgement,
+.legal-note {
+  margin: 0;
+  color: var(--ink);
+  font-size: 14px;
+  line-height: 1.55;
+}
+
+.legal-intro {
+  color: var(--on-surface-variant);
+}
+
+.legal-list {
+  margin: 18px 0;
+  padding-left: 20px;
+  display: grid;
+  gap: 12px;
+  color: var(--ink);
+}
+
+.legal-list li {
+  padding-left: 4px;
+}
+
+.legal-acknowledgement {
+  margin-bottom: 12px;
+  padding: 14px 16px;
+  border: 2px solid var(--stroke);
+  border-radius: 18px;
+  background: var(--primary-container);
+  font-weight: 500;
+}
+
+.legal-note {
+  color: var(--on-surface-variant);
+}
+
+.legal-actions {
+  margin-top: 18px;
+}
+
+.legal-continue {
+  width: 100%;
+}
+
 /* ── Card (morphs across phases) ──────────────────────────────── */
 .page {
   min-height: 50vh;
@@ -383,6 +512,14 @@ body[data-phase="complete"] .iframe-stub.tunechat {
   /* Mobile: preserve the wide aspect ratio, just smaller. */
   .logo-wrap { width: 200px; aspect-ratio: 1376 / 768; height: auto; }
   .card { padding: 20px 16px; border-radius: 20px; }
+  .legal-backdrop { padding: 12px; }
+  .legal-modal {
+    padding: 20px 16px 16px;
+    border-radius: 22px;
+    max-height: min(92vh, 760px);
+  }
+  .legal-title { font-size: 24px; margin-right: 40px; }
+  .legal-list { gap: 10px; }
 
   /* Stepper wraps to 2×2 grid so labels stay readable on narrow screens */
   .stepper { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
@@ -410,7 +547,7 @@ body[data-phase="complete"] .iframe-stub.tunechat {
 
 /* Touch targets — ensure 44×44 on any touch device */
 @media (hover: none) {
-  .btn-outlined, .btn-filled, .btn-text, .seg, .assist-chip { min-height: 44px; }
+  .btn-outlined, .btn-filled, .btn-text, .seg, .assist-chip, .legal-dismiss { min-height: 44px; }
   /* Hover-reveal doesn't work on touch — always show the fullscreen
      overlay on phones/tablets, and upsize it to hit the 44×44 target. */
   .fullscreen-btn { opacity: 1; width: 44px; height: 44px; }

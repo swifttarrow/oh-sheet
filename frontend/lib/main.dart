@@ -4,6 +4,7 @@ import 'api/client.dart';
 import 'responsive.dart';
 import 'screens/upload_screen.dart';
 import 'theme.dart';
+import 'widgets/legal_disclaimer_dialog.dart';
 import 'widgets/sticker_widgets.dart';
 import 'widgets/version_footer.dart';
 
@@ -47,6 +48,22 @@ class _AppShell extends StatefulWidget {
 
 class _AppShellState extends State<_AppShell> {
   int _currentIndex = 0;
+  bool _didScheduleLegalDisclaimer = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _scheduleLegalDisclaimer();
+  }
+
+  void _scheduleLegalDisclaimer() {
+    if (_didScheduleLegalDisclaimer) return;
+    _didScheduleLegalDisclaimer = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      LegalDisclaimerDialog.show(context);
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
