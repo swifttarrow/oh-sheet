@@ -22,158 +22,142 @@ class LegalDisclaimerDialog extends StatelessWidget {
   static Future<void> show(BuildContext context) {
     return showDialog<void>(
       context: context,
-      barrierDismissible: true,
+      barrierDismissible: false,
       builder: (_) => const LegalDisclaimerDialog(),
     );
   }
 
   @override
   Widget build(BuildContext context) {
-    return Dialog(
-      backgroundColor: Colors.transparent,
-      insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 560),
-        child: DecoratedBox(
-          decoration: BoxDecoration(
-            gradient: const LinearGradient(
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-              colors: [
-                Color(0xFFFFFCF7),
-                Color(0xFFF6FFFD),
-              ],
+    return PopScope(
+      canPop: false,
+      child: Dialog(
+        backgroundColor: Colors.transparent,
+        insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 560),
+          child: DecoratedBox(
+            decoration: BoxDecoration(
+              gradient: const LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: [
+                  Color(0xFFFFFCF7),
+                  Color(0xFFF6FFFD),
+                ],
+              ),
+              borderRadius: BorderRadius.circular(OhSheetStickerStyle.radiusLg),
+              border: Border.all(
+                color: OhSheetColors.inkStroke,
+                width: OhSheetStickerStyle.borderWidth,
+              ),
+              boxShadow: OhSheetStickerStyle.stickerShadows,
             ),
-            borderRadius: BorderRadius.circular(OhSheetStickerStyle.radiusLg),
-            border: Border.all(
-              color: OhSheetColors.inkStroke,
-              width: OhSheetStickerStyle.borderWidth,
-            ),
-            boxShadow: OhSheetStickerStyle.stickerShadows,
-          ),
-          child: Stack(
-            children: [
-              SingleChildScrollView(
-                padding: const EdgeInsets.fromLTRB(20, 20, 20, 20),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFFFFE8B7),
-                        borderRadius: BorderRadius.circular(999),
-                        border: Border.all(
-                          color: OhSheetColors.inkStroke,
-                          width: 2,
-                        ),
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.fromLTRB(20, 20, 20, 20),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Container(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFFFE8B7),
+                      borderRadius: BorderRadius.circular(999),
+                      border: Border.all(
+                        color: OhSheetColors.inkStroke,
+                        width: 2,
                       ),
-                      child: const Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(Icons.gavel_rounded, color: OhSheetColors.orange, size: 18),
-                          SizedBox(width: 8),
-                          Text(
-                            'Legal',
-                            style: TextStyle(
-                              fontWeight: FontWeight.w800,
-                              letterSpacing: 0.4,
-                              color: OhSheetColors.darkText,
-                            ),
+                    ),
+                    child: const Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          Icons.gavel_rounded,
+                          color: OhSheetColors.orange,
+                          size: 18,
+                        ),
+                        SizedBox(width: 8),
+                        Text(
+                          'Legal',
+                          style: TextStyle(
+                            fontWeight: FontWeight.w800,
+                            letterSpacing: 0.4,
+                            color: OhSheetColors.darkText,
                           ),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(height: 16),
-                    const Padding(
-                      padding: EdgeInsets.only(right: 48),
-                      child: Text(
-                        titleText,
-                        style: TextStyle(
-                          fontSize: 28,
-                          height: 1.05,
-                          fontWeight: FontWeight.w900,
-                          color: OhSheetColors.darkText,
                         ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  const Text(
+                    titleText,
+                    style: TextStyle(
+                      fontSize: 28,
+                      height: 1.05,
+                      fontWeight: FontWeight.w900,
+                      color: OhSheetColors.darkText,
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  const Text(
+                    introText,
+                    style: TextStyle(
+                      fontSize: 14,
+                      height: 1.5,
+                      color: OhSheetColors.mutedText,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  const SizedBox(height: 18),
+                  for (final bullet in bulletPoints) ...[
+                    _LegalBullet(text: bullet),
+                    const SizedBox(height: 12),
+                  ],
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFFFE8EF),
+                      borderRadius: BorderRadius.circular(20),
+                      border: Border.all(
+                        color: OhSheetColors.inkStroke,
+                        width: 2.5,
                       ),
                     ),
-                    const SizedBox(height: 12),
-                    const Text(
-                      introText,
+                    child: const Text(
+                      acknowledgementText,
                       style: TextStyle(
                         fontSize: 14,
                         height: 1.5,
-                        color: OhSheetColors.mutedText,
-                        fontWeight: FontWeight.w600,
+                        color: OhSheetColors.darkText,
+                        fontWeight: FontWeight.w700,
                       ),
-                    ),
-                    const SizedBox(height: 18),
-                    for (final bullet in bulletPoints) ...[
-                      _LegalBullet(text: bullet),
-                      const SizedBox(height: 12),
-                    ],
-                    Container(
-                      width: double.infinity,
-                      padding: const EdgeInsets.all(16),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFFFFE8EF),
-                        borderRadius: BorderRadius.circular(20),
-                        border: Border.all(
-                          color: OhSheetColors.inkStroke,
-                          width: 2.5,
-                        ),
-                      ),
-                      child: const Text(
-                        acknowledgementText,
-                        style: TextStyle(
-                          fontSize: 14,
-                          height: 1.5,
-                          color: OhSheetColors.darkText,
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-                    const Text(
-                      noteText,
-                      style: TextStyle(
-                        fontSize: 13,
-                        height: 1.5,
-                        color: OhSheetColors.mutedText,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                    const SizedBox(height: 20),
-                    SizedBox(
-                      width: double.infinity,
-                      child: FilledButton.icon(
-                        onPressed: () => Navigator.of(context).maybePop(),
-                        icon: const Icon(Icons.verified_user_rounded),
-                        label: const Text('Continue responsibly'),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              Positioned(
-                top: 12,
-                right: 12,
-                child: IconButton(
-                  tooltip: 'Dismiss responsible use notice',
-                  onPressed: () => Navigator.of(context).maybePop(),
-                  style: IconButton.styleFrom(
-                    backgroundColor: Colors.white,
-                    foregroundColor: OhSheetColors.darkText,
-                    side: const BorderSide(
-                      color: OhSheetColors.inkStroke,
-                      width: 2,
                     ),
                   ),
-                  icon: const Icon(Icons.close_rounded),
-                ),
+                  const SizedBox(height: 12),
+                  const Text(
+                    noteText,
+                    style: TextStyle(
+                      fontSize: 13,
+                      height: 1.5,
+                      color: OhSheetColors.mutedText,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  const SizedBox(height: 20),
+                  SizedBox(
+                    width: double.infinity,
+                    child: FilledButton.icon(
+                      onPressed: () => Navigator.of(context).pop(),
+                      icon: const Icon(Icons.verified_user_rounded),
+                      label: const Text('Continue responsibly'),
+                    ),
+                  ),
+                ],
               ),
-            ],
+            ),
           ),
         ),
       ),
