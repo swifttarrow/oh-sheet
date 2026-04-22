@@ -2,8 +2,10 @@ import 'package:flutter/material.dart';
 
 import 'api/client.dart';
 import 'responsive.dart';
+import 'screens/about_screen.dart';
 import 'screens/upload_screen.dart';
 import 'theme.dart';
+import 'widgets/legal_disclaimer_dialog.dart';
 import 'widgets/sticker_widgets.dart';
 import 'widgets/version_footer.dart';
 
@@ -47,6 +49,22 @@ class _AppShell extends StatefulWidget {
 
 class _AppShellState extends State<_AppShell> {
   int _currentIndex = 0;
+  bool _didScheduleLegalDisclaimer = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _scheduleLegalDisclaimer();
+  }
+
+  void _scheduleLegalDisclaimer() {
+    if (_didScheduleLegalDisclaimer) return;
+    _didScheduleLegalDisclaimer = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      LegalDisclaimerDialog.show(context);
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -56,6 +74,7 @@ class _AppShellState extends State<_AppShell> {
         final pages = [
           UploadScreen(api: widget.api),
           const _LibraryPlaceholder(),
+          const AboutScreen(),
           const _ProfilePlaceholder(),
         ];
 
@@ -70,11 +89,13 @@ class _AppShellState extends State<_AppShell> {
                       decoration: BoxDecoration(
                         color: Colors.white,
                         border: const Border(
-                          right: BorderSide(color: OhSheetColors.inkStroke, width: 2.5),
+                          right: BorderSide(
+                              color: OhSheetColors.inkStroke, width: 2.5),
                         ),
                         boxShadow: [
                           BoxShadow(
-                            color: OhSheetColors.inkStroke.withValues(alpha: 0.07),
+                            color:
+                                OhSheetColors.inkStroke.withValues(alpha: 0.07),
                             offset: const Offset(4, 0),
                             blurRadius: 14,
                           ),
@@ -82,7 +103,8 @@ class _AppShellState extends State<_AppShell> {
                       ),
                       child: NavigationRail(
                         selectedIndex: _currentIndex,
-                        onDestinationSelected: (i) => setState(() => _currentIndex = i),
+                        onDestinationSelected: (i) =>
+                            setState(() => _currentIndex = i),
                         labelType: NavigationRailLabelType.all,
                         destinations: const [
                           NavigationRailDestination(
@@ -94,6 +116,11 @@ class _AppShellState extends State<_AppShell> {
                             icon: Icon(Icons.library_music_outlined),
                             selectedIcon: Icon(Icons.library_music),
                             label: Text('Library'),
+                          ),
+                          NavigationRailDestination(
+                            icon: Icon(Icons.groups_2_outlined),
+                            selectedIcon: Icon(Icons.groups_2),
+                            label: Text('About'),
                           ),
                           NavigationRailDestination(
                             icon: Icon(Icons.person_outline),
@@ -149,7 +176,8 @@ class _AppShellState extends State<_AppShell> {
                 borderRadius: BorderRadius.circular(25),
                 child: NavigationBar(
                   selectedIndex: _currentIndex,
-                  onDestinationSelected: (i) => setState(() => _currentIndex = i),
+                  onDestinationSelected: (i) =>
+                      setState(() => _currentIndex = i),
                   destinations: const [
                     NavigationDestination(
                       icon: Icon(Icons.home_outlined),
@@ -160,6 +188,11 @@ class _AppShellState extends State<_AppShell> {
                       icon: Icon(Icons.library_music_outlined),
                       selectedIcon: Icon(Icons.library_music),
                       label: 'Library',
+                    ),
+                    NavigationDestination(
+                      icon: Icon(Icons.groups_2_outlined),
+                      selectedIcon: Icon(Icons.groups_2),
+                      label: 'About',
                     ),
                     NavigationDestination(
                       icon: Icon(Icons.person_outline),
@@ -202,7 +235,9 @@ class _LibraryPlaceholder extends StatelessWidget {
               Text(
                 'Coming soon — browse everyone’s sheets here.',
                 textAlign: TextAlign.center,
-                style: TextStyle(color: OhSheetColors.mutedText, fontWeight: FontWeight.w600),
+                style: TextStyle(
+                    color: OhSheetColors.mutedText,
+                    fontWeight: FontWeight.w600),
               ),
             ],
           ),
@@ -237,7 +272,9 @@ class _ProfilePlaceholder extends StatelessWidget {
               Text(
                 'Coming soon — your account & prefs live here.',
                 textAlign: TextAlign.center,
-                style: TextStyle(color: OhSheetColors.mutedText, fontWeight: FontWeight.w600),
+                style: TextStyle(
+                    color: OhSheetColors.mutedText,
+                    fontWeight: FontWeight.w600),
               ),
             ],
           ),
