@@ -1,6 +1,7 @@
 library;
 
 import 'package:flutter/material.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../responsive.dart';
 import '../theme.dart';
@@ -22,6 +23,7 @@ class AboutScreen extends StatelessWidget {
       imageAspectRatio: 1.0,
       frameScale: 1.0,
       imageScale: 1.0,
+      linkedinUrl: 'https://www.linkedin.com/in/jackbjiang/',
     ),
     _TeamMember(
       name: 'Luis Ramos',
@@ -35,6 +37,7 @@ class AboutScreen extends StatelessWidget {
       imageAspectRatio: 1.0,
       frameScale: 1.0,
       imageScale: 1.0,
+      linkedinUrl: 'https://www.linkedin.com/in/luis-ramos-usa',
     ),
     _TeamMember(
       name: 'Raq Robinson',
@@ -48,6 +51,7 @@ class AboutScreen extends StatelessWidget {
       imageAspectRatio: 1.0,
       frameScale: 1.0,
       imageScale: 1.0,
+      linkedinUrl: 'https://www.linkedin.com/in/robinsonraquel/',
     ),
     _TeamMember(
       name: 'Kevin Chang',
@@ -61,6 +65,7 @@ class AboutScreen extends StatelessWidget {
       imageAspectRatio: 1.0,
       frameScale: 1.0,
       imageScale: 1.0,
+      linkedinUrl: 'https://www.linkedin.com/in/kevin-chihwei-chang/',
     ),
     _TeamMember(
       name: 'Ross Kuehl',
@@ -74,6 +79,7 @@ class AboutScreen extends StatelessWidget {
       imageAspectRatio: 1.0,
       frameScale: 1.0,
       imageScale: 1.0,
+      linkedinUrl: 'https://www.linkedin.com/in/ross-kuehl/',
     ),
   ];
 
@@ -544,6 +550,46 @@ class _MemberCard extends StatelessWidget {
                   ),
                 ],
               ),
+              const SizedBox(height: 8),
+              InkWell(
+                onTap: () async {
+                  await launchUrl(
+                    Uri.parse(member.linkedinUrl),
+                    mode: LaunchMode.externalApplication,
+                  );
+                },
+                borderRadius: BorderRadius.circular(12),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 2,
+                    vertical: 4,
+                  ),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Icon(
+                        Icons.link_rounded,
+                        size: 16,
+                        color: member.accent,
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          member.linkedinUrl,
+                          style: TextStyle(
+                            fontSize: 13,
+                            height: 1.35,
+                            color: member.accent,
+                            fontWeight: FontWeight.w700,
+                            decoration: TextDecoration.underline,
+                            decorationColor: member.accent,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
               const SizedBox(height: 10),
               Text(
                 member.blurb,
@@ -574,6 +620,7 @@ class _TeamMember {
     required this.imageAspectRatio,
     required this.frameScale,
     required this.imageScale,
+    required this.linkedinUrl,
   });
 
   final String name;
@@ -586,4 +633,5 @@ class _TeamMember {
   final double imageAspectRatio;
   final double frameScale;
   final double imageScale;
+  final String linkedinUrl;
 }

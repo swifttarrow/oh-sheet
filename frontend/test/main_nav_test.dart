@@ -80,6 +80,26 @@ void main() {
       await tester.tap(find.text('About'));
       await tester.pumpAndSettle();
       expect(find.text('Meet the team'), findsOneWidget);
+      expect(
+        find.text('https://www.linkedin.com/in/jackbjiang/'),
+        findsOneWidget,
+      );
+      expect(
+        find.text('https://www.linkedin.com/in/luis-ramos-usa'),
+        findsOneWidget,
+      );
+      expect(
+        find.text('https://www.linkedin.com/in/robinsonraquel/'),
+        findsOneWidget,
+      );
+      expect(
+        find.text('https://www.linkedin.com/in/kevin-chihwei-chang/'),
+        findsOneWidget,
+      );
+      expect(
+        find.text('https://www.linkedin.com/in/ross-kuehl/'),
+        findsOneWidget,
+      );
     });
 
     testWidgets('tapping Profile tab switches to profile placeholder',
