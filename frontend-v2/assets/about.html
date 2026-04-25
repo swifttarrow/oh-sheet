@@ -4,18 +4,20 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>About - Oh Sheet!</title>
+<meta name="description" content="Meet the team behind Oh Sheet! — five engineers who built an AI pipeline that turns any song into playable piano sheet music." />
+<meta property="og:title" content="About - Oh Sheet!" />
+<meta property="og:description" content="Meet the team behind Oh Sheet! — five engineers who built an AI pipeline that turns any song into playable piano sheet music." />
 <meta name="theme-color" content="#FDF4E8" />
 <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;600;700;800;900&family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@24,400,0,0" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;600;700;800;900&family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@24,400,0,0&icon_names=arrow_back,groups_2,link,schedule,school" rel="stylesheet">
+<!-- Tokens are redefined here rather than shared with src/style.css
+     because the two pages use slightly different palette values (e.g.
+     --primary is #FF6F91 here vs #EC6B7B in the main app). A shared
+     tokens.css would force alignment that the designs don't have yet. -->
 <style>
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-  :root {
-    --bg: #FDF4E8; --surface: #fff; --ink: #2D2D44; --ink-stroke: #2D2D44;
-    --muted: #6B6B80; --accent: #6BCB77; --primary: #FF6F91; --orange: #FFB347;
-    --teal: #4DBFBF;
-  }
   body { font-family: Roboto, sans-serif; background: var(--bg); color: var(--ink); }
   a { color: inherit; }
   .back-link {
@@ -78,11 +80,20 @@
     max-width: 960px; margin: 0 auto 32px; padding: 20px 24px;
     border: 2.5px solid var(--ink-stroke);
   }
+  /* Per-member accent modifiers — dot + linkedin link color */
+  .card--orange .card-dot { background: var(--orange); }
+  .card--orange .card-linkedin { color: var(--orange); }
+  .card--green .card-dot { background: var(--accent); }
+  .card--green .card-linkedin { color: var(--accent); }
+  .card--pink .card-dot { background: var(--primary); }
+  .card--pink .card-linkedin { color: var(--primary); }
+  .card--teal .card-dot { background: var(--teal); }
+  .card--teal .card-linkedin { color: var(--teal); }
 </style>
 </head>
 <body>
   <a href="/" class="back-link">
-    <span class="material-symbols-rounded">arrow_back</span> Back to Oh Sheet!
+    <span class="material-symbols-rounded" aria-hidden="true">arrow_back</span> Back to Oh Sheet!
   </a>
 
   <div class="hero">
@@ -90,52 +101,52 @@
     <h1>Five engineers, two weeks, one capstone: Oh Sheet.</h1>
     <p>The team came together through the GauntletAI program and built Oh Sheet as their capstone project. In just two weeks, they turned the idea into a working product that transforms songs into playable piano sheet music.</p>
     <div class="badges">
-      <span class="badge"><span class="material-symbols-rounded">groups_2</span> 5 engineers</span>
-      <span class="badge"><span class="material-symbols-rounded">school</span> GauntletAI capstone</span>
-      <span class="badge"><span class="material-symbols-rounded">schedule</span> Built in 2 weeks</span>
+      <span class="badge"><span class="material-symbols-rounded" aria-hidden="true">groups_2</span> 5 engineers</span>
+      <span class="badge"><span class="material-symbols-rounded" aria-hidden="true">school</span> GauntletAI capstone</span>
+      <span class="badge"><span class="material-symbols-rounded" aria-hidden="true">schedule</span> Built in 2 weeks</span>
     </div>
   </div>
 
-  <div class="section-title">Meet the team</div>
+  <h2 class="section-title">Meet the team</h2>
 
   <div class="team">
     <div class="team-grid">
-      <div class="card">
-        <div class="card-name"><span class="card-dot" style="background:#FFB347"></span> Jack Jiang</div>
-        <a class="card-linkedin" href="https://www.linkedin.com/in/jackbjiang/" target="_blank" style="color:#FFB347">
-          <span class="material-symbols-rounded">link</span> linkedin.com/in/jackbjiang
+      <div class="card card--orange">
+        <div class="card-name"><span class="card-dot"></span> Jack Jiang</div>
+        <a class="card-linkedin" href="https://www.linkedin.com/in/jackbjiang/" target="_blank" rel="noopener noreferrer">
+          <span class="material-symbols-rounded" aria-hidden="true">link</span> linkedin.com/in/jackbjiang
         </a>
         <div class="card-blurb">Senior full-stack engineer with 8 years of experience across product development, SRE, and workflow automation. Meme enthusiast and climbing addict.</div>
       </div>
 
-      <div class="card">
-        <div class="card-name"><span class="card-dot" style="background:#6BCB77"></span> Luis Ramos</div>
-        <a class="card-linkedin" href="https://www.linkedin.com/in/luis-ramos-usa" target="_blank" style="color:#6BCB77">
-          <span class="material-symbols-rounded">link</span> linkedin.com/in/luis-ramos-usa
+      <div class="card card--green">
+        <div class="card-name"><span class="card-dot"></span> Luis Ramos</div>
+        <a class="card-linkedin" href="https://www.linkedin.com/in/luis-ramos-usa" target="_blank" rel="noopener noreferrer">
+          <span class="material-symbols-rounded" aria-hidden="true">link</span> linkedin.com/in/luis-ramos-usa
         </a>
         <div class="card-blurb">Senior software engineer who architects enterprise solutions across stacks, platforms, and frameworks with an AI-first approach to development.</div>
       </div>
 
-      <div class="card">
-        <div class="card-name"><span class="card-dot" style="background:#FF6F91"></span> Raq Robinson</div>
-        <a class="card-linkedin" href="https://www.linkedin.com/in/robinsonraquel/" target="_blank" style="color:#FF6F91">
-          <span class="material-symbols-rounded">link</span> linkedin.com/in/robinsonraquel
+      <div class="card card--pink">
+        <div class="card-name"><span class="card-dot"></span> Raq Robinson</div>
+        <a class="card-linkedin" href="https://www.linkedin.com/in/robinsonraquel/" target="_blank" rel="noopener noreferrer">
+          <span class="material-symbols-rounded" aria-hidden="true">link</span> linkedin.com/in/robinsonraquel
         </a>
         <div class="card-blurb">Senior full-stack engineer who blends React frontend expertise with backend and systems thinking to build scalable, secure, and accessible platforms.</div>
       </div>
 
-      <div class="card">
-        <div class="card-name"><span class="card-dot" style="background:#4DBFBF"></span> Kevin Chang</div>
-        <a class="card-linkedin" href="https://www.linkedin.com/in/kevin-chihwei-chang/" target="_blank" style="color:#4DBFBF">
-          <span class="material-symbols-rounded">link</span> linkedin.com/in/kevin-chihwei-chang
+      <div class="card card--teal">
+        <div class="card-name"><span class="card-dot"></span> Kevin Chang</div>
+        <a class="card-linkedin" href="https://www.linkedin.com/in/kevin-chihwei-chang/" target="_blank" rel="noopener noreferrer">
+          <span class="material-symbols-rounded" aria-hidden="true">link</span> linkedin.com/in/kevin-chihwei-chang
         </a>
         <div class="card-blurb">Senior full-stack engineer with 13 years of startup experience building products end to end. Piano wizard, board game lover, and badminton junkie.</div>
       </div>
 
-      <div class="card">
-        <div class="card-name"><span class="card-dot" style="background:#FFB347"></span> Ross Kuehl</div>
-        <a class="card-linkedin" href="https://www.linkedin.com/in/ross-kuehl/" target="_blank" style="color:#FFB347">
-          <span class="material-symbols-rounded">link</span> linkedin.com/in/ross-kuehl
+      <div class="card card--orange">
+        <div class="card-name"><span class="card-dot"></span> Ross Kuehl</div>
+        <a class="card-linkedin" href="https://www.linkedin.com/in/ross-kuehl/" target="_blank" rel="noopener noreferrer">
+          <span class="material-symbols-rounded" aria-hidden="true">link</span> linkedin.com/in/ross-kuehl
         </a>
         <div class="card-blurb">Senior backend-focused software engineer with deep expertise in Python, cloud infrastructure, and distributed systems.</div>
       </div>
