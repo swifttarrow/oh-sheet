@@ -469,6 +469,9 @@ body[data-phase="complete"] .iframe-stub.tunechat {
   width: 6px; height: 6px; border-radius: 50%; background: var(--accent);
   display: inline-block;
 }
+.about-link {
+  color: inherit; text-decoration: underline; font-weight: 600;
+}
 
 /* ── Entry animations (staggered on load) ────────────────────── */
 .appbar { animation: fadeSlideDown .5s ease both; }
