@@ -86,18 +86,28 @@ rewritten with the new content hash, license, and source URL; the
 ## Baselines
 
 `eval/baselines/pop_mini_v0__main_<short-sha>.json` is the canonical
-baseline for a given commit on `main`. Two baselines ship side-by-side
-so you can see how synthetic vs. real audio shifts the metrics:
+baseline for a given commit on `main`. Multiple baselines ship
+side-by-side so you can see how the metric surface evolved:
 
-| File | Source | Notes |
-|---|---|---|
-| `pop_mini_v0__main_5532577.json` | Bootstrap (synthetic_from_midi via FluidSynth) | Pre-curation snapshot. Faster to re-run (~35 s) but less faithful to real-pop conditions. |
-| `pop_mini_v0__main_5532577_real.json` | Curated audio (current manifest) | Real-audio snapshot. ~3 min runtime; the more meaningful comparand for any quality PR going forward. |
+| File | Schema | Source | Notes |
+|---|---|---|---|
+| `pop_mini_v0__main_bde4268.json` | v2 | Curated audio (current manifest) | **Active CI baseline.** Phase 7 metric surface (tier_rf + tier2 + tier3 + composite Q). 4 delivered slots, 1 undelivered (mini_kpop_001). |
+| `pop_mini_v0__main_5532577_real.json` | v1 (legacy) | Curated audio (pre-Phase-7 manifest) | Reference-free metrics only. Kept for historical comparison. |
+| `pop_mini_v0__main_5532577.json` | v1 (legacy) | Bootstrap (synthetic_from_midi via FluidSynth) | Pre-curation snapshot. Faster to re-run (~35 s) but less faithful to real-pop conditions. |
 
-Subsequent PRs compare their `aggregate.json` against the most recent
-real-audio baseline using `scripts/compare_eval_runs.py` (existing) or
-the future `scripts/eval.py compare` subcommand from Phase 7.
+To regenerate the active baseline after a metric-surface change:
 
-A baseline is committed only when its 5 metrics + 3 aggregates are stable
-across two consecutive runs (caching makes re-runs deterministic except
-for the Basic Pitch backend's tiny floating-point variance).
+```
+python scripts/eval.py bootstrap-baseline eval/pop_mini_v0/ \
+    --baseline-out eval/baselines/pop_mini_v0__main_<sha>.json
+```
+
+Then update `--baseline` in `.github/workflows/eval-ci.yml` and commit.
+
+Subsequent PRs compare their `aggregate.json` against the active baseline
+using the `scripts/eval.py ci` subcommand (cheap PR gate) or
+`scripts/compare_eval_runs.py` for ad-hoc diffing.
+
+A baseline is committed only when its tier metrics are stable across
+two consecutive runs (caching makes re-runs deterministic except for
+the Basic Pitch backend's tiny floating-point variance).

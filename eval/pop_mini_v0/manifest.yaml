@@ -32,12 +32,14 @@ description: |
 
   Earlier ``synthetic_from_midi`` bootstraps (FluidSynth-rendered MIDIs
   from ``eval/fixtures/clean_midi/``) are gone from the manifest but
-  still drive ``scripts/eval_mini.py`` if you flip a slot back. The
-  bootstrap baseline at
-  ``eval/baselines/pop_mini_v0__main_5532577.json`` is preserved
-  alongside the real-audio baseline at
-  ``eval/baselines/pop_mini_v0__main_5532577_real.json`` so the
-  bootstrap-vs-real comparison stays available.
+  still drive ``scripts/eval_mini.py`` if you flip a slot back. Two
+  legacy schema-v1 baselines (RF metrics only) are preserved for
+  historical comparison alongside the active schema-v2 baseline:
+
+    * ``pop_mini_v0__main_bde4268.json`` — active CI baseline
+      (Phase 7 metric surface — tier_rf + tier2 + tier3 + Q).
+    * ``pop_mini_v0__main_5532577_real.json`` — legacy v1 (RF only).
+    * ``pop_mini_v0__main_5532577.json`` — legacy v1 (synthetic).
 
 # Each song is clipped to this many seconds before it enters the pipeline,
 # so a 5-song run completes inside the Phase 0 acceptance window (<2 min).

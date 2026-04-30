@@ -249,7 +249,11 @@ def _run_pipeline(audio_path: Path) -> PipelineArtifacts:
     from backend.services.midi_render import render_midi_bytes  # noqa: PLC0415
     from backend.services.transcribe import _run_basic_pitch_sync  # noqa: PLC0415
 
-    txr, _ = _run_basic_pitch_sync(audio_path)
+    # Phase 8: ``_run_basic_pitch_sync`` returns a 3-tuple
+    # ``(TranscriptionResult, midi_bytes, realtime_pedal_events)`` —
+    # the third element is the AMT-APC / Kong pedal stream and is
+    # unused by the offline mini-eval (engrave handles pedals).
+    txr, _midi_bytes, _pedals = _run_basic_pitch_sync(audio_path)
     score = asyncio.run(ArrangeService().run(txr))
     perf = asyncio.run(HumanizeService().run(score))
     midi_bytes = render_midi_bytes(perf)

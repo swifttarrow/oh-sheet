@@ -535,7 +535,10 @@ def _build_transcribe_callable():
     def _transcribe(path: Path) -> bytes:
         from backend.services.transcribe import _run_basic_pitch_sync  # noqa: PLC0415
 
-        txr, midi_bytes = _run_basic_pitch_sync(path)
+        # Phase 8: ``_run_basic_pitch_sync`` returns a 3-tuple
+        # ``(TranscriptionResult, midi_bytes, realtime_pedal_events)``
+        # — the third element is unused for the round-trip probe.
+        _txr, midi_bytes, _pedals = _run_basic_pitch_sync(path)
         if not midi_bytes:
             raise RuntimeError("Basic Pitch returned empty MIDI bytes")
         return midi_bytes

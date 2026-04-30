@@ -82,7 +82,7 @@ jobs:
           mkdir -p /tmp/eval_run
           python scripts/eval.py ci eval/pop_mini_v0/ \
             --output-dir /tmp/eval_run \
-            --baseline eval/baselines/pop_mini_v0__main_5532577.json \
+            --baseline eval/baselines/pop_mini_v0__main_bde4268.json \
             --label "ci-pr-${{ github.event.number || 'main' }}" \
             --allow-missing-baseline
 
