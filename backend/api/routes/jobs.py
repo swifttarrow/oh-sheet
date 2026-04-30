@@ -205,6 +205,10 @@ async def create_job(
         skip_humanizer=body.skip_humanizer,
         enable_refine=settings.refine_active,
         score_pipeline=settings.score_pipeline,
+        # Honor OHSHEET_DEMUCS_ENABLED — drop the separate stage from the
+        # plan entirely when source separation is off so the orchestrator
+        # doesn't enqueue a task no worker consumes.
+        separator="htdemucs" if settings.demucs_enabled else "off",
     )
     record = await manager.submit(bundle, config)
     return _record_to_summary(record)

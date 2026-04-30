@@ -61,9 +61,20 @@ jobs:
         # self-consistency probe (transcribe → engrave → resynth →
         # re-transcribe). The CLAP/MERT extras stay opt-in via
         # workflow_dispatch inputs; default schedule keeps them off.
+        #
+        # The ``[basic-pitch]`` extra pins the runtime deps (mir_eval,
+        # librosa, onnxruntime, …) but deliberately does NOT pull in the
+        # ``basic-pitch`` package itself — basic-pitch 0.4.0 hard-codes
+        # tensorflow-macos as a base dep on Darwin/Python>3.11 and there
+        # is no wheel for 3.13. Mirroring the Makefile's two-step dance:
+        # install deps via the extra, then install ``basic-pitch``
+        # itself with ``--no-deps``. Without this second step the
+        # round-trip probe silently falls back to the 4-note stub and
+        # the eval-nightly numbers drift from real production behavior.
         run: |
           pip install --upgrade pip
           pip install -e ".[dev,eval,basic-pitch]"
+          pip install --no-deps "basic-pitch>=0.4"
 
       - name: Run eval nightly
         env:

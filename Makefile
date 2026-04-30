@@ -20,7 +20,7 @@ PYTHON       ?= python3
 
 DART_DEFINE := $(if $(API_BASE_URL),--dart-define=API_BASE_URL=$(API_BASE_URL),)
 
-.PHONY: help install install-backend install-basic-pitch install-pop2piano install-demucs install-eval install-frontend backend build rebuild frontend test test-backend test-e2e eval lint typecheck clean require-flutter require-port-free require-base-image
+.PHONY: help install install-backend install-basic-pitch install-pop2piano install-demucs install-amt-apc install-eval install-frontend backend build rebuild frontend test test-backend test-e2e eval lint typecheck clean require-flutter require-port-free require-base-image
 
 help:
 	@echo "Oh Sheet — make targets"
@@ -95,6 +95,13 @@ install-demucs:
 	# weights are CC BY-NC 4.0 — see pyproject.toml for the commercial
 	# caveat before enabling in production.
 	$(PYTHON) -m pip install -e ".[demucs]"
+
+install-amt-apc:
+	# AMT-APC piano-cover transcriber (MIT). Backs the "Piano cover"
+	# UI toggle. Without this extra the dispatcher falls back to the
+	# faithful Kong / Basic-Pitch path. Pulled from GitHub directly —
+	# see pyproject.toml for the commit-pinning note.
+	$(PYTHON) -m pip install -e ".[amt_apc]"
 
 install-eval:
 	# Offline eval harness — mir_eval only. Assumes ``.[basic-pitch]``

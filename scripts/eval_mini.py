@@ -88,12 +88,34 @@ def _resolve_input_audio(
 ) -> Path:
     """Return the audio Path for a song manifest entry.
 
-    For ``audio_file`` sources, returns the named file directly.
-    For ``synthetic_from_midi`` sources, FluidSynth-renders the named MIDI
-    to a cached WAV under :data:`CACHE_DIR` ``/bootstrap/`` keyed on
-    ``(midi_path, target_duration, soundfont)`` so re-runs hit the cache.
+    Supports both the legacy ``pop_mini_v0`` manifest schema (``source``
+    block with ``kind: audio_file`` / ``synthetic_from_midi``) and the
+    Phase 3 ``pop_eval_v1`` delivery schema (no ``source`` field;
+    audio file lands under ``songs/<slug>/source.audio.{mp3,wav,…}``).
+    Slots with neither raise ``FileNotFoundError`` so
+    :func:`eval.harness.run_eval_set` records them as a per-song
+    resolve error rather than crashing the whole run.
     """
-    src = song["source"]
+    src = song.get("source")
+    if src is None:
+        # ``pop_eval_v1`` schema: no ``source`` in the manifest. The
+        # delivered audio lands under ``songs/<slug>/source.audio.*``;
+        # the loader treats any of mp3/wav/flac/m4a as acceptable.
+        slug = song.get("slug")
+        if not isinstance(slug, str) or not slug:
+            raise FileNotFoundError(
+                "song entry has no 'source' block and no slug — "
+                "cannot resolve delivered audio"
+            )
+        songs_dir = manifest_dir / "songs" / slug
+        for ext in ("mp3", "wav", "flac", "m4a"):
+            candidate = songs_dir / f"source.audio.{ext}"
+            if candidate.is_file():
+                return candidate.resolve()
+        raise FileNotFoundError(
+            f"slug={slug!r} not delivered: no source.audio.* under {songs_dir}"
+        )
+
     kind = src["kind"]
     if kind == "audio_file":
         path = (manifest_dir / src["path"]).resolve()

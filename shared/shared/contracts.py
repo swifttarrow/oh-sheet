@@ -533,9 +533,10 @@ class PipelineConfig(BaseModel):
             "midi_upload":  ["ingest", "arrange", "humanize", "engrave"],
             "sheet_only":   ["ingest", "transcribe", "arrange", "engrave"],
             # pop_cover: AMT-APC emits an arrangement-ready piano stream,
-            # so we deliberately skip arrange/humanize. refine still slots
-            # in below when enabled (it only annotates metadata, doesn't
-            # touch notes), and separate is inserted ahead of transcribe.
+            # so we deliberately skip arrange/humanize. Refine is also
+            # skipped (it dispatches on PianoScore / HumanizedPerformance,
+            # neither of which exists in cover mode — only the raw
+            # TranscriptionResult does). Separate is inserted below.
             "pop_cover":    ["ingest", "transcribe", "engrave"],
         }
         plan = list(routing[self.variant])
@@ -556,7 +557,14 @@ class PipelineConfig(BaseModel):
         # file.
         if self.separator != "off" and "transcribe" in plan:
             plan.insert(plan.index("transcribe"), "separate")
-        if self.enable_refine and "engrave" in plan:
+        # Refine annotates score metadata; it requires a PianoScore or
+        # HumanizedPerformance, so cover mode (which has neither) skips
+        # the stage even when ``enable_refine`` is set.
+        if (
+            self.enable_refine
+            and "engrave" in plan
+            and self.variant != "pop_cover"
+        ):
             plan.insert(plan.index("engrave"), "refine")
         return plan
 

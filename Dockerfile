@@ -69,7 +69,7 @@ COPY backend/ backend/
 # --platform linux/amd64 if targeting Apple Silicon hosts.
 FROM python-base AS ml
 
-RUN pip install --no-cache-dir --retries 5 --timeout 120 ".[pop2piano]"
+RUN pip install --no-cache-dir --retries 5 --timeout 120 ".[pop2piano,demucs]"
 
 # Pre-cache HTDemucs pretrained weights (~80 MB). Without this, every
 # fresh container hits the first separate.run job with a cold-start
@@ -94,7 +94,7 @@ FROM python-base AS api
 # Install Python package with Pop2Piano transcription deps.
 # NOTE: essentia only ships x86_64 Linux wheels — build with
 # --platform linux/amd64 if targeting Apple Silicon hosts.
-RUN pip install --no-cache-dir --retries 5 --timeout 120 ".[pop2piano]"
+RUN pip install --no-cache-dir --retries 5 --timeout 120 ".[pop2piano,demucs]"
 
 # Pre-cache HTDemucs weights (~80 MB) so the api image can run the
 # separate worker via task_always_eager in tests / dev without paying

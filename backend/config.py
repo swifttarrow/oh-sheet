@@ -417,7 +417,14 @@ class Settings(BaseSettings):
     # Dependencies: amt_apc (via the [amt_apc] extra in pyproject.toml),
     # torch, librosa. Weights are fetched on first use; pre-cache in
     # Docker build to avoid Cloud Run cold-start latency (~100 MB).
-    amt_apc_enabled: bool = False
+    #
+    # Defaults to True because the user-facing "Piano cover" toggle in
+    # the frontend sets ``user_hint=cover`` / ``variant=pop_cover`` and
+    # would otherwise be silently ignored at the kill-switch. When the
+    # ``[amt_apc]`` extra isn't installed the dispatcher still falls
+    # back to the faithful Kong/Basic-Pitch path, so leaving this on
+    # is safe even on deployments without the optional dep.
+    amt_apc_enabled: bool = True
     # Sample rate AMT-APC expects — 22.05 kHz mono per the upstream README.
     amt_apc_sample_rate: int = 22050
     # Device override. None → auto: cuda → mps → cpu.

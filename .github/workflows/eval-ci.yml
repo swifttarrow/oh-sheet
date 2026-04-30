@@ -15,6 +15,16 @@ name: Eval CI
 # skipping CLAP/MERT + caching pip + caching fluidsynth at the apt
 # layer. Job uploads aggregate.json + gates.json artifacts so PR
 # reviewers can sparkline deltas.
+#
+# Stale-baseline recipe: when the metric schema evolves (adding tier2 /
+# tier3 keys etc.) the committed baseline JSON loses gate-key
+# coverage. The harness now fails the gate loud rather than skipping
+# silently — regenerate with::
+#
+#   python scripts/eval.py bootstrap-baseline eval/pop_mini_v0/ \
+#       --baseline-out eval/baselines/pop_mini_v0__main_<sha>.json
+#
+# then update the ``--baseline`` arg below and commit both files.
 
 on:
   push:

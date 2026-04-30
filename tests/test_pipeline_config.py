@@ -89,16 +89,17 @@ def test_condense_only_with_skip_humanizer_and_refine() -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_pop_cover_skips_arrange_and_humanize() -> None:
+def test_pop_cover_skips_arrange_humanize_and_refine() -> None:
     """AMT-APC emits arrangement-ready piano output, so the cover-mode plan
-    skips arrange and humanize entirely. Separate still runs (instrumental
-    stem feeds AMT-APC); refine and engrave still run."""
+    skips arrange and humanize entirely. Refine also drops out — it
+    dispatches on PianoScore / HumanizedPerformance, neither of which
+    exists in cover mode. Separate still runs (instrumental stem feeds
+    AMT-APC); engrave still runs."""
     cfg = PipelineConfig(variant="pop_cover", enable_refine=True)
     assert cfg.get_execution_plan() == [
         "ingest",
         "separate",
         "transcribe",
-        "refine",
         "engrave",
     ]
 

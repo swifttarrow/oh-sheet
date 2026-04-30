@@ -153,6 +153,44 @@ def test_render_gate_summary_marks_pass_fail():
     assert "chord_mirex_regression" in summary
 
 
+def test_ci_gates_fail_when_baseline_missing_active_tier_key():
+    """Stale baseline (head has tier2 metric, baseline doesn't) must fail
+    the gate loud — silent skip would let real regressions merge green.
+    """
+    base = _payload({})
+    head = _payload({"mean_tier2_chord_score": 0.50})
+    report = apply_ci_gates(head, base, selected_tiers=TierSelection.ci())
+    chord = next(o for o in report.outcomes if o.name == "chord_mirex_regression")
+    assert not chord.passed
+    assert "stale" in chord.message.lower()
+
+
+def test_ci_gates_fail_when_head_missing_active_tier_key():
+    """Head missing a metric that the selected tier should have produced
+    points at a harness regression — fail loud.
+    """
+    base = _payload({"mean_tier2_chord_score": 0.50})
+    head = _payload({})
+    report = apply_ci_gates(head, base, selected_tiers=TierSelection.ci())
+    chord = next(o for o in report.outcomes if o.name == "chord_mirex_regression")
+    assert not chord.passed
+    assert "head missing" in chord.message.lower()
+
+
+def test_ci_gates_skip_when_tier_inactive_for_run():
+    """A gate whose tier was deliberately disabled (e.g. tier4 in a CI
+    run) skips cleanly with the selected-tier hint.
+    """
+    base = _payload({"mean_tier2_chord_score": 0.50})
+    head = _payload({"mean_tier2_chord_score": 0.50})
+    # CI selection has tier4=False, so the round-trip / clap gates are
+    # tier-inactive and skip cleanly even though the keys are missing.
+    report = apply_ci_gates(head, base, selected_tiers=TierSelection.ci())
+    rt = next(o for o in report.outcomes if o.name == "round_trip_regression")
+    assert rt.passed
+    assert "tier inactive" in rt.message.lower()
+
+
 # ---------------------------------------------------------------------------
 # aggregate_rows
 # ---------------------------------------------------------------------------

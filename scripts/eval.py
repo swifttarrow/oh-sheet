@@ -161,6 +161,21 @@ def cmd_ci(
         label=label,
     )
 
+    # A run that scored zero songs cannot meaningfully gate on any
+    # metric — every aggregate key drops out and gates "skip" silently
+    # (pre-fix). Treat that as a hard failure so manifest/audio/dep
+    # breakage in CI surfaces instead of merging green.
+    agg = payload.get("aggregate", {})
+    n_scored = int(agg.get("n_songs_scored", 0))
+    n_total = int(agg.get("n_songs_total", 0))
+    if n_scored == 0:
+        click.echo(
+            f"[ci] FAIL: 0 of {n_total} songs scored — cannot evaluate gates. "
+            "Inspect aggregate.json for per-song errors.",
+            err=True,
+        )
+        sys.exit(1)
+
     if baseline is None:
         click.echo("[ci] no --baseline provided; skipping gate evaluation.")
         sys.exit(0)
@@ -175,12 +190,88 @@ def cmd_ci(
         sys.exit(2)
 
     baseline_payload = load_baseline(baseline)
-    report = apply_ci_gates(payload, baseline_payload)
+    report = apply_ci_gates(payload, baseline_payload, selected_tiers=tiers)
     gates_path = output_dir / "gates.json"
     gates_path.write_text(json.dumps(report.as_dict(), indent=2) + "\n")
     click.echo(render_gate_summary(report))
     click.echo(f"\nWrote {gates_path}")
     sys.exit(0 if report.all_passed else 1)
+
+
+# ---------------------------------------------------------------------------
+# eval bootstrap-baseline — regenerate a baseline JSON against current head
+# ---------------------------------------------------------------------------
+
+@cli.command(
+    name="bootstrap-baseline",
+    help=(
+        "Run the CI tier selection on an eval-set and write the result as "
+        "a baseline JSON. Use when the metric schema changes (e.g. adding "
+        "tier2/tier3 keys) and the committed baseline goes stale."
+    ),
+)
+@click.argument(
+    "eval_set_path",
+    type=click.Path(exists=True, file_okay=False, path_type=Path),
+    default=DEFAULT_EVAL_SET,
+    required=False,
+)
+@click.option(
+    "--baseline-out",
+    type=click.Path(dir_okay=False, path_type=Path),
+    required=True,
+    help="Path to write the baseline JSON. Existing file is overwritten.",
+)
+@click.option(
+    "--limit", "-n",
+    type=int,
+    default=5,
+    show_default=True,
+    help="Cap the number of songs scored — match the CI subset size.",
+)
+@click.option(
+    "--label",
+    type=str,
+    default="baseline",
+    show_default=True,
+)
+def cmd_bootstrap_baseline(
+    eval_set_path: Path,
+    baseline_out: Path,
+    limit: int,
+    label: str,
+) -> None:
+    """Regenerate a baseline against the current head's metric schema.
+
+    The CI gate compares aggregate keys produced by the current
+    ``eval.harness`` against the committed baseline JSON. When the
+    metric surface evolves (adding tier2/tier3 keys, etc.) the
+    pre-existing baseline becomes schema-stale: gates can't compare
+    keys the baseline doesn't carry. This subcommand runs the same
+    tier selection as ``eval ci`` and writes the result as a fresh
+    baseline so the next CI run has something real to gate on.
+
+    Run from the repo root, e.g.::
+
+        python scripts/eval.py bootstrap-baseline eval/pop_mini_v0/ \\
+            --baseline-out eval/baselines/pop_mini_v0__main_<sha>.json
+    """
+    output_dir = baseline_out.parent
+    output_dir.mkdir(parents=True, exist_ok=True)
+    tiers = TierSelection.ci()
+    payload = run_eval_set(
+        eval_set_path=eval_set_path,
+        output_dir=output_dir,
+        tiers=tiers,
+        only_first_n=limit,
+        is_ci=False,
+        label=label,
+    )
+    # ``run_eval_set`` writes ``aggregate.json``; rename/copy to the
+    # caller-specified baseline path so a side-by-side diff against
+    # the previous baseline stays trivial.
+    baseline_out.write_text(json.dumps(payload, indent=2) + "\n")
+    click.echo(f"Wrote baseline to {baseline_out}")
 
 
 # ---------------------------------------------------------------------------

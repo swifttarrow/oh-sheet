@@ -156,6 +156,24 @@ demucs = [
     "torchaudio>=2.0",
     "torchcrepe>=0.0.22",
 ]
+# AMT-APC piano-cover transcriber (Phase 8). MIT-licensed end-to-end —
+# code, weights, and training pipeline. The upstream repo is
+# ``misya11p/amt-apc`` (see strategy doc Part III §B6); the package is
+# installed directly from GitHub because there is no PyPI release as of
+# this writing. Pin a commit before relying on this in production —
+# ``main`` is moving — and verify the Transcriber import path matches
+# what ``backend/services/transcribe_amt_apc.py`` expects.
+#
+# Without this extra the dispatcher in ``transcribe.py`` raises
+# ImportError when the cover variant fires and falls back to the
+# faithful Kong/Basic-Pitch path (no cover-mode rearrangement).
+#
+# Reuses the ``demucs``/``kong`` torch pin so the three extras coexist.
+amt_apc = [
+    "amt_apc @ git+https://github.com/misya11p/amt-apc.git",
+    "torch>=2.0",
+    "librosa>=0.10",
+]
 # ByteDance Kong piano transcription (Phase 6). MIT-licensed PyPI
 # package that wraps the high-resolution piano transcription model
 # from "High-resolution Piano Transcription with Pedals by Regressing

@@ -550,20 +550,24 @@ def apply_ci_gates(
     baseline_payload: dict[str, Any],
     *,
     gates: tuple[tuple[str, str, float, str], ...] = DEFAULT_CI_GATES,
+    selected_tiers: TierSelection | None = None,
 ) -> GateReport:
     """Compare head against baseline payload and report per-gate outcomes.
 
     Each gate examines one aggregate metric. A gate **passes** when:
 
-    * The metric is missing in either payload (e.g. CI ran without
-      Tier 4 — gate is "not applicable" rather than "failed"). The
-      gate's ``message`` records the skip reason.
+    * The CI run did not request the tier the metric belongs to (e.g.
+      the cheap CI run leaves Tier 4 off, so Tier 4 gates skip cleanly).
     * The head metric is at most ``threshold`` worse than baseline.
 
-    A gate **fails** when the head metric drops by more than
-    ``threshold`` versus baseline. The gate is the strategy doc §5.1
-    block-merge condition; the CI workflow exits non-zero when any
-    gate fails.
+    A gate **fails** when:
+
+    * The head metric is missing while the run *did* request that
+      tier — points at a harness/code bug.
+    * The baseline metric is missing while head has it — the committed
+      baseline is stale and needs to be regenerated against the current
+      schema; otherwise a regression could merge silently.
+    * The head metric drops by more than ``threshold`` versus baseline.
 
     Returns a :class:`GateReport` even when nothing failed — the report
     is a useful artifact on green PRs (per-tier delta sparkline).
@@ -574,18 +578,73 @@ def apply_ci_gates(
     for name, key, threshold, direction in gates:
         head_v = head_agg.get(key)
         base_v = base_agg.get(key)
-        if not isinstance(head_v, (int, float)) or not isinstance(base_v, (int, float)):
+        head_present = isinstance(head_v, (int, float))
+        base_present = isinstance(base_v, (int, float))
+
+        if not head_present and not base_present:
+            # Tier wasn't enabled on either side — gate is genuinely
+            # not applicable. Treat as pass to keep the report green
+            # for cheap CI runs that leave Tier 4 off by design.
+            tier_inactive = (
+                selected_tiers is not None
+                and not _tier_active_for_key(selected_tiers, key)
+            )
             outcomes.append(GateOutcome(
                 name=name,
-                passed=True,
-                head_value=head_v if isinstance(head_v, (int, float)) else None,
-                baseline_value=base_v if isinstance(base_v, (int, float)) else None,
+                passed=tier_inactive or selected_tiers is None,
+                head_value=None,
+                baseline_value=None,
                 delta=None,
                 threshold=threshold,
                 direction=direction,
-                message=f"skipped: missing one of head/baseline['{key}']",
+                message=(
+                    f"skipped: tier inactive for this run ('{key}')"
+                    if tier_inactive
+                    else f"skipped: missing both head and baseline['{key}']"
+                ),
             ))
             continue
+
+        if not head_present:
+            # CI ran the tier but head failed to produce the metric —
+            # signals a harness regression. Block merge so the bug is
+            # surfaced before the eval set drifts further.
+            outcomes.append(GateOutcome(
+                name=name,
+                passed=False,
+                head_value=None,
+                baseline_value=float(base_v) if base_present else None,
+                delta=None,
+                threshold=threshold,
+                direction=direction,
+                message=(
+                    f"FAIL: head missing aggregate['{key}'] (regression in harness "
+                    "or dependency); cannot evaluate gate"
+                ),
+            ))
+            continue
+
+        if not base_present:
+            # Head has the metric but the committed baseline doesn't —
+            # the baseline predates the current metric schema. Fail
+            # loud so a real regression can't merge under the cover of
+            # a "skipped" gate. Fix by regenerating the baseline JSON
+            # against the current head schema.
+            outcomes.append(GateOutcome(
+                name=name,
+                passed=False,
+                head_value=float(head_v),
+                baseline_value=None,
+                delta=None,
+                threshold=threshold,
+                direction=direction,
+                message=(
+                    f"FAIL: baseline missing aggregate['{key}'] — committed baseline "
+                    "is stale; regenerate against current schema"
+                ),
+            ))
+            continue
+
         delta = head_v - base_v
         if direction == "regression_if_drop_gt":
             passed = delta >= -threshold
@@ -611,6 +670,31 @@ def apply_ci_gates(
         head_run_id=str(head_payload.get("run_id", "unknown")),
         baseline_run_id=str(baseline_payload.get("run_id", "unknown")),
     )
+
+
+# Map gate aggregate-key prefix → ``TierSelection`` attribute. Used by
+# ``apply_ci_gates`` to tell "tier wasn't requested" (legitimate skip)
+# from "tier ran but the metric is missing" (real failure).
+_TIER_KEY_PREFIXES: tuple[tuple[str, str], ...] = (
+    ("mean_tier_rf_", "tier_rf"),
+    ("median_tier_rf_", "tier_rf"),
+    ("mean_tier2_", "tier2"),
+    ("median_tier2_", "tier2"),
+    ("mean_tier3_", "tier3"),
+    ("median_tier3_", "tier3"),
+    ("mean_tier4_", "tier4"),
+    ("median_tier4_", "tier4"),
+    ("mean_composite_q", "composite_q"),
+    ("median_composite_q", "composite_q"),
+)
+
+
+def _tier_active_for_key(tiers: TierSelection, agg_key: str) -> bool:
+    """Return True iff the tier owning ``agg_key`` is enabled in ``tiers``."""
+    for prefix, attr in _TIER_KEY_PREFIXES:
+        if agg_key.startswith(prefix):
+            return bool(getattr(tiers, attr, False))
+    return True
 
 
 def render_gate_summary(report: GateReport) -> str:

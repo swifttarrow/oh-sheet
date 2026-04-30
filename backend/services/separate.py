@@ -118,6 +118,10 @@ class SeparateService:
         returned unchanged with ``audio_stems = {}`` — callers detect
         the empty dict and route to transcribe's legacy inline path.
         """
+        if not settings.demucs_enabled:
+            log.info("separate: OHSHEET_DEMUCS_ENABLED=0, returning bundle unchanged")
+            return bundle
+
         if bundle.audio is None:
             log.info("separate: no audio in bundle, skipping")
             return bundle

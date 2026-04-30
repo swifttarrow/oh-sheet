@@ -4,22 +4,31 @@ description: |
   Phase 0 reference-free mini-eval set, per
   docs/research/transcription-improvement-implementation-plan.md §Phase 0.
 
-  All 5 slots curated with real audio (4× FMA, 1× YouTube). Each ``source``
-  block was produced by ``scripts/curate_pop_mini_v0.py`` and records its
-  source URL, content hash, and license. The original ``intended_source``
-  blocks are retained as historical record of what the slot targets.
+  4 slots curated with real audio (all FMA), 1 slot undelivered. Each
+  ``source`` block was produced by ``scripts/curate_pop_mini_v0.py`` and
+  records its source URL, content hash, and license. The original
+  ``intended_source`` blocks are retained as historical record of what
+  the slot targets.
 
   Slot inventory:
     mini_pop_001    — Jahzzar / Two days        (CC BY-SA 3.0, FMA Pop)
     mini_pop_002    — Tours / Enthusiast        (CC BY 3.0, FMA Electronic)
     mini_pop_003    — Alaclair Ensemble /
                       Intergalactique           (CC BY-SA 3.0, FMA Soul-RnB)
-    mini_kpop_001   — TWICE: Feel Special
-                      (instrumental cover by
-                       EVEYLIA / YOUA K Pop)    (uploader-asserted CC BY 3.0,
-                                                 YouTube R9KNBIFDohw)
+    mini_kpop_001   — *undelivered* — see redistribution-policy note.
     mini_ballad_001 — Peter Rudenko / Snowing   (CC BY 3.0, FMA Classical /
                                                  solo piano)
+
+  Redistribution policy:
+    Only audio with a verifiable, redistributable license (CC-BY /
+    CC-BY-SA from FMA, where the platform itself enforces a license
+    schema) is committed in-repo. Earlier curation seeded
+    ``mini_kpop_001`` with a YouTube clip whose license was
+    uploader-asserted CC-BY; the asset has been removed pending
+    a properly-licensed K-pop replacement. The slot stays in the
+    manifest as ``intended_source`` only so the loader counts it as
+    undelivered. To re-deliver, point ``source`` at an FMA K-pop track
+    or a clip whose license is verified by the publishing platform.
 
   Earlier ``synthetic_from_midi`` bootstraps (FluidSynth-rendered MIDIs
   from ``eval/fixtures/clean_midi/``) are gone from the manifest but
@@ -114,30 +123,19 @@ songs:
       bootstrap: false
 
   - slug: mini_kpop_001
-    title: "Doctor Jones"
-    artist: "Aqua"
+    title: "TBD — K-pop slot, undelivered"
+    artist: "TBD"
     genre: dance_pop
     intended_source:
-      kind: youtube
-      url: https://www.youtube.com/  # populate with real CC-BY K-pop URL
+      kind: fma_track
+      url: https://freemusicarchive.org/  # populate with real FMA K-pop URL
       license: cc-by
       notes: |
-        Target slot: K-pop YouTube CC-BY clip. Closest in-repo analog is
-        Aqua's Eurodance (heavy percussion + synth hooks); replace with a
-        K-pop CC-BY upload once curated.
-    source:
-      kind: audio_file
-      path: songs/mini_kpop_001/source.audio.mp3
-      content_hash: sha256:b0eb259816f8f11627b350ee1eac7232eb9527b9fb43f4b480c75ad47f6b5374
-      license: cc-by-3.0
-      source_url: https://www.youtube.com/watch?v=R9KNBIFDohw
-      curated_at: 2026-04-26T19:37:46+00:00
-      curated_via: scripts/curate_pop_mini_v0.py
-      notes: |
-        title: TWICE - Feel Special (Instrumental cover)
-        artist: EVEYLIA / YOUA K Pop
-        YouTube uploader-asserted CC BY. Instrumental K-pop arrangement of TWICE 'Feel Special'. License is uploader-asserted; verify before any commercial redistribution. Original song © JYP Entertainment; this manifest entry references only the CC-BY-uploaded instrumental cover.
-      bootstrap: false
+        Target slot: K-pop. The previous curation pointed at an
+        uploader-asserted CC-BY YouTube clip whose license could not
+        be independently verified; the asset has been removed pending
+        a redistributable replacement (preferably an FMA-listed
+        K-pop / dance-pop track).
 
   - slug: mini_ballad_001
     title: "Vivo Per Lei"
