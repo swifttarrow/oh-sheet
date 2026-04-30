@@ -83,6 +83,14 @@ jobs:
           # documents that the CI run is operating against the tune
           # set only.
           OHSHEET_HOLDOUT_KEY: ""
+          # Force the librosa beat-tracking backend in the cheap gate.
+          # ``[basic-pitch]`` ships ``beat_this`` as a transitive dep;
+          # left unset, ``Settings.beat_tracker == "beat_this"`` runs
+          # the (slow, ~100 s/song) transformer and the metric values
+          # diverge from baselines generated under the librosa fallback.
+          # Nightly leaves this unset so the heavier surface still uses
+          # Beat This! — see strategy doc §5.2.
+          OHSHEET_BEAT_TRACKER: librosa
         run: |
           mkdir -p /tmp/eval_run
           python scripts/eval.py ci eval/pop_mini_v0/ \
