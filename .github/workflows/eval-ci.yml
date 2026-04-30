@@ -40,7 +40,7 @@ jobs:
   eval-ci-mini:
     name: Eval CI (mini, 5 songs)
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
         with:
@@ -62,14 +62,19 @@ jobs:
           sudo apt-get install -qq -y fluidsynth
 
       - name: Install Python deps (eval + basic-pitch)
-        # ``[eval]`` brings mir_eval + cryptography for the harness
-        # itself. ``[basic-pitch]`` is needed only when round-trip is
-        # enabled — disabled by default in CI to keep wall-clock
-        # under 2 min. Reinstate the extra here when the round-trip
-        # gate goes blocking (post-Phase 7 calibration).
+        # ``[eval]`` brings mir_eval + cryptography + librosa for the
+        # harness itself. ``[basic-pitch]`` is required because the
+        # harness drives the real ``_run_basic_pitch_sync`` for every
+        # song — without it, every song errors with ImportError and
+        # ``cmd_ci`` correctly fails the run with "0 of N songs scored".
+        # Mirrors the Makefile's two-step dance: deps via the extra,
+        # then ``basic-pitch`` itself with --no-deps (basic-pitch 0.4.0
+        # hard-pins tensorflow-macos on Darwin which has no Py>=3.12
+        # wheel).
         run: |
           pip install --upgrade pip
-          pip install -e ".[dev,eval]"
+          pip install -e ".[dev,eval,basic-pitch]"
+          pip install --no-deps "basic-pitch>=0.4"
 
       - name: Run eval ci
         env:
