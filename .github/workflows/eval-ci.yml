@@ -40,7 +40,13 @@ jobs:
   eval-ci-mini:
     name: Eval CI (mini, 5 songs)
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    # Wall-clock budget: ~12-14 min (pip install ~2 min + 4 songs at
+    # ~150 s/song on the CI runner — basic-pitch ONNX inference is
+    # roughly 3x slower than the Apple Silicon CoreML path the
+    # original <2 min target was sized around). 20 min buys
+    # comfortable margin without letting a stuck job idle for hours.
+    # Nightly runs the heavier surface inside a 25 min budget.
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
         with:
