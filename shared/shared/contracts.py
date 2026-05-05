@@ -12,7 +12,7 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
-SCHEMA_VERSION = "3.1.0"
+SCHEMA_VERSION = "3.2.0"
 
 
 # ---------------------------------------------------------------------------
@@ -151,6 +151,11 @@ class InputMetadata(BaseModel):
     # blow up serialization on legacy stored bundles; the dispatcher
     # ignores unknown values.
     variant_hint: str | None = None
+    # Free-form user prompt for the interpret stage (e.g. "make it
+    # beginner-friendly, sparse left hand"). Carried through to the
+    # interpret stage worker which converts it to structured
+    # ArrangementHints. Not a SecretStr — user-visible in their own job.
+    arrangement_prompt: str | None = None
 
 
 class InputBundle(BaseModel):
@@ -250,6 +255,9 @@ class TranscriptionResult(BaseModel):
     # doesn't model pedal (Basic Pitch, Pop2Piano). Arrange converts
     # these to the beat-domain ExpressionMap.pedal_events.
     pedal_events: list[RealtimePedalEvent] = Field(default_factory=list)
+    # Structured arrangement guidance produced by the interpret stage.
+    # None when the interpret stage was skipped or returned no hints.
+    arrangement_hints: ArrangementHints | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -257,6 +265,24 @@ class TranscriptionResult(BaseModel):
 # ---------------------------------------------------------------------------
 
 Difficulty = Literal["beginner", "intermediate", "advanced"]
+Density = Literal["sparse", "moderate", "dense"]
+HandBalance = Literal["lh_lead", "balanced", "rh_lead"]
+
+
+class ArrangementHints(BaseModel):
+    """Structured arrangement guidance produced by the interpret stage.
+
+    All fields are optional — a partially-populated hints object is valid.
+    Downstream stages (arrange, humanize) consume whichever fields they
+    support and ignore the rest.
+    """
+    difficulty: Difficulty | None = None
+    density: Density | None = None
+    style_tags: list[str] = Field(default_factory=list)  # e.g. ["jazz", "ballad"]
+    dynamic_emphasis: Literal["soft", "neutral", "bold"] | None = None
+    tempo_bias: float = Field(default=0.0, ge=-0.25, le=0.25)  # fractional nudge
+    hand_balance: HandBalance | None = None
+    notes: str | None = None  # short LLM rationale, surfaced for telemetry only
 
 
 class ScoreNote(BaseModel):
@@ -332,6 +358,10 @@ class ScoreMetadata(BaseModel):
     # to resolve it (the module's ``from __future__ import annotations``
     # already turns all annotations into strings, so no quoting needed).
     pedal_events: list[PedalEvent] = Field(default_factory=list)
+    # Structured arrangement guidance from the interpret stage. Copied
+    # from TranscriptionResult.arrangement_hints by ArrangeService so
+    # hints survive the txr → PianoScore boundary.
+    arrangement_hints: ArrangementHints | None = None
 
 
 class PianoScore(BaseModel):
@@ -515,6 +545,7 @@ class PipelineConfig(BaseModel):
     variant: PipelineVariant
     skip_humanizer: bool = False
     enable_refine: bool = True
+    enable_interpret: bool = False
     stage_timeout_sec: int = 600
     score_pipeline: ScorePipelineMode = "arrange"
     # Phase 5: pre-transcribe source separation. Default ``htdemucs``
@@ -566,10 +597,18 @@ class PipelineConfig(BaseModel):
             and self.variant != "pop_cover"
         ):
             plan.insert(plan.index("engrave"), "refine")
+        # Interpret converts a free-form user prompt to structured
+        # ArrangementHints before the arrange stage. Skipped for
+        # pop_cover (AMT-APC has already committed to a style).
+        if self.enable_interpret and "arrange" in plan and self.variant != "pop_cover":
+            plan.insert(plan.index("arrange"), "interpret")
         return plan
 
 
-# Resolve the ``ScoreMetadata.pedal_events: list["PedalEvent"]`` forward
-# reference now that ``PedalEvent`` is defined further down the module.
+# Resolve forward references now that all classes are defined.
+# ``ScoreMetadata.pedal_events`` and ``ScoreMetadata.arrangement_hints``,
+# ``TranscriptionResult.arrangement_hints`` — referenced types defined later
+# in the module.
 ScoreMetadata.model_rebuild()
 PianoScore.model_rebuild()
+TranscriptionResult.model_rebuild()

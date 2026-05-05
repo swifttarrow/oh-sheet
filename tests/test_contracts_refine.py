@@ -1,4 +1,4 @@
-"""Schema-level tests for the refinement contract additions (SCHEMA_VERSION 3.1.0)."""
+"""Schema-level tests for the refinement contract additions (SCHEMA_VERSION 3.2.0)."""
 from __future__ import annotations
 
 from shared.contracts import (
@@ -11,8 +11,8 @@ from shared.contracts import (
 )
 
 
-def test_schema_version_bumped_to_3_1_0() -> None:
-    assert SCHEMA_VERSION == "3.1.0"
+def test_schema_version_bumped_to_3_2_0() -> None:
+    assert SCHEMA_VERSION == "3.2.0"
 
 
 def test_repeat_model_requires_beat_range_and_kind() -> None:

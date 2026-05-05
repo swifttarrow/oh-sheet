@@ -612,6 +612,18 @@ class Settings(BaseSettings):
     refine_call_timeout_sec: int = 120        # per-API-call timeout
     anthropic_api_key: str | None = None
 
+    # ---- Interpret stage (prompt → ArrangementHints via Claude) -------------
+    # Global kill switch. Still gated per-job by whether the user supplied
+    # a prompt. Set OHSHEET_INTERPRET_ENABLED=false to disable globally
+    # (e.g. during Anthropic outages) without needing a code change.
+    interpret_enabled: bool = True
+    # Model for the interpret stage. Haiku is fast and cheap — sufficient
+    # for structured extraction from a short user prompt.
+    interpret_model: str = "claude-haiku-4-5"
+    # Maximum characters accepted from the user's arrangement prompt.
+    # Prompts longer than this are truncated before being sent to Claude.
+    interpret_prompt_max_chars: int = 1000
+
     @computed_field  # type: ignore[prop-decorator]
     @property
     def refine_active(self) -> bool:

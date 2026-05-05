@@ -297,3 +297,54 @@ def test_midi_job_condense_pipeline_emits_condense_and_transform(monkeypatch, cl
     assert "condense" in completed
     assert "arrange" not in completed
     assert "transform" not in completed
+
+
+# ---------------------------------------------------------------------------
+# arrangement_prompt → enable_interpret wiring
+# ---------------------------------------------------------------------------
+#
+# POST /v1/jobs accepts an optional ``arrangement_prompt`` field. A non-empty,
+# non-whitespace prompt must land on the stored bundle's metadata AND must
+# flip ``PipelineConfig.enable_interpret`` to True so the interpret pre-stage
+# is inserted into the execution plan. A whitespace-only prompt must keep
+# enable_interpret=False (we still store what the user sent; only the gate
+# is disabled).
+
+
+def test_arrangement_prompt_round_trips_and_enables_interpret(client, mock_youtube_download):
+    """Non-empty arrangement_prompt lands on bundle metadata and enables interpret."""
+    from backend.api.deps import get_job_manager
+    from backend.main import app
+
+    response = client.post(
+        "/v1/jobs",
+        json={"title": "https://youtu.be/fJ9rUzIMcZQ", "arrangement_prompt": "make it easy"},
+    )
+    assert response.status_code == 202, response.text
+    job_id = response.json()["job_id"]
+
+    manager = app.dependency_overrides.get(get_job_manager, get_job_manager)()
+    record = manager.get(job_id)
+    assert record is not None
+    assert record.bundle.metadata.arrangement_prompt == "make it easy"
+    assert record.config.enable_interpret is True
+
+
+def test_whitespace_only_arrangement_prompt_disables_interpret(client, mock_youtube_download):
+    """Whitespace-only arrangement_prompt keeps enable_interpret=False but stores the value."""
+    from backend.api.deps import get_job_manager
+    from backend.main import app
+
+    response = client.post(
+        "/v1/jobs",
+        json={"title": "https://youtu.be/fJ9rUzIMcZQ", "arrangement_prompt": "   "},
+    )
+    assert response.status_code == 202, response.text
+    job_id = response.json()["job_id"]
+
+    manager = app.dependency_overrides.get(get_job_manager, get_job_manager)()
+    record = manager.get(job_id)
+    assert record is not None
+    assert record.config.enable_interpret is False
+    # We preserve what the user sent — only the gate is disabled
+    assert record.bundle.metadata.arrangement_prompt == "   "

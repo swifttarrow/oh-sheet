@@ -641,6 +641,7 @@ def _arrange_sync(
             chord_symbols=chord_symbols,
             downbeats=list(analysis.downbeats),
             pedal_events=pedal_events,
+            arrangement_hints=payload.arrangement_hints,
         ),
     )
 
@@ -671,6 +672,12 @@ class ArrangeService:
         difficulty: Difficulty = "intermediate",
         blob_store: BlobStore | None = None,
     ) -> PianoScore:
+        # If the interpret stage supplied hints, let them win over the worker default.
+        # Future iterations will also consume density / style_tags / dynamic_emphasis / hand_balance.
+        hints = payload.arrangement_hints
+        if hints is not None and hints.difficulty is not None:
+            difficulty = hints.difficulty
+
         log.info(
             "arrange: start backend=%s tracks_in=%d difficulty=%s",
             settings.arrange_backend,

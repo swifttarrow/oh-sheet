@@ -54,6 +54,7 @@ STEP_TO_TASK: dict[str, str] = {
     "ingest": "ingest.run",
     "separate": "separate.run",
     "transcribe": "transcribe.run",
+    "interpret": "interpret.run",
     "arrange": "arrange.run",
     "condense": "condense.run",
     "transform": "transform.run",
@@ -513,6 +514,34 @@ class PipelineRunner:
                     payload_uri = self._serialize_stage_input(job_id, step, current_payload)
                     output_uri = await self._dispatch_task(task_name, job_id, payload_uri, config.stage_timeout_sec)
                     txr_dict = self.blob_store.get_json(output_uri)
+
+                elif step == "interpret":
+                    # For midi_upload jobs, transcribe was skipped so
+                    # txr_dict is None. Run the same MIDI→TranscriptionResult
+                    # passthrough that arrange uses so interpret always
+                    # receives a valid TranscriptionResult.
+                    if txr_dict is None:
+                        bundle_obj = InputBundle.model_validate(current_payload)
+                        log.info(
+                            "pipeline job_id=%s interpret: using MIDI→TranscriptionResult passthrough",
+                            job_id,
+                        )
+                        txr_obj = _bundle_to_transcription(
+                            bundle_obj,
+                            blob_store=self.blob_store,
+                            job_id=job_id,
+                        )
+                        txr_dict = txr_obj.model_dump(mode="json")
+                    interpret_envelope = {
+                        "txr": txr_dict,
+                        "prompt": bundle.metadata.arrangement_prompt or "",
+                        "title_hint": bundle.metadata.title,
+                        "artist_hint": bundle.metadata.artist,
+                    }
+                    payload_uri = self._serialize_stage_input(job_id, step, interpret_envelope)
+                    output_uri = await self._dispatch_task(task_name, job_id, payload_uri, config.stage_timeout_sec)
+                    enriched = self.blob_store.get_json(output_uri)
+                    txr_dict = enriched["txr"]
 
                 elif step in ("arrange", "condense"):
                     if txr_dict is None:

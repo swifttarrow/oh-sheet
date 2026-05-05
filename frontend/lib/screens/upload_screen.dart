@@ -36,6 +36,7 @@ class _UploadScreenState extends State<UploadScreen> {
   final _titleController = TextEditingController();
   final _artistController = TextEditingController();
   final _youtubeController = TextEditingController();
+  final _promptController = TextEditingController();
 
   PlatformFile? _pickedFile;
   bool _submitting = false;
@@ -65,6 +66,7 @@ class _UploadScreenState extends State<UploadScreen> {
     _titleController.dispose();
     _artistController.dispose();
     _youtubeController.dispose();
+    _promptController.dispose();
     super.dispose();
   }
 
@@ -113,6 +115,9 @@ class _UploadScreenState extends State<UploadScreen> {
             // the style toggle; the backend default (faithful) is the
             // safer fallback for unmodified clients.
             coverMode: _style == _TranscriptionStyle.cover ? true : null,
+            arrangementPrompt: _promptController.text.trim().isEmpty
+                ? null
+                : _promptController.text.trim(),
           );
           break;
         case _SourceMode.midi:
@@ -131,6 +136,9 @@ class _UploadScreenState extends State<UploadScreen> {
             artist: _artistController.text.trim().isEmpty
                 ? null
                 : _artistController.text.trim(),
+            arrangementPrompt: _promptController.text.trim().isEmpty
+                ? null
+                : _promptController.text.trim(),
           );
           break;
         case _SourceMode.title:
@@ -141,6 +149,9 @@ class _UploadScreenState extends State<UploadScreen> {
             artist: _artistController.text.trim().isEmpty
                 ? null
                 : _artistController.text.trim(),
+            arrangementPrompt: _promptController.text.trim().isEmpty
+                ? null
+                : _promptController.text.trim(),
           );
           break;
         case _SourceMode.youtube:
@@ -153,6 +164,9 @@ class _UploadScreenState extends State<UploadScreen> {
                 ? null
                 : _artistController.text.trim(),
             preferCleanSource: true,
+            arrangementPrompt: _promptController.text.trim().isEmpty
+                ? null
+                : _promptController.text.trim(),
           );
           break;
       }
@@ -389,6 +403,19 @@ class _UploadScreenState extends State<UploadScreen> {
                           ),
                         ),
                       ],
+                      const SizedBox(height: 12),
+                      TextField(
+                        controller: _promptController,
+                        decoration: const InputDecoration(
+                          labelText: 'How should it sound? (optional)',
+                          hintText: 'e.g. easier for beginners, jazzy left hand, sparse',
+                          alignLabelWithHint: true,
+                        ),
+                        minLines: 3,
+                        maxLines: 5,
+                        maxLength: 1000,
+                        textInputAction: TextInputAction.newline,
+                      ),
                       const SizedBox(height: 22),
                       OhSheetStickerCTA(
                         key: const ValueKey('ohsheet_primary_submit'),

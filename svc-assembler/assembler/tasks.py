@@ -8,7 +8,6 @@ no backend import needed.
 import os
 from pathlib import Path
 
-from assembler.celery_app import celery_app
 from shared.contracts import (
     SCHEMA_VERSION,
     PianoScore,
@@ -18,6 +17,8 @@ from shared.contracts import (
     TranscriptionResult,
 )
 from shared.storage.local import LocalBlobStore
+
+from assembler.celery_app import celery_app
 
 _BLOB_ROOT = Path(os.environ.get("OHSHEET_BLOB_ROOT", "./blob"))
 

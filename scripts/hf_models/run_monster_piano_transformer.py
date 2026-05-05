@@ -144,7 +144,7 @@ def _transcribe_audio_to_midi(
     audio_path: Path,
     checkpoint: Path,
     midi_out: Path,
-    device: "torch.device",
+    device: torch.device,
     max_seconds: float | None,
 ) -> None:
     import librosa
@@ -163,7 +163,6 @@ def _transcribe_audio_to_midi(
 def _midi_to_pdf_or_musicxml(midi_path: Path, pdf_path: Path) -> str:
     """Return ``'pdf'``, ``'musicxml'``, or ``'failed'``. Mirrors ``backend/services/engrave.py``."""
     from music21 import converter
-
     from shared.musescore_cli import musescore_executable_paths
 
     score = converter.parse(str(midi_path))
@@ -262,9 +261,8 @@ def main() -> int:
     if not args.no_pdf and (code := _ensure_music21()) is not None:
         return code
 
-    import torch
-
     import monsterpianotransformer as mpt
+    import torch
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 

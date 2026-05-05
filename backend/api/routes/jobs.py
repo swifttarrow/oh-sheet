@@ -4,7 +4,7 @@ from __future__ import annotations
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from backend.api.deps import get_blob_store, get_job_manager
 from backend.config import settings
@@ -45,6 +45,15 @@ class JobCreateRequest(BaseModel):
     providing the source directly. See ``backend.services.cover_search``
     for the matching policy. Defaults to False so existing clients keep
     working unchanged.
+
+    ``arrangement_prompt`` is an optional free-form text prompt (≤ 1000
+    chars) that steers how the arrangement should sound, e.g. "make it
+    beginner-friendly" or "sparse, jazzy left hand". When non-empty,
+    the pipeline inserts an ``interpret`` pre-stage (before ``arrange``)
+    that calls Claude to convert the prompt into structured
+    ``ArrangementHints`` which downstream stages consume. An empty or
+    whitespace-only prompt is treated as absent and does not activate
+    the stage.
     """
 
     audio: RemoteAudioFile | None = None
@@ -61,6 +70,9 @@ class JobCreateRequest(BaseModel):
     # faithful Kong/BP path. Ignored on midi_upload / title_lookup
     # because AMT-APC needs an audio waveform to operate on.
     cover_mode: bool = False
+    # interpret pre-stage: free-form arrangement intent from the user.
+    # Validated to ≤ 1000 chars; whitespace-only treated as absent.
+    arrangement_prompt: str | None = Field(default=None, max_length=1000)
 
 
 class JobSummary(BaseModel):
@@ -166,6 +178,7 @@ async def create_job(
                 source_filename=source_filename,
                 prefer_clean_source=body.prefer_clean_source,
                 variant_hint=variant,
+                arrangement_prompt=body.arrangement_prompt,
             ),
         )
     elif body.midi is not None:
@@ -180,6 +193,7 @@ async def create_job(
                 source_filename=source_filename,
                 prefer_clean_source=body.prefer_clean_source,
                 variant_hint="midi_upload",
+                arrangement_prompt=body.arrangement_prompt,
             ),
         )
         variant = "midi_upload"
@@ -196,6 +210,7 @@ async def create_job(
                 source_filename=source_filename,
                 prefer_clean_source=body.prefer_clean_source,
                 variant_hint="full",
+                arrangement_prompt=body.arrangement_prompt,
             ),
         )
         variant = "full"
@@ -209,6 +224,9 @@ async def create_job(
         # plan entirely when source separation is off so the orchestrator
         # doesn't enqueue a task no worker consumes.
         separator="htdemucs" if settings.demucs_enabled else "off",
+        # Activate the interpret pre-stage only when the user supplied a
+        # non-empty, non-whitespace arrangement prompt.
+        enable_interpret=bool(body.arrangement_prompt and body.arrangement_prompt.strip()),
     )
     record = await manager.submit(bundle, config)
     return _record_to_summary(record)

@@ -32,7 +32,6 @@ import subprocess
 import sys
 from collections.abc import Callable
 from pathlib import Path
-from typing import Optional
 
 _HF_DIR = Path(__file__).resolve().parent
 if str(_HF_DIR) not in sys.path:
@@ -52,13 +51,12 @@ def _patch_t5gemma_modeling_for_pianist() -> None:
     still expects the v4.55-style API on ``transformers.models.t5gemma.modeling_t5gemma``.
     """
     import torch
-
     import transformers.models.t5gemma.modeling_t5gemma as m
 
     if getattr(m, "_ohsheet_pianist_t5gemma_mask_patch", False):
         return
 
-    def bidirectional_mask_function(attention_mask: Optional[torch.Tensor]) -> Callable[..., torch.Tensor | bool]:
+    def bidirectional_mask_function(attention_mask: torch.Tensor | None) -> Callable[..., torch.Tensor | bool]:
         # Must return tensors (no ``.item()``): ``create_causal_mask`` composes masks under ``vmap``.
         def inner_mask(batch_idx, head_idx, q_idx, kv_idx):
             if attention_mask is None:
