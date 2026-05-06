@@ -67,6 +67,10 @@ class OhSheetApi {
   /// / plain-title modes should not pass this parameter at all — it is
   /// meaningful only for YouTube URL submissions, and shipping it
   /// anyway is semantic noise in request logs (PR #47 review #4).
+  ///
+  /// ``arrangementPrompt`` is an optional free-form user instruction that
+  /// activates the ``interpret`` pre-stage (e.g. "easier for beginners,
+  /// jazzy left hand"). Omitted from the payload when null or empty.
   Future<JobSummary> createJob({
     RemoteAudioFile? audio,
     RemoteMidiFile? midi,
@@ -74,6 +78,8 @@ class OhSheetApi {
     String? artist,
     bool skipHumanizer = false,
     bool? preferCleanSource,
+    bool? coverMode,
+    String? arrangementPrompt,
   }) async {
     final body = <String, dynamic>{
       if (audio != null) 'audio': audio.toJson(),
@@ -82,6 +88,15 @@ class OhSheetApi {
       if (artist != null && artist.isNotEmpty) 'artist': artist,
       'skip_humanizer': skipHumanizer,
       if (preferCleanSource != null) 'prefer_clean_source': preferCleanSource,
+      // Phase 8: when true and audio is provided, the backend picks
+      // the pop_cover variant and routes transcription through AMT-APC
+      // for an idiomatic piano cover instead of a faithful transcription.
+      // Ignored for midi/title submissions (no audio for AMT-APC to work
+      // on); omitted from the payload entirely when null so the backend
+      // sees the default `cover_mode=False` rather than a phantom flag.
+      if (coverMode != null) 'cover_mode': coverMode,
+      if (arrangementPrompt != null && arrangementPrompt.isNotEmpty)
+        'arrangement_prompt': arrangementPrompt,
     };
     final response = await _client.post(
       _u('/v1/jobs'),

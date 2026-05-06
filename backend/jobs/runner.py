@@ -8,6 +8,7 @@ the result URI, and deserialize the output for the next stage.
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import io
 import logging
 import time
@@ -27,10 +28,14 @@ from backend.contracts import (
     InstrumentRole,
     MidiTrack,
     Note,
+    PianoScore,
     PipelineConfig,
     QualitySignal,
+    ScoreMetadata,
+    ScoreNote,
     TempoMapEntry,
     TranscriptionResult,
+    sec_to_beat,
 )
 from backend.jobs.events import JobEvent
 from backend.services.pretty_midi_tracks import (
@@ -48,13 +53,37 @@ EventCallback = Callable[[JobEvent], None]
 # rather than dispatched as a Celery task.
 STEP_TO_TASK: dict[str, str] = {
     "ingest": "ingest.run",
+    "separate": "separate.run",
     "transcribe": "transcribe.run",
+    "interpret": "interpret.run",
     "arrange": "arrange.run",
     "condense": "condense.run",
     "transform": "transform.run",
     "humanize": "humanize.run",
     "refine": "refine.run",
 }
+
+
+def _compute_audio_hash(bundle: InputBundle, blob_store: BlobStore) -> str:
+    """SHA-256 of the user's audio bytes, hex-encoded.
+
+    Used as the ``user_audio_hash`` column in
+    ``eval_production_quality_scores`` per strategy doc §6.1 — the
+    hash is GDPR-clean (the audio itself never lands in Postgres) and
+    stable across re-runs so the dashboard can de-dup repeat uploads
+    of the same source.
+
+    Returns ``"unknown"`` when the bundle has no audio (sheet-only
+    paths) or when the blob fetch fails — telemetry still records
+    the row with ``"unknown"`` so the per-job table stays complete.
+    """
+    if bundle.audio is None:
+        return "unknown"
+    try:
+        audio_bytes = blob_store.get_bytes(bundle.audio.uri)
+    except Exception:  # noqa: BLE001
+        return "unknown"
+    return hashlib.sha256(audio_bytes).hexdigest()
 
 
 def _stub_transcription(reason: str) -> TranscriptionResult:
@@ -156,6 +185,109 @@ def _bundle_to_transcription(
                 exc,
             )
     return result
+
+
+_DEFAULT_STAFF_SPLIT = 60  # middle C — also the engrave-side default.
+
+
+def _cover_score_from_transcription(
+    txr: TranscriptionResult,
+    *,
+    difficulty: str = "intermediate",
+) -> PianoScore:
+    """Synthesize a :class:`PianoScore` from cover-mode transcription output.
+
+    The Phase 8 ``pop_cover`` variant skips ``arrange`` because AMT-APC
+    has already done the arrangement work — chord voicings, accompaniment
+    patterns, hand-friendly note placement. We don't want the rules-based
+    arranger to second-guess any of that. But the engraver expects a
+    :class:`PianoScore` (right_hand / left_hand split), so we still need
+    to attribute notes to staves and convert from seconds to beats.
+
+    The split is the simplest possible: pitch < 60 → LH, pitch ≥ 60 → RH.
+    Cover-mode models tend to produce overlapping registers across hands
+    in dense chordal sections, but the staff cut at middle C is a
+    reasonable default and matches the engraver's ``staff_split_hint``.
+    Voice assignment is also flat (voice=1 for every note) since the
+    cover model didn't emit voice info — the engraver will lay this out
+    as single-voice notation per staff.
+
+    Chord symbols, sections, key, time signature, tempo map, and
+    downbeats are all carried from :attr:`TranscriptionResult.analysis`
+    so the rendered PDF still benefits from the audio-side analysis
+    (Beat This! downbeats, librosa key estimation, chord recognition)
+    even though arrange was skipped.
+    """
+    analysis = txr.analysis
+    tempo_map = list(analysis.tempo_map) or [
+        TempoMapEntry(time_sec=0.0, beat=0.0, bpm=120.0),
+    ]
+
+    rh_idx = 0
+    lh_idx = 0
+    right_hand: list[ScoreNote] = []
+    left_hand: list[ScoreNote] = []
+    for track in txr.midi_tracks:
+        for note in track.notes:
+            onset_beat = sec_to_beat(note.onset_sec, tempo_map)
+            offset_beat = sec_to_beat(note.offset_sec, tempo_map)
+            duration_beat = max(offset_beat - onset_beat, 0.0)
+            if note.pitch >= _DEFAULT_STAFF_SPLIT:
+                right_hand.append(
+                    ScoreNote(
+                        id=f"rh-{rh_idx:04d}",
+                        pitch=note.pitch,
+                        onset_beat=onset_beat,
+                        duration_beat=duration_beat,
+                        velocity=note.velocity,
+                        voice=1,
+                    )
+                )
+                rh_idx += 1
+            else:
+                left_hand.append(
+                    ScoreNote(
+                        id=f"lh-{lh_idx:04d}",
+                        pitch=note.pitch,
+                        onset_beat=onset_beat,
+                        duration_beat=duration_beat,
+                        velocity=note.velocity,
+                        voice=1,
+                    )
+                )
+                lh_idx += 1
+
+    right_hand.sort(key=lambda n: (n.onset_beat, n.pitch))
+    left_hand.sort(key=lambda n: (n.onset_beat, n.pitch))
+
+    # Reuse arrange's chord/section helpers so the cover path emits the
+    # same beat-domain structures arrange would have produced. Imported
+    # lazily to avoid pulling music21/numpy into the runner module on
+    # the import path of variants that don't exercise cover mode.
+    from backend.services.arrange import (  # noqa: PLC0415
+        _chord_to_score_chord,
+        _section_to_score_section,
+    )
+
+    chord_symbols = [_chord_to_score_chord(c, tempo_map) for c in analysis.chords]
+    sections = [_section_to_score_section(s, tempo_map) for s in analysis.sections]
+
+    return PianoScore(
+        schema_version=SCHEMA_VERSION,
+        right_hand=right_hand,
+        left_hand=left_hand,
+        metadata=ScoreMetadata(
+            key=analysis.key,
+            time_signature=analysis.time_signature,
+            tempo_map=tempo_map,
+            difficulty=difficulty,  # type: ignore[arg-type]
+            sections=sections,
+            chord_symbols=chord_symbols,
+            downbeats=list(analysis.downbeats),
+            pedal_events=[],  # AMT-APC does not emit pedal
+            staff_split_hint=_DEFAULT_STAFF_SPLIT,
+        ),
+    )
 
 
 class PipelineRunner:
@@ -361,10 +493,54 @@ class PipelineRunner:
                         # (Basic Pitch + music21). TuneChat is not fired for
                         # these routes — only for title_lookup jobs above.
 
+                elif step == "separate":
+                    # Phase 5: source-separation runs between ingest and
+                    # transcribe. The worker enriches the bundle with
+                    # ``audio_stems`` URIs (or returns it unchanged on
+                    # failure — graceful degradation into transcribe's
+                    # legacy inline path). The next stage reads
+                    # ``current_payload`` directly.
+                    payload_uri = self._serialize_stage_input(job_id, step, current_payload)
+                    output_uri = await self._dispatch_task(task_name, job_id, payload_uri, config.stage_timeout_sec)
+                    current_payload = self.blob_store.get_json(output_uri)
+                    n_stems = len(current_payload.get("audio_stems", {}))
+                    log.info(
+                        "pipeline separate done job_id=%s stems=%d",
+                        job_id, n_stems,
+                    )
+
                 elif step == "transcribe":
                     payload_uri = self._serialize_stage_input(job_id, step, current_payload)
                     output_uri = await self._dispatch_task(task_name, job_id, payload_uri, config.stage_timeout_sec)
                     txr_dict = self.blob_store.get_json(output_uri)
+
+                elif step == "interpret":
+                    # For midi_upload jobs, transcribe was skipped so
+                    # txr_dict is None. Run the same MIDI→TranscriptionResult
+                    # passthrough that arrange uses so interpret always
+                    # receives a valid TranscriptionResult.
+                    if txr_dict is None:
+                        bundle_obj = InputBundle.model_validate(current_payload)
+                        log.info(
+                            "pipeline job_id=%s interpret: using MIDI→TranscriptionResult passthrough",
+                            job_id,
+                        )
+                        txr_obj = _bundle_to_transcription(
+                            bundle_obj,
+                            blob_store=self.blob_store,
+                            job_id=job_id,
+                        )
+                        txr_dict = txr_obj.model_dump(mode="json")
+                    interpret_envelope = {
+                        "txr": txr_dict,
+                        "prompt": bundle.metadata.arrangement_prompt or "",
+                        "title_hint": bundle.metadata.title,
+                        "artist_hint": bundle.metadata.artist,
+                    }
+                    payload_uri = self._serialize_stage_input(job_id, step, interpret_envelope)
+                    output_uri = await self._dispatch_task(task_name, job_id, payload_uri, config.stage_timeout_sec)
+                    enriched = self.blob_store.get_json(output_uri)
+                    txr_dict = enriched["txr"]
 
                 elif step in ("arrange", "condense"):
                     if txr_dict is None:
@@ -456,13 +632,56 @@ class PipelineRunner:
                         HumanizedPerformance,
                         PianoScore,
                     )
-                    from backend.services.midi_render import render_midi_bytes  # noqa: PLC0415
+                    from backend.services import engrave_local as engrave_local_module  # noqa: PLC0415
+                    from backend.services.engrave_local import (  # noqa: PLC0415
+                        EngraveLocalError,
+                    )
+                    from backend.services.midi_render import render_midi  # noqa: PLC0415
                     from backend.services.ml_engraver_client import (  # noqa: PLC0415
                         engrave_midi_via_ml_service,
                     )
 
                     if perf_dict is not None:
                         perf_obj = HumanizedPerformance.model_validate(perf_dict)
+                    elif score_dict is None and config.variant == "pop_cover" and txr_dict is not None:
+                        # Phase 8: cover mode skips arrange/humanize. Convert
+                        # the AMT-APC TranscriptionResult into a minimal
+                        # PianoScore (middle-C hand split) so the engraver
+                        # can render directly. The cover model has already
+                        # made arrangement decisions — we just need to
+                        # split the stream onto two staves and convert
+                        # seconds → beats for the engraver.
+                        txr_obj = TranscriptionResult.model_validate(txr_dict)
+                        score_obj = _cover_score_from_transcription(txr_obj)
+                        expressive_notes = [
+                            ExpressiveNote(
+                                score_note_id=n.id,
+                                pitch=n.pitch,
+                                onset_beat=n.onset_beat,
+                                duration_beat=n.duration_beat,
+                                velocity=n.velocity,
+                                hand=hand_name,  # type: ignore[arg-type]
+                                voice=n.voice,
+                                timing_offset_ms=0.0,
+                                velocity_offset=0,
+                            )
+                            for hand_name, notes in (
+                                ("rh", score_obj.right_hand),
+                                ("lh", score_obj.left_hand),
+                            )
+                            for n in notes
+                        ]
+                        synthesized_expression = ExpressionMap()
+                        perf_obj = HumanizedPerformance(
+                            schema_version=SCHEMA_VERSION,
+                            expressive_notes=expressive_notes,
+                            expression=synthesized_expression,
+                            score=score_obj,
+                            quality=QualitySignal(
+                                overall_confidence=0.5,
+                                warnings=["engrave-from-cover-transcription"],
+                            ),
+                        )
                     elif score_dict is not None:
                         score_obj = PianoScore.model_validate(score_dict)
                         expressive_notes = [
@@ -483,10 +702,18 @@ class PipelineRunner:
                             )
                             for n in notes
                         ]
+                        # Phase 6: when humanize is skipped (sheet_only),
+                        # carry transcribed pedal events from the score
+                        # metadata into the synthesized ExpressionMap so
+                        # engrave_local renders ``Ped. ___ *`` brackets
+                        # even on the sheet_only path.
+                        synthesized_expression = ExpressionMap(
+                            pedal_events=list(score_obj.metadata.pedal_events),
+                        )
                         perf_obj = HumanizedPerformance(
                             schema_version=SCHEMA_VERSION,
                             expressive_notes=expressive_notes,
-                            expression=ExpressionMap(),
+                            expression=synthesized_expression,
                             score=score_obj,
                             quality=QualitySignal(
                                 overall_confidence=0.5,
@@ -498,10 +725,55 @@ class PipelineRunner:
                             "engrave stage requires a score or performance — none was produced"
                         )
 
-                    # render_midi_bytes is synchronous (pretty_midi I/O);
-                    # keep the event loop free.
-                    midi_bytes = await asyncio.to_thread(render_midi_bytes, perf_obj)
-                    musicxml_bytes = await engrave_midi_via_ml_service(midi_bytes)
+                    # render_midi is synchronous (pretty_midi + mido I/O);
+                    # keep the event loop free. The MIDI bytes are persisted
+                    # as the ``humanized_midi_uri`` artifact regardless of
+                    # which engrave backend produces the score.
+                    rendered = await asyncio.to_thread(render_midi, perf_obj)
+                    midi_bytes = rendered.midi_bytes
+                    emitted = rendered.features
+
+                    # ── Backend dispatch ─────────────────────────────────
+                    # ``local``       — music21 → MusicXML + LilyPond → PDF.
+                    #                   Reads the structured score directly,
+                    #                   so chord symbols / dynamics / pedal /
+                    #                   per-note voice all survive into
+                    #                   MusicXML — and the includes_* flags
+                    #                   come from the actual emitted content.
+                    # ``remote_http`` — POST MIDI bytes to the ML service.
+                    #                   No PDF; flags read off the MIDI render.
+                    #
+                    # Local backend falls through to remote on
+                    # :class:`EngraveLocalError` so a missing LilyPond
+                    # install (dev machines without the apt package) still
+                    # produces a MusicXML artifact via the remote service.
+                    pdf_bytes: bytes | None = None
+                    local_features = None
+                    engrave_route = "remote_http"
+                    if settings.engrave_backend == "local":
+                        try:
+                            local_result = await asyncio.to_thread(
+                                engrave_local_module.engrave_score_locally,
+                                perf_obj.score,
+                                perf_obj.expression,
+                                title=resolved_title,
+                                composer=resolved_composer,
+                                render_pdf=True,
+                            )
+                            musicxml_bytes = local_result.musicxml_bytes
+                            pdf_bytes = local_result.pdf_bytes
+                            local_features = local_result.features
+                            engrave_route = "local"
+                        except EngraveLocalError as exc:
+                            log.warning(
+                                "local engrave failed (%s) — falling through to remote HTTP "
+                                "for job_id=%s",
+                                exc, job_id,
+                            )
+                            musicxml_bytes = await engrave_midi_via_ml_service(midi_bytes)
+                            engrave_route = "remote_http_fallback"
+                    else:
+                        musicxml_bytes = await engrave_midi_via_ml_service(midi_bytes)
 
                     prefix = f"jobs/{job_id}/output"
                     musicxml_uri = self.blob_store.put_bytes(
@@ -510,29 +782,91 @@ class PipelineRunner:
                     midi_uri = self.blob_store.put_bytes(
                         f"{prefix}/humanized.mid", midi_bytes,
                     )
+                    pdf_uri: str | None = None
+                    if pdf_bytes:
+                        pdf_uri = self.blob_store.put_bytes(
+                            f"{prefix}/score.pdf", pdf_bytes,
+                        )
+
+                    # ``includes_*`` flags reflect what was actually emitted
+                    # into the score artifact: when local engrave succeeds,
+                    # they come from music21's emission counters; otherwise
+                    # they fall back to the MIDI render's feature summary
+                    # (which is what the remote engrave consumes).
+                    # ``includes_fingering`` stays False until a fingering
+                    # generator ships; nothing in the current pipeline
+                    # produces that data.
+                    if local_features is not None:
+                        includes_dynamics = local_features.dynamic_count > 0
+                        includes_pedal_marks = local_features.pedal_event_count > 0
+                        includes_chord_symbols = local_features.chord_symbol_count > 0
+                    else:
+                        includes_dynamics = emitted.dynamics
+                        includes_pedal_marks = emitted.pedal_marks
+                        includes_chord_symbols = emitted.chord_symbols
+
+                    # Phase 7: composite-Q telemetry. Computes the Tier 3
+                    # + Tier 2-lite quality report from the engraved score
+                    # in-process (cheap), persists to Postgres when
+                    # ``OHSHEET_EVAL_TELEMETRY_DSN`` is configured (no-op
+                    # otherwise), and attaches the report to the output
+                    # contract so the API surface and result screen can
+                    # show "high quality / decent / lower confidence".
+                    evaluation_report_payload: dict | None = None
+                    try:
+                        from backend.eval.telemetry import (  # noqa: PLC0415
+                            emit_production_quality,
+                        )
+                        prod_report = emit_production_quality(
+                            score=perf_obj.score,
+                            perf=perf_obj,
+                            job_id=job_id,
+                            user_audio_hash=_compute_audio_hash(bundle, self.blob_store),
+                            engrave_route=engrave_route,
+                            title=resolved_title,
+                        )
+                        if prod_report is not None:
+                            evaluation_report_payload = prod_report.as_evaluation_report()
+                    except Exception:  # noqa: BLE001 — telemetry MUST NOT fail the job
+                        log.exception(
+                            "pipeline engrave: composite-Q telemetry failed "
+                            "(job_id=%s) — continuing without evaluation_report",
+                            job_id,
+                        )
 
                     result_dict = EngravedOutput(
                         schema_version=SCHEMA_VERSION,
                         metadata=EngravedScoreData(
-                            includes_dynamics=False,
-                            includes_pedal_marks=False,
+                            includes_dynamics=includes_dynamics,
+                            includes_pedal_marks=includes_pedal_marks,
                             includes_fingering=False,
-                            includes_chord_symbols=False,
+                            includes_chord_symbols=includes_chord_symbols,
                             title=resolved_title,
                             composer=resolved_composer,
                         ),
-                        pdf_uri=None,
+                        pdf_uri=pdf_uri,
                         musicxml_uri=musicxml_uri,
                         humanized_midi_uri=midi_uri,
                         audio_preview_uri=None,
+                        evaluation_report=evaluation_report_payload,
                     ).model_dump(mode="json")
                     log.info(
-                        "pipeline engrave via ML service job_id=%s source=%s "
-                        "musicxml_bytes=%d midi_bytes=%d",
+                        "pipeline engrave route=%s job_id=%s source=%s "
+                        "musicxml_bytes=%d midi_bytes=%d pdf_bytes=%d "
+                        "key_sig=%s tempo_changes=%d chord_markers=%d "
+                        "downbeat_cues=%d pedal_events=%d dynamics=%s",
+                        engrave_route,
                         job_id,
                         bundle.metadata.source,
                         len(musicxml_bytes),
                         len(midi_bytes),
+                        len(pdf_bytes) if pdf_bytes else 0,
+                        emitted.key_signature,
+                        emitted.tempo_change_count,
+                        emitted.chord_marker_count,
+                        emitted.downbeat_cue_count,
+                        emitted.pedal_event_count,
+                        emitted.dynamics,
                     )
 
                 else:

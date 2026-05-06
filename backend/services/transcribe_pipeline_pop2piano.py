@@ -1,5 +1,14 @@
 """Pop2Piano transcription pipeline — audio → piano MIDI → TranscriptionResult.
 
+.. deprecated:: Phase 8
+
+    Pop2Piano is retained for backwards compatibility only. The upstream
+    ``sweetcocoa/pop2piano`` repo ships without a LICENSE file (strategy
+    doc §G3). New deployments should use AMT-APC cover mode
+    (:mod:`backend.services.transcribe_pipeline_amt_apc`), which is
+    MIT-licensed end-to-end and surfaced via the ``pop_cover``
+    :class:`PipelineVariant`. See ``backend/services/POP2PIANO_DEPRECATED.md``.
+
 Runs Pop2Piano to get a single piano MIDI stream, then feeds the result
 through the same post-processing chain as the single-mix Basic Pitch
 path: melody/bass extraction (Viterbi on note events since there's no
@@ -29,7 +38,7 @@ from backend.contracts import InstrumentRole, RealtimeChordEvent, TranscriptionR
 from backend.services import transcribe_audio as _audio_mod
 from backend.services import transcribe_midi as _midi_mod
 from backend.services import transcribe_result as _result_mod
-from backend.services.audio_timing import tempo_map_from_audio_path
+from backend.services.audio_timing import tempo_map_and_downbeats_from_audio_path
 from backend.services.bass_extraction import BassExtractionStats, extract_bass
 from backend.services.chord_recognition import ChordRecognitionStats, recognize_chords
 from backend.services.duration_refine import DurationRefineStats, refine_durations
@@ -55,17 +64,16 @@ def _run_with_pop2piano(
     """
     events, pm, pop2piano_stats = run_pop2piano(audio_path)
 
-    # ── Load audio once for all post-processing ──────────────────────
-    # Every downstream consumer (onset refine, duration refine, tempo
-    # map, key/meter, chords) wants mono 22050 Hz.  Loading once here
-    # eliminates 5+ redundant librosa.load() calls.
+    # ── Post-processing audio policy ─────────────────────────────────
+    # The earlier shortcut here pre-loaded the source as mono 22050 Hz
+    # so multiple downstream analysers could share the buffer. That
+    # forced a mono+downsample on the Pop2Piano path even though the
+    # model itself runs at 44.1 kHz (and the original mix may carry
+    # stereo information our chord recogniser benefits from). The
+    # forced mono mix is a Basic-Pitch requirement, not a Pop2Piano
+    # one — so on this path we let each consumer load the audio it
+    # actually wants instead of forcing a lossy preload.
     preloaded_audio: tuple | None = None
-    try:
-        import librosa  # noqa: PLC0415
-        y, actual_sr = librosa.load(str(audio_path), sr=22050, mono=True)
-        preloaded_audio = (y, actual_sr)
-    except Exception as exc:  # noqa: BLE001 — best-effort; consumers fall back to loading themselves
-        log.debug("pre-load for post-processing failed: %s", exc)
 
     # Pop2Piano produces a single piano stream — no contour matrix
     # for Viterbi, so melody/bass extraction works on note pitch ranges only.
@@ -138,6 +146,7 @@ def _run_with_pop2piano(
 
     # Kick off audio-analysis work in background threads.
     audio_tempo_map = None
+    audio_downbeats: list[float] = []
     key_label = "C:major"
     time_signature: tuple[int, int] = (4, 4)
     key_stats = None
@@ -145,8 +154,10 @@ def _run_with_pop2piano(
     chord_labels: list[RealtimeChordEvent] = []
     chord_stats: ChordRecognitionStats | None = None
 
-    def _run_tempo() -> list | None:
-        return tempo_map_from_audio_path(audio_path, preloaded_audio=preloaded_audio)
+    def _run_tempo() -> tuple[list, list[float]] | None:
+        return tempo_map_and_downbeats_from_audio_path(
+            audio_path, preloaded_audio=preloaded_audio,
+        )
 
     def _run_key_meter() -> tuple:
         return _audio_mod._maybe_analyze_key_and_meter(
@@ -235,7 +246,9 @@ def _run_with_pop2piano(
                     offset += role_len
 
         # ── Collect audio-analysis results ───────────────────────────
-        audio_tempo_map = fut_tempo.result()
+        tempo_result = fut_tempo.result()
+        if tempo_result is not None:
+            audio_tempo_map, audio_downbeats = tempo_result
         key_label, time_signature, key_stats, meter_stats = fut_key.result()
 
         # Chord recognition needs key_label from the key estimator, so
@@ -274,6 +287,7 @@ def _run_with_pop2piano(
         events_by_role,
         model_output,
         tempo_map_override=audio_tempo_map,
+        downbeats_override=audio_downbeats,
         key_label=key_label,
         time_signature=time_signature,
         key_stats=key_stats,

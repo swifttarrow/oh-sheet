@@ -69,7 +69,16 @@ COPY backend/ backend/
 # --platform linux/amd64 if targeting Apple Silicon hosts.
 FROM python-base AS ml
 
-RUN pip install --no-cache-dir --retries 5 --timeout 120 ".[pop2piano]"
+RUN pip install --no-cache-dir --retries 5 --timeout 120 ".[pop2piano,demucs]"
+
+# Pre-cache HTDemucs pretrained weights (~80 MB). Without this, every
+# fresh container hits the first separate.run job with a cold-start
+# weight download from dl.fbaipublicfiles.com — in Cloud Run that's
+# ~10–20 s of avoidable latency per worker spawn. Pinning into the
+# image is the standard "bake the model into the layer" trick used
+# for Pop2Piano and Basic Pitch already.
+RUN python -c "from demucs.pretrained import get_model; get_model('htdemucs')" \
+    || echo "warning: htdemucs weights pre-cache failed (will fetch on first use)"
 
 CMD celery -A backend.workers.celery_app worker --loglevel=warning
 
@@ -85,7 +94,13 @@ FROM python-base AS api
 # Install Python package with Pop2Piano transcription deps.
 # NOTE: essentia only ships x86_64 Linux wheels — build with
 # --platform linux/amd64 if targeting Apple Silicon hosts.
-RUN pip install --no-cache-dir --retries 5 --timeout 120 ".[pop2piano]"
+RUN pip install --no-cache-dir --retries 5 --timeout 120 ".[pop2piano,demucs]"
+
+# Pre-cache HTDemucs weights (~80 MB) so the api image can run the
+# separate worker via task_always_eager in tests / dev without paying
+# a cold download. Mirrors the cache step in the ``ml`` target.
+RUN python -c "from demucs.pretrained import get_model; get_model('htdemucs')" \
+    || echo "warning: htdemucs weights pre-cache failed (will fetch on first use)"
 
 # Copy frontend-v2's Vite build output into the static dir the backend
 # serves. backend/main.py mounts /app/static as a catch-all StaticFiles

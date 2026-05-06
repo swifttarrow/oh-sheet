@@ -32,7 +32,7 @@
 - **AI transcription** — Spotify's Basic Pitch detects notes from audio; optional Demucs stem separation isolates instruments first
 - **Two-hand piano arrangement** — Melody goes to right hand, bass + harmony to left hand, with intelligent voice assignment
 - **Humanized playback** — Micro-timing, velocity dynamics, pedal marks, and articulations make it sound natural
-- **Publication-quality engraving** — LilyPond or MuseScore renders clean PDF sheet music; music21 generates MusicXML
+- **Publication-quality engraving** — MIDI is sent to the `oh-sheet-ml-pipeline` HTTP engraver service, which returns MusicXML for the result screen (PDF rendering is a client-side concern)
 - **Interactive viewer** — OSMD renders notation in the browser with Tone.js playback and cursor sync
 - **Custom piano roll** — Canvas-based visualization with color-coded hands, Y-axis note labels, and tempo-synced beat grid
 - **Real-time progress** — WebSocket events stream pipeline status with kawaii mascot animations per stage
@@ -124,7 +124,7 @@ backend/
 │   ├── transcribe.py        # Basic Pitch (ONNX) + beat tracking
 │   ├── arrange.py           # Two-hand piano reduction
 │   ├── humanize.py          # Rule-based expression
-│   └── engrave.py           # music21 → MusicXML, LilyPond → PDF
+│   └── ml_engraver_client.py # HTTP client for the oh-sheet-ml-pipeline engraver (MIDI → MusicXML)
 ├── jobs/
 │   ├── manager.py           # In-memory job state + WebSocket pub/sub
 │   ├── runner.py            # Pipeline orchestration
@@ -300,7 +300,7 @@ See `CONTRIBUTING.md` for detailed guidelines.
 | Backend         | Python 3.10+, FastAPI, Pydantic v2                  |
 | Transcription   | Basic Pitch (ONNX), Demucs (stem separation)        |
 | Arrangement     | Custom Python (quantization, voice assignment)       |
-| Engraving       | music21, LilyPond, pretty_midi                      |
+| Engraving       | oh-sheet-ml-pipeline (HTTP service: MIDI → MusicXML), pretty_midi |
 | Frontend        | Flutter 3.19+ (Web + Mobile)                        |
 | Sheet Viewer    | OpenSheetMusicDisplay (OSMD), Tone.js               |
 | Deployment      | Docker Compose, GCP VM, GitHub Actions               |

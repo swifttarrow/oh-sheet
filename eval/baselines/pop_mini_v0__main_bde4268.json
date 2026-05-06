@@ -1,0 +1,309 @@
+{
+  "schema_version": 2,
+  "eval_set": "pop_mini_v0",
+  "manifest_relpath": "eval/pop_mini_v0/manifest.yaml",
+  "run_id": "20260430T153134Z",
+  "git_sha": "bde42684f08fb9a97c8e6c60c04344562f08e701",
+  "label": "baseline-bde4268",
+  "is_ci": false,
+  "is_nightly": false,
+  "tiers": {
+    "tier_rf": true,
+    "tier2": true,
+    "tier3": true,
+    "tier4": false,
+    "tier4_round_trip": false,
+    "tier4_clap": false,
+    "tier4_mert": false,
+    "composite_q": true
+  },
+  "config": {
+    "target_duration_sec": 30.0,
+    "chord_recognition_key": "auto",
+    "n_songs_filtered": 5,
+    "n_songs_total_in_manifest": 5
+  },
+  "songs": [
+    {
+      "slug": "mini_pop_001",
+      "title": "Rain",
+      "artist": "Madonna",
+      "genre": "pop_mainstream",
+      "audio_path": "eval/pop_mini_v0/songs/mini_pop_001/source.audio.mp3",
+      "key_label": "C:major",
+      "wall_sec": 75.33,
+      "error": null,
+      "notes": [],
+      "tier_rf": {
+        "chord_rf": 0.6568,
+        "playability_rf": 0.955,
+        "chroma_rf": 0.6537,
+        "n_chord_segments_input": 21,
+        "n_chord_segments_resynth": 18,
+        "n_playable_chords": 1126,
+        "n_total_chords": 1179,
+        "n_beats": 397,
+        "notes": []
+      },
+      "tier2": {
+        "key_score": 0.5,
+        "tempo_score": 0.0,
+        "beat_score": 0.3077,
+        "chord_score": 0.6568,
+        "section_score": 0.0,
+        "mean_score": 0.3661,
+        "n_input_beats": 396,
+        "n_resynth_beats": 410,
+        "n_input_chords": 21,
+        "n_resynth_chords": 18,
+        "n_input_sections": 0,
+        "n_resynth_sections": 0,
+        "notes": [
+          "section_score: insufficient sections (in=0, rs=0)"
+        ]
+      },
+      "tier3": {
+        "playability_fraction": 0.955,
+        "voice_leading_smoothness": 0.3608,
+        "polyphony_mean": 2.1567,
+        "polyphony_p95": 4.0,
+        "polyphony_max": 7.0,
+        "polyphony_in_target_range": 0.8627,
+        "sight_readability": 0.7961,
+        "composite": 0.7583,
+        "n_playable_chords": 1126,
+        "n_total_chords": 1179,
+        "n_voice_pairs": 495,
+        "n_engraving_warnings": 2,
+        "engraving_warnings": [
+          "ledger_excess_rh: 25 note(s) outside [53, 96]",
+          "hand_crossing: 2 onset(s)"
+        ],
+        "notes": []
+      },
+      "composite_q": 0.5622
+    },
+    {
+      "slug": "mini_pop_002",
+      "title": "Genie in a Bottle",
+      "artist": "Christina Aguilera",
+      "genre": "pop_synth",
+      "audio_path": "eval/pop_mini_v0/songs/mini_pop_002/source.audio.mp3",
+      "key_label": "A:minor",
+      "wall_sec": 58.6,
+      "error": null,
+      "notes": [],
+      "tier_rf": {
+        "chord_rf": 0.8768,
+        "playability_rf": 0.9794,
+        "chroma_rf": 0.6281,
+        "n_chord_segments_input": 39,
+        "n_chord_segments_resynth": 33,
+        "n_playable_chords": 759,
+        "n_total_chords": 775,
+        "n_beats": 416,
+        "notes": []
+      },
+      "tier2": {
+        "key_score": 0.3,
+        "tempo_score": 0.0,
+        "beat_score": 0.3822,
+        "chord_score": 0.8768,
+        "section_score": 0.0,
+        "mean_score": 0.3897,
+        "n_input_beats": 415,
+        "n_resynth_beats": 438,
+        "n_input_chords": 39,
+        "n_resynth_chords": 33,
+        "n_input_sections": 0,
+        "n_resynth_sections": 0,
+        "notes": [
+          "section_score: insufficient sections (in=0, rs=0)"
+        ]
+      },
+      "tier3": {
+        "playability_fraction": 0.9794,
+        "voice_leading_smoothness": 0.4636,
+        "polyphony_mean": 1.5665,
+        "polyphony_p95": 3.0,
+        "polyphony_max": 5.0,
+        "polyphony_in_target_range": 0.6266,
+        "sight_readability": 0.7925,
+        "composite": 0.7541,
+        "n_playable_chords": 759,
+        "n_total_chords": 775,
+        "n_voice_pairs": 369,
+        "n_engraving_warnings": 2,
+        "engraving_warnings": [
+          "ledger_excess_rh: 18 note(s) outside [53, 96]",
+          "ledger_excess_lh: 19 note(s) outside [28, 67]"
+        ],
+        "notes": []
+      },
+      "composite_q": 0.5719
+    },
+    {
+      "slug": "mini_pop_003",
+      "title": "Unpretty",
+      "artist": "TLC",
+      "genre": "pop_rnb",
+      "audio_path": "eval/pop_mini_v0/songs/mini_pop_003/source.audio.mp3",
+      "key_label": "G:major",
+      "wall_sec": 104.68,
+      "error": null,
+      "notes": [],
+      "tier_rf": {
+        "chord_rf": 0.0,
+        "playability_rf": 0.9473,
+        "chroma_rf": 0.7849,
+        "n_chord_segments_input": 22,
+        "n_chord_segments_resynth": 31,
+        "n_playable_chords": 1438,
+        "n_total_chords": 1518,
+        "n_beats": 192,
+        "notes": []
+      },
+      "tier2": {
+        "key_score": 0.3,
+        "tempo_score": 0.0,
+        "beat_score": 0.1473,
+        "chord_score": 0.0,
+        "section_score": 0.0,
+        "mean_score": 0.1118,
+        "n_input_beats": 191,
+        "n_resynth_beats": 447,
+        "n_input_chords": 22,
+        "n_resynth_chords": 31,
+        "n_input_sections": 0,
+        "n_resynth_sections": 0,
+        "notes": [
+          "section_score: insufficient sections (in=0, rs=0)"
+        ]
+      },
+      "tier3": {
+        "playability_fraction": 0.9473,
+        "voice_leading_smoothness": 0.4048,
+        "polyphony_mean": 4.4392,
+        "polyphony_p95": 8.0,
+        "polyphony_max": 10.0,
+        "polyphony_in_target_range": 0.2243,
+        "sight_readability": 0.7097,
+        "composite": 0.6399,
+        "n_playable_chords": 1438,
+        "n_total_chords": 1518,
+        "n_voice_pairs": 1070,
+        "n_engraving_warnings": 2,
+        "engraving_warnings": [
+          "ledger_excess_rh: 154 note(s) outside [53, 96]",
+          "hand_crossing: 40 onset(s)"
+        ],
+        "notes": []
+      },
+      "composite_q": 0.3759
+    },
+    {
+      "slug": "mini_kpop_001",
+      "title": null,
+      "artist": null,
+      "genre": null,
+      "audio_path": null,
+      "key_label": null,
+      "wall_sec": 0.0,
+      "error": "FileNotFoundError: slug='mini_kpop_001' not delivered: no source.audio.* under /Users/ross/oh-sheet/eval/pop_mini_v0/songs/mini_kpop_001",
+      "notes": []
+    },
+    {
+      "slug": "mini_ballad_001",
+      "title": "Vivo Per Lei",
+      "artist": "Andrea Bocelli",
+      "genre": "ballad",
+      "audio_path": "eval/pop_mini_v0/songs/mini_ballad_001/source.audio.mp3",
+      "key_label": "F#:minor",
+      "wall_sec": 46.07,
+      "error": null,
+      "notes": [],
+      "tier_rf": {
+        "chord_rf": 0.8687,
+        "playability_rf": 0.959,
+        "chroma_rf": 0.6611,
+        "n_chord_segments_input": 23,
+        "n_chord_segments_resynth": 26,
+        "n_playable_chords": 818,
+        "n_total_chords": 853,
+        "n_beats": 379,
+        "notes": []
+      },
+      "tier2": {
+        "key_score": 0.0,
+        "tempo_score": 0.0,
+        "beat_score": 0.3339,
+        "chord_score": 0.8687,
+        "section_score": 0.0,
+        "mean_score": 0.3006,
+        "n_input_beats": 401,
+        "n_resynth_beats": 216,
+        "n_input_chords": 23,
+        "n_resynth_chords": 26,
+        "n_input_sections": 0,
+        "n_resynth_sections": 0,
+        "notes": [
+          "section_score: insufficient sections (in=0, rs=0)"
+        ]
+      },
+      "tier3": {
+        "playability_fraction": 0.959,
+        "voice_leading_smoothness": 0.3687,
+        "polyphony_mean": 1.6875,
+        "polyphony_p95": 3.0,
+        "polyphony_max": 6.0,
+        "polyphony_in_target_range": 0.675,
+        "sight_readability": 0.7692,
+        "composite": 0.7251,
+        "n_playable_chords": 818,
+        "n_total_chords": 853,
+        "n_voice_pairs": 250,
+        "n_engraving_warnings": 2,
+        "engraving_warnings": [
+          "ledger_excess_rh: 20 note(s) outside [53, 96]",
+          "hand_crossing: 7 onset(s)"
+        ],
+        "notes": []
+      },
+      "composite_q": 0.5129
+    }
+  ],
+  "aggregate": {
+    "n_songs_total": 5,
+    "n_songs_scored": 4,
+    "n_songs_errored": 1,
+    "mean_tier_rf_chord_rf": 0.6006,
+    "median_tier_rf_chord_rf": 0.7628,
+    "mean_tier_rf_playability_rf": 0.9602,
+    "median_tier_rf_playability_rf": 0.957,
+    "mean_tier_rf_chroma_rf": 0.682,
+    "median_tier_rf_chroma_rf": 0.6574,
+    "mean_tier2_key_score": 0.275,
+    "median_tier2_key_score": 0.3,
+    "mean_tier2_tempo_score": 0.0,
+    "median_tier2_tempo_score": 0.0,
+    "mean_tier2_beat_score": 0.2928,
+    "median_tier2_beat_score": 0.3208,
+    "mean_tier2_chord_score": 0.6006,
+    "median_tier2_chord_score": 0.7628,
+    "mean_tier2_mean_score": 0.292,
+    "median_tier2_mean_score": 0.3333,
+    "mean_tier3_playability_fraction": 0.9602,
+    "median_tier3_playability_fraction": 0.957,
+    "mean_tier3_voice_leading_smoothness": 0.3995,
+    "median_tier3_voice_leading_smoothness": 0.3868,
+    "mean_tier3_polyphony_in_target_range": 0.5972,
+    "median_tier3_polyphony_in_target_range": 0.6508,
+    "mean_tier3_sight_readability": 0.7669,
+    "median_tier3_sight_readability": 0.7809,
+    "mean_tier3_composite": 0.7193,
+    "median_tier3_composite": 0.7396,
+    "mean_composite_q": 0.5057,
+    "median_composite_q": 0.5375,
+    "mean_wall_sec": 71.17
+  }
+}

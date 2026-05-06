@@ -1,0 +1,469 @@
+schema_version: 1
+eval_set: pop_eval_v1
+eval_set_version: 1.0.0-draft
+description: |
+  Phase 3 paid 30-song pop eval set, per
+  docs/research/transcription-improvement-implementation-plan.md §Phase 3
+  and docs/research/transcription-improvement-strategy.md Part III §3.
+
+  The eval set is split 50/50 between a tune set (engineer-readable) and
+  a holdout set (encrypted in holdout_manifest.yaml.enc). Engineers
+  debugging a regression must reproduce on tune set; the holdout is
+  reserved for release gates only.
+
+  Each slot is "delivered" once all four artifacts land under
+  ``songs/<slug>/``:
+
+    * ``source.audio.json`` — license metadata + content hash
+    * ``source.audio.{mp3,wav}`` — IFF the license is redistributable
+    * ``reference.piano_cover.mid`` — contract-transcribed ground truth
+    * ``reference.piano_cover.musicxml`` — engraved reference
+    * ``reference.piano_cover.pdf`` — PDF of the engraved reference
+    * ``structural.yaml`` — human-verified key, time-sig, tempo,
+                            sections, chord progression, downbeats
+    * ``notes.md`` — transcriber notes / known difficulties
+
+  Until a slot is delivered, ``eval/loader.py`` skips it. The first
+  pop_eval_v1 baseline JSON snapshot can be taken with as few as 1
+  delivered song and is expected to grow as transcribers ship.
+
+# 0 = no clipping. Phase 3 is release-gate eval — we want full-track
+# scores, not 30-second clips. CI subset uses a different config.
+target_duration_sec: 0
+
+# Default ``key_label`` prior for chord recognition when ``structural.yaml``
+# does not pin one. ``auto`` defers to whatever the transcribe stage
+# emits, mirroring eval/pop_mini_v0/.
+chord_recognition_key: auto
+
+# Genre buckets for ≥3-genre coverage per Phase 3 task list.
+# Mapping is informational; the loader does not enforce it.
+genres:
+  - pop_mainstream
+  - hip_hop
+  - kpop
+  - ballad
+  - indie_electronic
+
+# License buckets for the 10/20 split.
+# - fma_redistributable: Free Music Archive cc-by* tracks; audio is
+#   committed alongside the manifest.
+# - commercial_sync_internal: $50 sync license, internal research use
+#   only; audio is NOT committed — only ``source.audio.json`` with a
+#   content hash and the license id. The release-bot fetches the audio
+#   from a private bucket at eval time.
+licenses:
+  fma_redistributable:
+    redistribute: true
+    cost_per_song_usd: 0
+    notes: |
+      FMA ``commercial=true`` cc-by / cc-by-sa tracks. Audio shipped with
+      the repo alongside ``source.audio.json``.
+  commercial_sync_internal:
+    redistribute: false
+    cost_per_song_usd: 50
+    notes: |
+      Sync licenses for the 20 commercial pop tracks. Internal research
+      use only; audio MUST NOT be committed. ``source.audio.json``
+      records the content hash + the storage URI in the private bucket.
+
+# Transcriber contract terms — duplicated here so the manifest is
+# self-describing if someone clones the eval set without context.
+transcriber_contract:
+  rate_per_song_usd: 30
+  total_cost_usd: 900
+  deliverable_format: |
+    Per-song bundle: reference.piano_cover.mid +
+    reference.piano_cover.musicxml + reference.piano_cover.pdf +
+    structural.yaml + notes.md. ``source.audio.json`` is provided to the
+    transcriber; the audio file is fetched separately for the licensed
+    tracks.
+  qa_policy: |
+    Spot-check 5% of deliveries by cross-checking ``structural.yaml.key``
+    against ``backend/services/chord_recognition.py`` HMM estimate.
+    Reject any song where the structural key disagrees with the
+    estimator's top-1 by more than a perfect-fifth.
+
+songs:
+  # ===========================================================
+  # FMA tracks (10) — redistributable, audio committed in-repo
+  # ===========================================================
+  - slug: pop_v1_fma_001
+    title: TBD
+    artist: TBD
+    genre: pop_mainstream
+    license_bucket: fma_redistributable
+    intended_source:
+      kind: fma_track
+      url: https://freemusicarchive.org/
+      license: cc-by
+      notes: |
+        Slot for FMA mainstream pop #1. Curate via
+        ``scripts/fma_catalog_filter.py --genre Pop`` sorted by listens.
+
+  - slug: pop_v1_fma_002
+    title: TBD
+    artist: TBD
+    genre: pop_mainstream
+    license_bucket: fma_redistributable
+    intended_source:
+      kind: fma_track
+      url: https://freemusicarchive.org/
+      license: cc-by
+      notes: |
+        Slot for FMA mainstream pop #2. Different sub-genre from
+        pop_v1_fma_001 — singer-songwriter or pop-rock.
+
+  - slug: pop_v1_fma_003
+    title: TBD
+    artist: TBD
+    genre: hip_hop
+    license_bucket: fma_redistributable
+    intended_source:
+      kind: fma_track
+      url: https://freemusicarchive.org/
+      license: cc-by
+      notes: |
+        Slot for FMA hip-hop / Soul-RnB #1. Curate via
+        ``scripts/fma_catalog_filter.py --genre Hip-Hop``.
+
+  - slug: pop_v1_fma_004
+    title: TBD
+    artist: TBD
+    genre: hip_hop
+    license_bucket: fma_redistributable
+    intended_source:
+      kind: fma_track
+      url: https://freemusicarchive.org/
+      license: cc-by
+      notes: |
+        Slot for FMA hip-hop / Soul-RnB #2. Cover boom-bap or trap if
+        possible to diversify drum patterns.
+
+  - slug: pop_v1_fma_005
+    title: TBD
+    artist: TBD
+    genre: indie_electronic
+    license_bucket: fma_redistributable
+    intended_source:
+      kind: fma_track
+      url: https://freemusicarchive.org/
+      license: cc-by
+      notes: |
+        Slot for FMA indie-electronic #1. Curate via
+        ``scripts/fma_catalog_filter.py --genre Electronic``.
+
+  - slug: pop_v1_fma_006
+    title: TBD
+    artist: TBD
+    genre: indie_electronic
+    license_bucket: fma_redistributable
+    intended_source:
+      kind: fma_track
+      url: https://freemusicarchive.org/
+      license: cc-by
+      notes: |
+        Slot for FMA indie-electronic #2. Different texture from
+        pop_v1_fma_005 — synth-heavy vs. guitar-driven indie pop.
+
+  - slug: pop_v1_fma_007
+    title: TBD
+    artist: TBD
+    genre: ballad
+    license_bucket: fma_redistributable
+    intended_source:
+      kind: fma_track
+      url: https://freemusicarchive.org/
+      license: cc-by
+      notes: |
+        Slot for FMA ballad #1. Sparse texture, slow tempo, deliberate
+        harmonic motion — good stress-test for arrange's hand-split.
+
+  - slug: pop_v1_fma_008
+    title: TBD
+    artist: TBD
+    genre: ballad
+    license_bucket: fma_redistributable
+    intended_source:
+      kind: fma_track
+      url: https://freemusicarchive.org/
+      license: cc-by
+      notes: |
+        Slot for FMA ballad #2. Pair with vocal — fma_007 should be
+        instrumental for diversity.
+
+  - slug: pop_v1_fma_009
+    title: TBD
+    artist: TBD
+    genre: kpop
+    license_bucket: fma_redistributable
+    intended_source:
+      kind: youtube
+      url: https://www.youtube.com/
+      license: cc-by
+      notes: |
+        Slot for K-pop CC-BY #1. FMA has limited K-pop catalog — fall
+        through to YouTube CC-BY-licensed K-pop covers (uploader-
+        asserted; verify each license before commercial redistribution).
+
+  - slug: pop_v1_fma_010
+    title: TBD
+    artist: TBD
+    genre: kpop
+    license_bucket: fma_redistributable
+    intended_source:
+      kind: youtube
+      url: https://www.youtube.com/
+      license: cc-by
+      notes: |
+        Slot for K-pop CC-BY #2. Different sub-genre from fma_009 (e.g.
+        ballad K-pop vs. dance K-pop).
+
+  # ====================================================================
+  # Commercial sync-license tracks (20) — internal use only, NOT redistributable
+  # ====================================================================
+  - slug: pop_v1_sync_001
+    title: TBD
+    artist: TBD
+    genre: pop_mainstream
+    license_bucket: commercial_sync_internal
+    intended_source:
+      kind: sync_licensed
+      url: ""
+      license: sync-internal-research
+      notes: |
+        Mainstream pop chart-topper #1 (e.g., Billboard Hot 100 top 10).
+
+  - slug: pop_v1_sync_002
+    title: TBD
+    artist: TBD
+    genre: pop_mainstream
+    license_bucket: commercial_sync_internal
+    intended_source:
+      kind: sync_licensed
+      url: ""
+      license: sync-internal-research
+      notes: |
+        Mainstream pop chart-topper #2.
+
+  - slug: pop_v1_sync_003
+    title: TBD
+    artist: TBD
+    genre: pop_mainstream
+    license_bucket: commercial_sync_internal
+    intended_source:
+      kind: sync_licensed
+      url: ""
+      license: sync-internal-research
+      notes: |
+        Mainstream pop chart-topper #3.
+
+  - slug: pop_v1_sync_004
+    title: TBD
+    artist: TBD
+    genre: pop_mainstream
+    license_bucket: commercial_sync_internal
+    intended_source:
+      kind: sync_licensed
+      url: ""
+      license: sync-internal-research
+      notes: |
+        Mainstream pop chart-topper #4.
+
+  - slug: pop_v1_sync_005
+    title: TBD
+    artist: TBD
+    genre: pop_mainstream
+    license_bucket: commercial_sync_internal
+    intended_source:
+      kind: sync_licensed
+      url: ""
+      license: sync-internal-research
+      notes: |
+        Mainstream pop chart-topper #5.
+
+  - slug: pop_v1_sync_006
+    title: TBD
+    artist: TBD
+    genre: hip_hop
+    license_bucket: commercial_sync_internal
+    intended_source:
+      kind: sync_licensed
+      url: ""
+      license: sync-internal-research
+      notes: |
+        Hip-hop / rap chart-topper #1.
+
+  - slug: pop_v1_sync_007
+    title: TBD
+    artist: TBD
+    genre: hip_hop
+    license_bucket: commercial_sync_internal
+    intended_source:
+      kind: sync_licensed
+      url: ""
+      license: sync-internal-research
+      notes: |
+        Hip-hop / rap chart-topper #2.
+
+  - slug: pop_v1_sync_008
+    title: TBD
+    artist: TBD
+    genre: hip_hop
+    license_bucket: commercial_sync_internal
+    intended_source:
+      kind: sync_licensed
+      url: ""
+      license: sync-internal-research
+      notes: |
+        Hip-hop / rap chart-topper #3 — pick a track with a clean piano
+        sample / hook to stress chord_rf vs. drum-bleed.
+
+  - slug: pop_v1_sync_009
+    title: TBD
+    artist: TBD
+    genre: hip_hop
+    license_bucket: commercial_sync_internal
+    intended_source:
+      kind: sync_licensed
+      url: ""
+      license: sync-internal-research
+      notes: |
+        Hip-hop / rap chart-topper #4 — pair with sync_008 to cover
+        both melodic and percussive sub-genres.
+
+  - slug: pop_v1_sync_010
+    title: TBD
+    artist: TBD
+    genre: kpop
+    license_bucket: commercial_sync_internal
+    intended_source:
+      kind: sync_licensed
+      url: ""
+      license: sync-internal-research
+      notes: |
+        K-pop major-label release #1 (e.g., BTS / TWICE / NewJeans).
+
+  - slug: pop_v1_sync_011
+    title: TBD
+    artist: TBD
+    genre: kpop
+    license_bucket: commercial_sync_internal
+    intended_source:
+      kind: sync_licensed
+      url: ""
+      license: sync-internal-research
+      notes: |
+        K-pop major-label release #2.
+
+  - slug: pop_v1_sync_012
+    title: TBD
+    artist: TBD
+    genre: kpop
+    license_bucket: commercial_sync_internal
+    intended_source:
+      kind: sync_licensed
+      url: ""
+      license: sync-internal-research
+      notes: |
+        K-pop major-label release #3.
+
+  - slug: pop_v1_sync_013
+    title: TBD
+    artist: TBD
+    genre: kpop
+    license_bucket: commercial_sync_internal
+    intended_source:
+      kind: sync_licensed
+      url: ""
+      license: sync-internal-research
+      notes: |
+        K-pop major-label release #4.
+
+  - slug: pop_v1_sync_014
+    title: TBD
+    artist: TBD
+    genre: ballad
+    license_bucket: commercial_sync_internal
+    intended_source:
+      kind: sync_licensed
+      url: ""
+      license: sync-internal-research
+      notes: |
+        Pop ballad #1 — Adele / Sam Smith / equivalent. Clean vocal
+        on top of sparse piano accompaniment is a good test for both
+        arrange (LH/RH split) and condense (silence handling).
+
+  - slug: pop_v1_sync_015
+    title: TBD
+    artist: TBD
+    genre: ballad
+    license_bucket: commercial_sync_internal
+    intended_source:
+      kind: sync_licensed
+      url: ""
+      license: sync-internal-research
+      notes: |
+        Pop ballad #2.
+
+  - slug: pop_v1_sync_016
+    title: TBD
+    artist: TBD
+    genre: ballad
+    license_bucket: commercial_sync_internal
+    intended_source:
+      kind: sync_licensed
+      url: ""
+      license: sync-internal-research
+      notes: |
+        Pop ballad #3 — pick one with a key change (modulating bridge)
+        to stress key-change detection.
+
+  - slug: pop_v1_sync_017
+    title: TBD
+    artist: TBD
+    genre: ballad
+    license_bucket: commercial_sync_internal
+    intended_source:
+      kind: sync_licensed
+      url: ""
+      license: sync-internal-research
+      notes: |
+        Pop ballad #4.
+
+  - slug: pop_v1_sync_018
+    title: TBD
+    artist: TBD
+    genre: indie_electronic
+    license_bucket: commercial_sync_internal
+    intended_source:
+      kind: sync_licensed
+      url: ""
+      license: sync-internal-research
+      notes: |
+        Indie / electronic #1 (e.g., Tame Impala / Disclosure / ODESZA).
+
+  - slug: pop_v1_sync_019
+    title: TBD
+    artist: TBD
+    genre: indie_electronic
+    license_bucket: commercial_sync_internal
+    intended_source:
+      kind: sync_licensed
+      url: ""
+      license: sync-internal-research
+      notes: |
+        Indie / electronic #2 — pick a 4-on-the-floor synth-pop track
+        for a different texture from sync_018.
+
+  - slug: pop_v1_sync_020
+    title: TBD
+    artist: TBD
+    genre: indie_electronic
+    license_bucket: commercial_sync_internal
+    intended_source:
+      kind: sync_licensed
+      url: ""
+      license: sync-internal-research
+      notes: |
+        Indie / electronic #3.

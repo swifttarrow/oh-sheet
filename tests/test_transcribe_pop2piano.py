@@ -124,7 +124,7 @@ def stub_pop2piano_pipeline(monkeypatch):
     """Stub out the heavy dependencies for _run_with_pop2piano."""
     monkeypatch.setattr(p2p_pipeline_mod, "run_pop2piano", _fake_run_pop2piano)
     monkeypatch.setattr(
-        p2p_pipeline_mod, "tempo_map_from_audio_path", lambda _path, **_kw: None,
+        p2p_pipeline_mod, "tempo_map_and_downbeats_from_audio_path", lambda _path, **_kw: None,
     )
 
     from backend.services import transcribe_audio as audio_mod
@@ -197,7 +197,7 @@ def test_dispatch_uses_pop2piano_when_enabled(stub_dispatch_pop2piano, tmp_path)
     audio = tmp_path / "test.mp3"
     audio.write_bytes(b"\x00")
 
-    result, _midi_bytes = transcribe_mod._run_basic_pitch_sync(audio)
+    result, _midi_bytes, _pedals = transcribe_mod._run_basic_pitch_sync(audio)
 
     assert isinstance(result, TranscriptionResult)
     assert any("Pop2Piano" in w for w in result.quality.warnings)
@@ -254,7 +254,7 @@ def test_dispatch_falls_back_on_import_error(monkeypatch, tmp_path):
         lambda _audio, _stats: (fake_result, None),
     )
 
-    result, _ = transcribe_mod._run_basic_pitch_sync(tmp_path / "test.mp3")
+    result, _midi, _pedals = transcribe_mod._run_basic_pitch_sync(tmp_path / "test.mp3")
     assert result is fake_result
 
 
@@ -278,7 +278,7 @@ def test_dispatch_falls_back_on_runtime_error(monkeypatch, tmp_path):
         lambda _audio, _stats: (fake_result, None),
     )
 
-    result, _ = transcribe_mod._run_basic_pitch_sync(tmp_path / "test.mp3")
+    result, _midi, _pedals = transcribe_mod._run_basic_pitch_sync(tmp_path / "test.mp3")
     assert result is fake_result
 
 
@@ -299,6 +299,6 @@ def test_dispatch_skips_pop2piano_when_disabled(monkeypatch, tmp_path):
     p2p_mock = MagicMock(side_effect=AssertionError("should not be called"))
     monkeypatch.setattr(p2p_mod, "_run_with_pop2piano", p2p_mock)
 
-    result, _ = transcribe_mod._run_basic_pitch_sync(tmp_path / "test.mp3")
+    result, _midi, _pedals = transcribe_mod._run_basic_pitch_sync(tmp_path / "test.mp3")
     assert result is fake_result
     p2p_mock.assert_not_called()

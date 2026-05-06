@@ -108,6 +108,25 @@ services:
       redis:
         condition: service_healthy
 
+  # Source separation (HTDemucs). The PipelineConfig default routes
+  # ``separate.run`` to its own queue, so this worker MUST consume the
+  # ``separate`` queue or audio jobs hang at the separate stage. Set
+  # OHSHEET_DEMUCS_ENABLED=0 in env to keep the orchestrator from
+  # inserting the stage at all (the worker can stay scaled to zero).
+  worker-separate:
+    image: ${IMAGE}
+    command: celery -A backend.workers.celery_app worker -Q separate -c 1 --loglevel=warning
+    restart: unless-stopped
+    environment:
+      OHSHEET_BLOB_ROOT: /app/blob
+      OHSHEET_REDIS_URL: redis://redis:6379/0
+      OHSHEET_DEMUCS_ENABLED: ${OHSHEET_DEMUCS_ENABLED:-true}
+    volumes:
+      - blob-data:/app/blob
+    depends_on:
+      redis:
+        condition: service_healthy
+
   worker-transcribe:
     image: ${IMAGE}
     command: celery -A backend.workers.celery_app worker -Q transcribe -c 1 --loglevel=warning

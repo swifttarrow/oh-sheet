@@ -45,6 +45,16 @@ class Settings(BaseSettings):
     basic_pitch_onset_threshold: float = 0.5
     basic_pitch_frame_threshold: float = 0.3
     basic_pitch_minimum_note_length_ms: float = 127.7
+    # Minimum allowed output frequency in Hz. Default 30 Hz lets through
+    # the lowest piano A0 (~27.5 Hz) plus typical sub-bass content; raise
+    # it (e.g. 80 Hz) to suppress hip-hop kick artifacts that BP loves to
+    # mistake for sustained low pitches. ``None`` would mean "no floor"
+    # — we keep an explicit floor to avoid regressions on hyped-bass mixes.
+    minimum_frequency_hz: float = 30.0
+    # Allow Basic Pitch to emit overlapping notes carrying pitch-bend
+    # contours. Required to preserve vibrato/portamento on vocal/guitar
+    # input; the lift-through is wired in transcribe_inference.py.
+    multiple_pitch_bends: bool = True
 
     # Per-stem overrides — applied when running Basic Pitch on Demucs-
     # separated stems instead of the full mix. ``None`` means "use the
@@ -215,8 +225,23 @@ class Settings(BaseSettings):
     #    untouched because bass notes from Basic Pitch rarely dip below 40.
     # v2 (min_vel=55, max_onsets=4): raises the floor above typical bass
     #    velocity range and caps density at sight-reading levels.
+    # v3 (min_vel=25, max_onsets=4): lowered from 55 after the Phase 0
+    #    pop_mini_v0 eval showed v2's floor was clipping legitimate quiet
+    #    accompaniment notes (especially on cover-style transcriptions
+    #    where AMT-APC emits soft inner voices). 25 still suppresses the
+    #    sub-noise-floor garbage that v1 was tuned against. Note this is
+    #    only validated against the pop_mini_v0 5-song set; revisit if
+    #    bass-artifact regressions surface on a larger corpus.
+    # Two-hand voice caps. Standard piano notation supports up to four
+    # voices per staff (two stems-up, two stems-down) but engraver
+    # backends differ in how cleanly they render voices 3 and 4. Raised
+    # from 2 to 4 to preserve inner-voice density that a stricter cap
+    # would silently drop; revisit if the engraver chokes on real input.
+    arrange_max_voices_rh: int = 4
+    arrange_max_voices_lh: int = 4
+
     arrange_simplify_enabled: bool = True
-    arrange_simplify_min_velocity: int = 55       # drop anything quieter
+    arrange_simplify_min_velocity: int = 25       # drop anything quieter
     arrange_simplify_chord_merge_beats: float = 0.125   # merge within 1/32 note
     arrange_simplify_max_onsets_per_beat: int = 4       # density cap
     arrange_simplify_min_duration_beats: float = 0.25   # 16th note floor
@@ -241,7 +266,7 @@ class Settings(BaseSettings):
     #
     # Dependencies: torch, transformers, librosa, resampy, scipy,
     # pretty_midi, essentia (see [pop2piano] extra in pyproject.toml).
-    pop2piano_enabled: bool = True
+    pop2piano_enabled: bool = False
     pop2piano_model: str = "sweetcocoa/pop2piano"
     pop2piano_sample_rate: int = 44100
     pop2piano_device: str | None = None  # None → auto: cuda → mps → cpu
@@ -323,6 +348,102 @@ class Settings(BaseSettings):
     demucs_use_bass_stem: bool = True
     demucs_use_other_for_chords: bool = True     # both notes + chord labels
     demucs_use_drums_for_beats: bool = True
+
+    # ---- Kong piano-stem AMT (Phase 6) -----------------------------------
+    # When enabled, the transcribe stage routes a piano-ish summed stem
+    # (Demucs ``bass + other``) into ByteDance Kong's high-resolution
+    # piano transcription model — a CRNN-Regress AMT that emits per-note
+    # onset/offset/velocity AND sustain pedal CC64 on/off events. Pedal
+    # tracking is the unique deliverable here: no other commercially-
+    # licensed pip-installable transcriber emits sustained-pedal data,
+    # and pedal is the difference between "blizzard of staccato eighths"
+    # and a readable score on piano-cover material.
+    #
+    # Routing rules (see ``backend/services/transcribe.py``):
+    #   * Pre-separated stems must exist (Phase 5 Demucs ran successfully).
+    #     Kong is MAESTRO-overfit (Edwards et al. 2024: −19.2 F1 on
+    #     pitch-shift, −10.1 on reverb), so we never feed it raw audio.
+    #   * Vocal energy on the vocals stem must be below a threshold OR
+    #     the user has explicitly hinted ``piano`` — i.e. the source is
+    #     piano-dominant. On vocal-heavy pop, Basic Pitch on the
+    #     ``other`` stem still wins.
+    #
+    # Any failure (missing piano_transcription_inference, weight fetch,
+    # GPU OOM) falls back transparently to the Basic Pitch stems path,
+    # so flipping this on is always safe.
+    #
+    # Dependencies: piano_transcription_inference (MIT), torch, librosa
+    # — see [kong] extra in pyproject.toml. Weights are fetched from
+    # Zenodo on first use; pre-cache in Docker build to avoid Cloud Run
+    # cold-start latency (~170 MB).
+    kong_enabled: bool = True
+    # When ``True``, route through Kong only when the bundle's metadata
+    # asks for it (user_hint == "piano"). Default False so the routing
+    # gates on vocal-energy heuristics for unhinted jobs.
+    kong_user_hint_only: bool = False
+    # Vocal-energy threshold (RMS on the vocals stem, normalized to
+    # [0, 1]). Below this we treat the input as piano-dominant and
+    # prefer Kong; at or above we keep the Basic Pitch stems pipeline.
+    # 0.05 was chosen against the Phase 0 mini-eval — sparse-vocals
+    # singer-songwriter material lands ~0.03; pop with full vocal
+    # presence lands ~0.10–0.20.
+    kong_vocal_energy_threshold: float = 0.05
+    # Device override for the Kong model. None → auto: cuda → mps → cpu.
+    kong_device: str | None = None
+    # Optional checkpoint override. None → use the model's bundled default.
+    kong_checkpoint_path: str | None = None
+    # Pedal-event confidence floor — Kong emits a probability per pedal
+    # segment; below this we drop the event rather than render a noisy
+    # ``Ped. ___ *`` bracket.
+    kong_pedal_min_confidence: float = 0.5
+
+    # ---- AMT-APC piano cover (Phase 8) ------------------------------------
+    # Audio→Piano-Cover transcriber from misya11p/amt-apc — an MIT-licensed
+    # hFT-Transformer descendant trained on YouTube piano-cover videos
+    # paired with their source pop tracks. Unlike Kong (faithful
+    # transcription) and Basic Pitch (generic polyphonic AMT), AMT-APC
+    # produces a *pianistic cover*: idiomatic LH accompaniment patterns,
+    # melody re-voicings, and arrangement decisions that a human cover
+    # pianist would make. Surfaced as the "Piano cover" UI toggle.
+    #
+    # Routing: bound to the ``pop_cover`` PipelineVariant. The dispatcher
+    # in ``transcribe.py`` invokes AMT-APC when ``user_hint == "cover"``
+    # OR ``settings.amt_apc_enabled`` is True and the bundle came in
+    # with the cover variant. The ingest-stage user_hint is set from the
+    # frontend's "Faithful / Piano cover" toggle.
+    #
+    # Pop2Piano sibling: AMT-APC supersedes Pop2Piano for cover-style
+    # transcription (license-clean: AMT-APC is MIT, Pop2Piano has no
+    # LICENSE file in the upstream repo, see strategy doc §G3).
+    #
+    # Any failure (missing dep, weight fetch, inference crash) raises
+    # ImportError/RuntimeError and the dispatcher falls back to the
+    # Kong/BP path so a deploy without the [amt_apc] extra still
+    # produces a transcription (just not the cover-mode rearrangement).
+    #
+    # Dependencies: amt_apc (via the [amt_apc] extra in pyproject.toml),
+    # torch, librosa. Weights are fetched on first use; pre-cache in
+    # Docker build to avoid Cloud Run cold-start latency (~100 MB).
+    #
+    # Defaults to True because the user-facing "Piano cover" toggle in
+    # the frontend sets ``user_hint=cover`` / ``variant=pop_cover`` and
+    # would otherwise be silently ignored at the kill-switch. When the
+    # ``[amt_apc]`` extra isn't installed the dispatcher still falls
+    # back to the faithful Kong/Basic-Pitch path, so leaving this on
+    # is safe even on deployments without the optional dep.
+    amt_apc_enabled: bool = True
+    # Sample rate AMT-APC expects — 22.05 kHz mono per the upstream README.
+    amt_apc_sample_rate: int = 22050
+    # Device override. None → auto: cuda → mps → cpu.
+    amt_apc_device: str | None = None
+    # Optional checkpoint override. None → use the model's bundled default.
+    amt_apc_checkpoint_path: str | None = None
+    # AMT-APC's inference style preset. The upstream model exposes
+    # ``style_token`` (e.g. "amateur" / "professional") that nudges the
+    # decoder toward thicker or thinner arrangements. Default to
+    # ``professional`` for richer voicings; expose as a setting so an
+    # operator can A/B without touching code.
+    amt_apc_style: str = "professional"
 
     # ---- CREPE vocal melody (replaces Basic Pitch on vocals stem) ---------
     # Basic Pitch is a polyphonic tracker and has known weaknesses on
@@ -432,10 +553,10 @@ class Settings(BaseSettings):
     arrange_beat_snap_subdivision: float = 0.5
 
     # ---- Beat tracker backend ------------------------------------------------
-    # "madmom" (default) uses madmom DBNBeatProcessor — more robust for
-    # variable-tempo music.  "librosa" uses the legacy librosa.beat.beat_track.
-    # "auto" tries madmom first, falls back to librosa.
-    beat_tracker: Literal["madmom", "librosa", "auto"] = "madmom"
+    # "beat_this" (default) — CPJKU's MIT-licensed transformer; emits
+    # beats AND downbeats. "librosa" uses the legacy librosa.beat.beat_track
+    # (beats only). "auto" tries Beat This! first, falls back to librosa.
+    beat_tracker: Literal["beat_this", "librosa", "auto"] = "beat_this"
 
     # ---- Adaptive quantization grid (arrange stage) --------------------------
     # Instead of a rigid 1/16th-note grid, estimate the best-fit grid per
@@ -498,6 +619,26 @@ class Settings(BaseSettings):
     refine_call_timeout_sec: int = 120        # per-API-call timeout
     anthropic_api_key: str | None = None
 
+    # ---- Interpret stage (prompt → ArrangementHints via Claude) -------------
+    # Global kill switch. Still gated per-job by whether the user supplied
+    # a prompt. Set OHSHEET_INTERPRET_ENABLED=false to disable globally
+    # (e.g. during Anthropic outages) without needing a code change.
+    interpret_enabled: bool = True
+    # Model for the interpret stage. Haiku is fast and cheap — sufficient
+    # for structured extraction from a short user prompt.
+    interpret_model: str = "claude-haiku-4-5"
+    # Maximum characters accepted from the user's arrangement prompt.
+    # Prompts longer than this are truncated before being sent to Claude.
+    interpret_prompt_max_chars: int = 1000
+    # Per-process sliding-window cap on Anthropic calls from the interpret
+    # stage. Bounds blast radius when a user batch-submits many prompted
+    # jobs against the same worker (each Celery worker process maintains
+    # its own counter — global production cap is roughly
+    # ``cap × worker_concurrency``). Set to 0 to disable the limit. When
+    # exceeded, the stage skips the LLM call and the input txr passes
+    # through unchanged with a ``rate_limited`` warning appended.
+    interpret_max_calls_per_minute: int = 30
+
     @computed_field  # type: ignore[prop-decorator]
     @property
     def refine_active(self) -> bool:
@@ -559,7 +700,7 @@ class Settings(BaseSettings):
     # ``condense_transform`` is accepted as a deprecated alias of
     # ``condense_only`` for one release — deployed environments may
     # still carry the old value in their .env.
-    score_pipeline: ScorePipelineMode = "condense_only"
+    score_pipeline: ScorePipelineMode = "arrange"
 
     @field_validator("score_pipeline", mode="before")
     @classmethod
@@ -597,12 +738,30 @@ class Settings(BaseSettings):
     tunechat_api_key: str = ""
     tunechat_timeout_sec: int = 300
 
+    # ---- Engrave backend selection ----------------------------------------
+    # ``local``       — music21 → MusicXML + LilyPond → PDF, in-process.
+    #                   Phase 4 default. The structured ``(PianoScore,
+    #                   ExpressionMap)`` flows directly through music21 so
+    #                   chord symbols, dynamics, pedal marks, and per-note
+    #                   voices survive the rendering boundary intact.
+    # ``remote_http`` — POST MIDI bytes to oh-sheet-ml-pipeline /engrave,
+    #                   receive MusicXML bytes (no PDF). Pre-Phase 4 path.
+    #
+    # Both backends are wired in :mod:`backend.jobs.runner` — the local
+    # backend additionally falls through to the remote HTTP service when
+    # ``EngraveLocalError`` fires, so a missing LilyPond install on a dev
+    # machine degrades gracefully to MusicXML-only via the remote path.
+    #
+    # Env: ``OHSHEET_ENGRAVE_BACKEND`` — ``local`` or ``remote_http``.
+    engrave_backend: Literal["local", "remote_http"] = "local"
+
     # ---- ML engraver service ----------------------------------------------
-    # audio_upload and midi_upload jobs always route their engraving through
-    # the oh-sheet-ml-pipeline HTTP service (POST {url}/engrave, MIDI bytes →
-    # MusicXML bytes). There is no local fallback — an outage here fails the
-    # job. title_lookup jobs are expected to resolve upstream via TuneChat;
-    # if they reach the engrave stage, the job hard-fails with a clear error.
+    # When ``engrave_backend = "remote_http"`` (or when the local backend
+    # falls through), audio_upload and midi_upload jobs route engraving
+    # through the oh-sheet-ml-pipeline HTTP service (POST {url}/engrave,
+    # MIDI bytes → MusicXML bytes). title_lookup jobs are expected to
+    # resolve upstream via TuneChat; if they reach the engrave stage, the
+    # local backend renders a fallback artifact rather than crashing.
     #
     # Env: OHSHEET_ENGRAVER_SERVICE_URL, OHSHEET_ENGRAVER_SERVICE_TIMEOUT_SEC
     engraver_service_url: str = "http://localhost:8080"
@@ -629,6 +788,52 @@ class Settings(BaseSettings):
     # Env: OHSHEET_YTDLP_COOKIES_PATH
     # Refresh: see docs/ytdlp-cookies.md for browser-export instructions
     ytdlp_cookies_path: str | None = None
+
+    # ---- Score-HPT velocity refinement (Phase 9A) -------------------------
+    # Heuristic stand-in for Foscarin et al.'s Score-HPT (Hierarchical
+    # Performance Transformer; paper-only at writing — the real ~1M-param
+    # BiLSTM/Transformer head is intended to plug into the same input/
+    # output contract once it lands). Re-estimates per-note velocities
+    # from metric position, register, and onset density before arrange's
+    # percentile-band remap runs. See backend/services/score_hpt.py.
+    #
+    # Default off until validated against the Phase 0 mini-eval and
+    # Phase 3 pop eval set — the heuristic stand-in is documented to
+    # improve dynamics on the bench fixtures but unverified on real pop.
+    score_hpt_enabled: bool = False
+    # 0.0 = keep transcriber velocities; 1.0 = full predicted blend.
+    score_hpt_blend_alpha: float = 0.5
+    # Velocity points added on a downbeat (when downbeats are tracked).
+    score_hpt_downbeat_boost: float = 8.0
+    # Velocity points added on a strong (integer) beat.
+    score_hpt_beat_boost: float = 4.0
+    # Velocity points subtracted on an off-beat onset.
+    score_hpt_offbeat_attenuation: float = 4.0
+    # Bell curve depth for register attenuation (0=disabled, 1=max).
+    score_hpt_register_curve_strength: float = 0.3
+    # Velocity adjustment magnitude for dense / sparse onset windows.
+    score_hpt_density_compensation: float = 6.0
+    # Hard floor + ceiling for the refined velocity range.
+    score_hpt_min_velocity: int = 20
+    score_hpt_max_velocity: int = 120
+
+    # ---- Voice / staff GNN hand assignment (Phase 9B) ---------------------
+    # Heuristic stand-in for Karystinaios & Widmer 2024 (arXiv:2407.21030)
+    # — clusters notes into streams, then separates streams to RH/LH by
+    # pitch centroid. Replaces the naive ``pitch >= 60`` middle-C split
+    # in arrange.py for non-melody/non-bass tracks. See
+    # backend/services/voice_gnn.py.
+    #
+    # Default off until validated. The real GNN replacement is intended
+    # to load via the same ``assign_hands_gnn`` API once a labeled hand-
+    # split eval is curated (strategy doc M8).
+    voice_gnn_enabled: bool = False
+    voice_gnn_pitch_weight: float = 1.0
+    voice_gnn_time_weight: float = 4.0
+    voice_gnn_velocity_weight: float = 0.05
+    voice_gnn_join_threshold: float = 8.0
+    voice_gnn_min_split_hint: int = 55          # A3 — keep split above
+    voice_gnn_max_split_hint: int = 65          # F4 — keep split below
 
     # ---- Arrange backend (rules vs HF MIDI path) ---------------------------
     # ``rules`` — existing hand assignment + quantization in arrange.

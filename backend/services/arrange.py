@@ -21,8 +21,10 @@ from backend.contracts import (
     InstrumentRole,
     MidiTrack,
     Note,
+    PedalEvent,
     PianoScore,
     RealtimeChordEvent,
+    RealtimePedalEvent,
     ScoreChordEvent,
     ScoreMetadata,
     ScoreNote,
@@ -41,21 +43,26 @@ log = logging.getLogger(__name__)
 
 QUANT_GRID = 0.25            # 1/16th note (default / fallback)
 SPLIT_PITCH = 60             # middle C — pitches >= split go right hand
-# Piano notation is defined by at most two voices per staff (stems up =
-# melody, stems down = accompaniment). Capping here means engrave can
-# trust the voice assignment and emit ``<voice>1</voice>`` / ``<voice>2</voice>``
-# directly instead of collapsing everything back down. Going wider
-# (4/3 previously) produced voice-3 notes that OSMD's VexFlow backend
-# crashes on and that no pianist can actually read as four parallel
-# lines on one staff.
-MAX_VOICES_RH = 2
-MAX_VOICES_LH = 2
-MIN_TRACK_CONFIDENCE = 0.35
+# Default voice caps. Standard piano notation supports up to four voices
+# per staff (two stems-up, two stems-down). Settings overrides come from
+# ``settings.arrange_max_voices_{rh,lh}`` so operators can drop back to
+# 2 if the engraver chokes on voice 3/4.
+MAX_VOICES_RH = 4
+MAX_VOICES_LH = 4
+# Floor applied to track confidence after the previous hard-drop gate
+# was relaxed: keep low-confidence tracks but mark them as borderline so
+# downstream consumers can de-emphasize them without losing the notes.
+MIN_TRACK_CONFIDENCE = 0.05
 NEAR_OVERLAP_TOL = 0.15      # beats
 
 _VEL_TARGET_MIN = 35
 _VEL_TARGET_MAX = 120
 _VEL_TARGET_MEAN = 75
+# Percentile clamp endpoints for the velocity remap. Using percentiles
+# instead of min/max stops a single outlier from compressing the rest
+# of the dynamic range into a tiny window.
+_VEL_PERCENTILE_LOW = 5.0
+_VEL_PERCENTILE_HIGH = 95.0
 
 
 # ---------------------------------------------------------------------------
@@ -136,22 +143,66 @@ def _assign_hands(
     tracks: list[MidiTrack],
     tempo_map: list[TempoMapEntry],
 ) -> tuple[list[tuple[int, float, float, int]], list[tuple[int, float, float, int]]]:
+    """Route notes to the right or left hand.
+
+    Tracks tagged ``MELODY`` always go RH; tracks tagged ``BASS`` always go LH;
+    everything else falls into the ``OTHER`` bucket which gets a hand
+    assignment via either the legacy middle-C pitch split (default) or
+    the Phase 9B Cluster-and-Separate GNN-style assigner when
+    ``settings.voice_gnn_enabled`` is True.
+    """
     rh: list[tuple[int, float, float, int]] = []
     lh: list[tuple[int, float, float, int]] = []
+    other_notes: list[tuple[int, float, float, int]] = []
     for track in tracks:
         if track.confidence < MIN_TRACK_CONFIDENCE:
-            log.info(
-                "Skipping low-confidence track (program=%s, conf=%.2f)",
-                track.program, track.confidence,
+            log.warning(
+                "Low-confidence track included (program=%s, conf=%.2f, floor=%.2f)",
+                track.program, track.confidence, MIN_TRACK_CONFIDENCE,
             )
-            continue
         beat_notes = _notes_to_beats(track.notes, tempo_map)
         if track.instrument == InstrumentRole.MELODY:
             rh.extend(beat_notes)
         elif track.instrument == InstrumentRole.BASS:
             lh.extend(beat_notes)
         else:
-            for n in beat_notes:
+            other_notes.extend(beat_notes)
+
+    if other_notes:
+        if settings.voice_gnn_enabled:
+            from backend.services.voice_gnn import (  # noqa: PLC0415
+                VoiceGNNConfig,
+                assign_hands_gnn,
+            )
+            gnn_cfg = VoiceGNNConfig(
+                pitch_weight=settings.voice_gnn_pitch_weight,
+                time_weight=settings.voice_gnn_time_weight,
+                velocity_weight=settings.voice_gnn_velocity_weight,
+                join_threshold=settings.voice_gnn_join_threshold,
+                min_split_hint=settings.voice_gnn_min_split_hint,
+                max_split_hint=settings.voice_gnn_max_split_hint,
+            )
+            try:
+                gnn_rh, gnn_lh, gnn_stats = assign_hands_gnn(
+                    other_notes, config=gnn_cfg,
+                )
+            except Exception as exc:  # noqa: BLE001 — never sink the job
+                log.warning(
+                    "voice_gnn: assignment failed (%s); falling back to %d-pitch split",
+                    exc, SPLIT_PITCH,
+                )
+                for n in other_notes:
+                    (rh if n[0] >= SPLIT_PITCH else lh).append(n)
+            else:
+                log.info(
+                    "voice_gnn: streams=%d split_pitch=%d rh=%d lh=%d",
+                    gnn_stats.n_streams, gnn_stats.split_pitch,
+                    gnn_stats.n_rh, gnn_stats.n_lh,
+                )
+                rh.extend(gnn_rh)
+                lh.extend(gnn_lh)
+        else:
+            for n in other_notes:
                 (rh if n[0] >= SPLIT_PITCH else lh).append(n)
     return rh, lh
 
@@ -362,6 +413,20 @@ def _beat_snap(
 # Velocity normalization
 # ---------------------------------------------------------------------------
 
+def _percentile(values: list[int], pct: float) -> float:
+    """Linear-interpolation percentile without numpy."""
+    if not values:
+        return 0.0
+    s = sorted(values)
+    if len(s) == 1:
+        return float(s[0])
+    rank = (pct / 100.0) * (len(s) - 1)
+    lo = int(rank)
+    hi = min(lo + 1, len(s) - 1)
+    frac = rank - lo
+    return s[lo] + (s[hi] - s[lo]) * frac
+
+
 def _normalize_velocity(
     rh: list[tuple[int, float, float, int, int]],
     lh: list[tuple[int, float, float, int, int]],
@@ -369,19 +434,29 @@ def _normalize_velocity(
     list[tuple[int, float, float, int, int]],
     list[tuple[int, float, float, int, int]],
 ]:
+    """Remap raw note velocities into a musical [VEL_TARGET_MIN, MAX] band.
+
+    Uses 5th/95th percentile clamps instead of true min/max so a single
+    outlier (a stray clipped onset, or one extra-loud accent) cannot
+    compress the rest of the dynamic range into a sliver. Notes outside
+    the percentile window are clipped to the band endpoints. Falls back
+    to a mean-shift when the percentile span is too narrow to be
+    meaningful (sub-10 units of velocity).
+    """
     all_notes = rh + lh
     if not all_notes:
         return rh, lh
     vels = [n[3] for n in all_notes]
-    v_min, v_max = min(vels), max(vels)
+    v_lo = _percentile(vels, _VEL_PERCENTILE_LOW)
+    v_hi = _percentile(vels, _VEL_PERCENTILE_HIGH)
     v_mean = sum(vels) / len(vels)
-    if v_max - v_min < 10:
+    if v_hi - v_lo < 10:
         shift = _VEL_TARGET_MEAN - v_mean
         def remap(v: int) -> int:
             return max(1, min(127, round(v + shift)))
     else:
-        scale = (_VEL_TARGET_MAX - _VEL_TARGET_MIN) / (v_max - v_min)
-        offset = _VEL_TARGET_MIN - v_min * scale
+        scale = (_VEL_TARGET_MAX - _VEL_TARGET_MIN) / (v_hi - v_lo)
+        offset = _VEL_TARGET_MIN - v_lo * scale
         def remap(v: int) -> int:
             return max(1, min(127, int(v * scale + offset)))
     apply = lambda notes: [
@@ -420,6 +495,45 @@ def _section_to_score_section(
     )
 
 
+# ``MIDI Control Change`` numbers for the three pedals music21 / MusicXML
+# can render. Anything else from the transcriber gets dropped at the
+# arrange boundary — the engraver has no representation for, e.g., CC1
+# modulation as a pedal mark.
+_CC_TO_PEDAL_TYPE = {
+    64: "sustain",
+    66: "sostenuto",
+    67: "una_corda",
+}
+
+
+def _pedal_to_score_pedal(
+    pedal: RealtimePedalEvent,
+    tempo_map: list[TempoMapEntry],
+) -> PedalEvent | None:
+    """Convert a seconds-domain Kong pedal into a beat-domain PedalEvent.
+
+    Returns ``None`` when the CC number doesn't map to a pedal type the
+    engraver can render. Onset/offset are clamped to non-negative beats
+    so a pedal that started before the first detected beat doesn't
+    surface as a negative-beat anchor (which would crash music21's
+    measure layout).
+    """
+    pedal_type = _CC_TO_PEDAL_TYPE.get(pedal.cc)
+    if pedal_type is None:
+        return None
+    on = sec_to_beat(pedal.onset_sec, tempo_map)
+    off = sec_to_beat(pedal.offset_sec, tempo_map)
+    if on < 0.0:
+        on = 0.0
+    if off <= on:
+        return None
+    return PedalEvent(
+        onset_beat=round(on, 4),
+        offset_beat=round(off, 4),
+        type=pedal_type,  # type: ignore[arg-type]
+    )
+
+
 # ---------------------------------------------------------------------------
 # Service
 # ---------------------------------------------------------------------------
@@ -447,8 +561,10 @@ def _arrange_sync(
         grid = QUANT_GRID
     overlap_tol = 0.6 * grid
 
-    max_rh = MAX_VOICES_RH if difficulty != "beginner" else 1
-    max_lh = MAX_VOICES_LH if difficulty != "beginner" else 1
+    cfg_max_rh = settings.arrange_max_voices_rh
+    cfg_max_lh = settings.arrange_max_voices_lh
+    max_rh = cfg_max_rh if difficulty != "beginner" else 1
+    max_lh = cfg_max_lh if difficulty != "beginner" else 1
     rh_voiced = _resolve_overlaps(rh_raw, max_rh, grid=grid, overlap_tol=overlap_tol)
     lh_voiced = _resolve_overlaps(lh_raw, max_lh, grid=grid, overlap_tol=overlap_tol)
 
@@ -497,9 +613,19 @@ def _arrange_sync(
     chord_symbols = [_chord_to_score_chord(c, tempo_map) for c in analysis.chords]
     sections = [_section_to_score_section(s, tempo_map) for s in analysis.sections]
 
+    # Phase 6: convert Kong's seconds-domain pedal events into the
+    # beat-domain PedalEvent the engraver / humanize understands. Empty
+    # list means the active transcriber didn't model pedal — humanize
+    # will fall back to its chord-symbol heuristic.
+    pedal_events: list[PedalEvent] = []
+    for raw in payload.pedal_events:
+        converted = _pedal_to_score_pedal(raw, tempo_map)
+        if converted is not None:
+            pedal_events.append(converted)
+
     log.info(
-        "Arranged: RH=%d notes, LH=%d notes (difficulty=%s)",
-        len(right_hand), len(left_hand), difficulty,
+        "Arranged: RH=%d notes, LH=%d notes (difficulty=%s) pedal_events=%d",
+        len(right_hand), len(left_hand), difficulty, len(pedal_events),
     )
 
     return PianoScore(
@@ -513,6 +639,9 @@ def _arrange_sync(
             difficulty=difficulty,
             sections=sections,
             chord_symbols=chord_symbols,
+            downbeats=list(analysis.downbeats),
+            pedal_events=pedal_events,
+            arrangement_hints=payload.arrangement_hints,
         ),
     )
 
@@ -543,6 +672,12 @@ class ArrangeService:
         difficulty: Difficulty = "intermediate",
         blob_store: BlobStore | None = None,
     ) -> PianoScore:
+        # If the interpret stage supplied hints, let them win over the worker default.
+        # Future iterations will also consume density / style_tags / dynamic_emphasis / hand_balance.
+        hints = payload.arrangement_hints
+        if hints is not None and hints.difficulty is not None:
+            difficulty = hints.difficulty
+
         log.info(
             "arrange: start backend=%s tracks_in=%d difficulty=%s",
             settings.arrange_backend,

@@ -1,4 +1,4 @@
-"""Derive a piecewise tempo map from audio beat positions.
+"""Derive a piecewise tempo map and downbeats from audio beat positions.
 
 Basic Pitch is a polyphonic pitch tracker and does not estimate tempo, so
 the transcribe stage otherwise collapses to a single global BPM anchor at
@@ -9,18 +9,25 @@ compound into noticeable quantization drift.
 
 This module supports two beat-tracking backends:
 
-* **madmom** (default) — ``DBNBeatProcessor`` + ``RNNBeatProcessor``.
-  Significantly more robust than librosa for variable-tempo music.
-* **librosa** — ``librosa.beat.beat_track``, the legacy fallback.
+* **Beat This!** (default) — CPJKU's MIT-licensed transformer beat tracker.
+  Significantly more accurate than madmom on pop / hip-hop / K-pop with
+  busy hi-hat patterns, and emits downbeats as a first-class output.
+* **librosa** — ``librosa.beat.beat_track``, the legacy fallback. Beats
+  only; downbeats are returned as an empty list.
 
-The backend is selected via ``Settings.beat_tracker`` (``"madmom"``,
-``"librosa"``, or ``"auto"``).  ``"auto"`` tries madmom first, then
+The backend is selected via ``Settings.beat_tracker`` (``"beat_this"``,
+``"librosa"``, or ``"auto"``).  ``"auto"`` tries Beat This! first, then
 falls back to librosa.
 
 Beat instants are converted into a list of ``TempoMapEntry`` — one anchor
 per beat, with each segment's BPM = ``60 / Δt`` between adjacent beats.
 That gives ``sec_to_beat`` a piecewise-linear map that follows the
 waveform pulse.
+
+Downbeat instants (where available) flow onto ``HarmonicAnalysis.downbeats``
+in seconds and from there onto ``ScoreMetadata.downbeats``, ultimately
+emitted as MIDI Cue Point text events by ``midi_render`` so the engraver
+can lock bar lines to the perceived pulse.
 
 Everything here is best-effort: if the chosen backend is missing, the
 audio is too short, or beat tracking fails, callers get ``None`` and are
@@ -32,6 +39,7 @@ from __future__ import annotations
 import logging
 import math
 from collections.abc import Sequence
+from dataclasses import dataclass, field
 from pathlib import Path
 
 from backend.contracts import TempoMapEntry
@@ -45,8 +53,18 @@ _MAX_BPM = 300.0
 _MIN_DT_SEC = 1e-3
 _MIN_DURATION_SEC = 0.5
 
-# madmom's DBNBeatProcessor expects audio at 44100 Hz by default.
-_MADMOM_SR = 44_100
+
+@dataclass
+class BeatTrackResult:
+    """Beats + downbeats from an audio beat tracker.
+
+    ``beats`` is the full beat grid in seconds; ``downbeats`` is the
+    subset that fall on bar starts. ``downbeats`` is empty when the
+    backend doesn't expose downbeat info (librosa) or the track is
+    too short / ambiguous to disambiguate the meter.
+    """
+    beats: list[float] = field(default_factory=list)
+    downbeats: list[float] = field(default_factory=list)
 
 
 def build_tempo_map_from_beat_times(
@@ -93,68 +111,64 @@ def build_tempo_map_from_beat_times(
     return entries
 
 
-# ── Backend: madmom (DBNBeatProcessor) ──────────────────────────────────
+# ── Backend: Beat This! (CPJKU MIT-licensed transformer) ───────────────
 
 
-def _madmom_beat_track(y, sr: int) -> list[float] | None:
-    """Run madmom RNNBeatProcessor + DBNBeatProcessor on a waveform.
+def _beat_this_track(y, sr: int) -> BeatTrackResult | None:
+    """Run Beat This! on a waveform.
 
-    Returns sorted list of beat times in seconds, or ``None`` on failure.
+    Returns ``BeatTrackResult`` with sorted beats + downbeats in seconds,
+    or ``None`` if the package is unavailable or inference fails.
     """
     try:
-        from madmom.features.beats import DBNBeatTrackingProcessor, RNNBeatProcessor  # noqa: PLC0415
+        # ``Audio2Beats`` takes a numpy array directly — preferred when
+        # we already have the waveform in memory (transcribe pipeline).
+        from beat_this.inference import Audio2Beats  # noqa: PLC0415
     except ImportError:
-        log.debug("madmom unavailable; cannot use DBNBeatProcessor")
+        log.debug("beat_this unavailable; skipping Beat This! backend")
         return None
 
     try:
         import numpy as np  # noqa: PLC0415
 
-        # Resample to 44100 Hz if needed — DBNBeatProcessor's default.
-        if sr != _MADMOM_SR:
-            try:
-                import resampy  # noqa: PLC0415
-                y = resampy.resample(y, sr, _MADMOM_SR)
-            except ImportError:
-                import librosa  # noqa: PLC0415
-                y = librosa.resample(y, orig_sr=sr, target_sr=_MADMOM_SR)
-
-        # RNNBeatProcessor expects a file path or Signal object.
-        import tempfile  # noqa: PLC0415
-
-        import soundfile as sf  # noqa: PLC0415
-
-        tmp = tempfile.NamedTemporaryFile(suffix=".wav", delete=False)
-        try:
-            sf.write(tmp.name, y, _MADMOM_SR)
-            tmp.close()
-            rnn_processor = RNNBeatProcessor()
-            activations = rnn_processor(tmp.name)
-        finally:
-            Path(tmp.name).unlink(missing_ok=True)
-
-        dbn_processor = DBNBeatTrackingProcessor(fps=100)
-        beat_times = dbn_processor(activations)
-
-        beat_list = sorted(float(t) for t in np.atleast_1d(beat_times).tolist())
-        if not beat_list:
-            log.debug("madmom returned no beats")
-            return None
-
-        return beat_list
-
-    except Exception as exc:  # noqa: BLE001
-        log.warning("madmom beat tracking failed: %s", exc)
+        # Beat This! ships its own resampling; pass the waveform as-is.
+        # ``dbn=False`` keeps inference inside the trained transformer
+        # (no madmom DBN post-processor) — cleaner license posture.
+        # ``device="cpu"`` is the safe default for Cloud Run; callers
+        # can override via env var if a GPU is wired up.
+        a2b = Audio2Beats(checkpoint_path="final0", device="cpu", dbn=False)
+        # The model expects float32 mono; coerce so callers don't have to.
+        wav = np.ascontiguousarray(np.atleast_1d(y).astype(np.float32, copy=False))
+        if wav.ndim > 1:
+            wav = wav.mean(axis=0).astype(np.float32, copy=False)
+        beats, downbeats = a2b(wav, sr)
+    except Exception as exc:  # noqa: BLE001 — never let beat tracking sink transcribe
+        log.warning("Beat This! beat tracking failed: %s", exc)
         return None
 
+    try:
+        import numpy as np  # noqa: PLC0415
+        beat_list = sorted(float(t) for t in np.atleast_1d(beats).tolist() if t >= 0.0)
+        down_list = sorted(float(t) for t in np.atleast_1d(downbeats).tolist() if t >= 0.0)
+    except Exception as exc:  # noqa: BLE001
+        log.warning("Beat This! returned non-numeric output: %s", exc)
+        return None
 
-# ── Backend: librosa ────────────────────────────────────────────────────
+    if not beat_list:
+        log.debug("Beat This! returned no beats")
+        return None
+
+    return BeatTrackResult(beats=beat_list, downbeats=down_list)
 
 
-def _librosa_beat_track(y, sr: int) -> list[float] | None:
-    """Run librosa.beat.beat_track on a waveform.
+# ── Backend: librosa (legacy fallback) ─────────────────────────────────
 
-    Returns sorted list of beat times in seconds, or ``None`` on failure.
+
+def _librosa_track(y, sr: int) -> BeatTrackResult | None:
+    """Run ``librosa.beat.beat_track`` on a waveform.
+
+    librosa exposes only beats, not downbeats — the returned
+    ``BeatTrackResult`` always has ``downbeats=[]``.
     """
     try:
         import librosa  # noqa: PLC0415
@@ -164,13 +178,13 @@ def _librosa_beat_track(y, sr: int) -> list[float] | None:
         return None
 
     try:
-        tempo, beat_frames = librosa.beat.beat_track(y=y, sr=sr, hop_length=512)
+        _tempo, beat_frames = librosa.beat.beat_track(y=y, sr=sr, hop_length=512)
         beat_times = librosa.frames_to_time(beat_frames, sr=sr, hop_length=512)
         beat_list = [float(t) for t in np.atleast_1d(beat_times).tolist()]
         if not beat_list:
             log.debug("librosa beat tracker returned no beats")
             return None
-        return beat_list
+        return BeatTrackResult(beats=sorted(beat_list), downbeats=[])
     except Exception as exc:  # noqa: BLE001
         log.warning("librosa.beat.beat_track failed: %s", exc)
         return None
@@ -179,33 +193,33 @@ def _librosa_beat_track(y, sr: int) -> list[float] | None:
 # ── Public API ──────────────────────────────────────────────────────────
 
 
-def tempo_map_from_audio_path(
+def beats_from_audio_path(
     path: Path,
     *,
     sr: int = 22_050,
     preloaded_audio: tuple | None = None,
-) -> list[TempoMapEntry] | None:
-    """Run beat tracking on an audio file and return a piecewise tempo map.
+) -> BeatTrackResult | None:
+    """Run beat tracking and return beats + downbeats in seconds.
 
-    The beat-tracking backend is selected by ``Settings.beat_tracker``:
+    Backend selected by ``Settings.beat_tracker``:
 
-    * ``"madmom"`` (default) — use madmom, fall back to librosa if unavailable.
-    * ``"librosa"`` — use librosa only (legacy behaviour).
-    * ``"auto"`` — try madmom first, then librosa.
+    * ``"beat_this"`` (default) — Beat This! transformer; falls back to
+      librosa if the package isn't installed.
+    * ``"librosa"`` — librosa only (downbeats always empty).
+    * ``"auto"`` — try Beat This! first, then librosa.
 
     When ``preloaded_audio`` is a ``(y, sr)`` tuple the ``librosa.load``
     call is skipped, reusing a waveform already in memory.
 
-    Returns ``None`` on any failure so callers can fall back to the
-    model-derived single-tempo map.
+    Returns ``None`` when no backend produced beats (callers fall back
+    to the model-derived single-tempo map).
     """
     from backend.config import settings  # noqa: PLC0415 — avoid circular import
 
     try:
         import librosa as _librosa  # noqa: PLC0415
-        import numpy as np  # noqa: PLC0415
     except ImportError:
-        log.debug("librosa/numpy unavailable; skipping audio beat tracking")
+        log.debug("librosa unavailable; skipping audio beat tracking")
         return None
 
     if preloaded_audio is not None:
@@ -223,34 +237,96 @@ def tempo_map_from_audio_path(
         return None
 
     backend = settings.beat_tracker.lower()
-    beat_list: list[float] | None = None
+    result: BeatTrackResult | None = None
 
-    if backend == "madmom":
-        beat_list = _madmom_beat_track(y, file_sr)
-        if beat_list is None:
-            log.info("madmom unavailable or failed; falling back to librosa")
-            beat_list = _librosa_beat_track(y, file_sr)
+    if backend == "beat_this":
+        result = _beat_this_track(y, file_sr)
+        if result is None:
+            log.info("Beat This! unavailable or failed; falling back to librosa")
+            result = _librosa_track(y, file_sr)
     elif backend == "librosa":
-        beat_list = _librosa_beat_track(y, file_sr)
+        result = _librosa_track(y, file_sr)
     elif backend == "auto":
-        beat_list = _madmom_beat_track(y, file_sr)
-        if beat_list is None:
-            beat_list = _librosa_beat_track(y, file_sr)
+        result = _beat_this_track(y, file_sr)
+        if result is None:
+            result = _librosa_track(y, file_sr)
     else:
         log.warning("unknown beat_tracker setting %r; using librosa", backend)
-        beat_list = _librosa_beat_track(y, file_sr)
+        result = _librosa_track(y, file_sr)
 
-    if not beat_list:
+    if result is None or not result.beats:
         log.debug("beat tracker returned no beats for %s", path)
         return None
 
-    # Estimate a fallback BPM for build_tempo_map_from_beat_times.
+    return result
+
+
+def tempo_map_from_audio_path(
+    path: Path,
+    *,
+    sr: int = 22_050,
+    preloaded_audio: tuple | None = None,
+) -> list[TempoMapEntry] | None:
+    """Run beat tracking on an audio file and return a piecewise tempo map.
+
+    Thin wrapper over :func:`beats_from_audio_path` that drops the
+    downbeats. Use the underlying function directly when you also need
+    bar-line positions (Phase 2+: midi_render emits them as Cue Points).
+    """
+    result = beats_from_audio_path(path, sr=sr, preloaded_audio=preloaded_audio)
+    if result is None:
+        return None
+
+    fallback_bpm = _estimate_fallback_bpm(path, preloaded_audio=preloaded_audio)
+    return build_tempo_map_from_beat_times(result.beats, fallback_bpm=fallback_bpm)
+
+
+def tempo_map_and_downbeats_from_audio_path(
+    path: Path,
+    *,
+    sr: int = 22_050,
+    preloaded_audio: tuple | None = None,
+) -> tuple[list[TempoMapEntry], list[float]] | None:
+    """Return ``(tempo_map, downbeats_sec)`` from a single beat-tracker run.
+
+    Preferred over calling :func:`tempo_map_from_audio_path` plus a
+    separate downbeat lookup — Beat This! inference is the slow step,
+    so running it once and reusing the result is ~2× faster.
+    """
+    result = beats_from_audio_path(path, sr=sr, preloaded_audio=preloaded_audio)
+    if result is None:
+        return None
+
+    fallback_bpm = _estimate_fallback_bpm(path, preloaded_audio=preloaded_audio)
+    tempo_map = build_tempo_map_from_beat_times(result.beats, fallback_bpm=fallback_bpm)
+    return tempo_map, result.downbeats
+
+
+def _estimate_fallback_bpm(
+    path: Path,
+    *,
+    preloaded_audio: tuple | None = None,
+) -> float:
+    """Best-effort scalar BPM via librosa, used for the single-anchor fallback."""
     try:
-        tempo_arr = _librosa.beat.beat_track(y=y, sr=file_sr, hop_length=512)[0]
+        import librosa  # noqa: PLC0415
+        import numpy as np  # noqa: PLC0415
+    except ImportError:
+        return 120.0
+
+    if preloaded_audio is not None:
+        y, file_sr = preloaded_audio
+    else:
+        try:
+            y, file_sr = librosa.load(str(path), sr=22_050, mono=True)
+        except Exception:  # noqa: BLE001
+            return 120.0
+
+    try:
+        tempo_arr = librosa.beat.beat_track(y=y, sr=file_sr, hop_length=512)[0]
         tempo_scalar = float(np.atleast_1d(tempo_arr).ravel()[0])
         if not math.isfinite(tempo_scalar) or not (_MIN_BPM <= tempo_scalar <= _MAX_BPM):
-            tempo_scalar = 120.0
+            return 120.0
+        return tempo_scalar
     except Exception:  # noqa: BLE001
-        tempo_scalar = 120.0
-
-    return build_tempo_map_from_beat_times(beat_list, fallback_bpm=tempo_scalar)
+        return 120.0

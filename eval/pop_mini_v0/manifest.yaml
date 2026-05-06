@@ -1,0 +1,167 @@
+schema_version: 1
+eval_set: pop_mini_v0
+description: |
+  Phase 0 reference-free mini-eval set, per
+  docs/research/transcription-improvement-implementation-plan.md §Phase 0.
+
+  4 slots curated with real audio (all FMA), 1 slot undelivered. Each
+  ``source`` block was produced by ``scripts/curate_pop_mini_v0.py`` and
+  records its source URL, content hash, and license. The original
+  ``intended_source`` blocks are retained as historical record of what
+  the slot targets.
+
+  Slot inventory:
+    mini_pop_001    — Jahzzar / Two days        (CC BY-SA 3.0, FMA Pop)
+    mini_pop_002    — Tours / Enthusiast        (CC BY 3.0, FMA Electronic)
+    mini_pop_003    — Alaclair Ensemble /
+                      Intergalactique           (CC BY-SA 3.0, FMA Soul-RnB)
+    mini_kpop_001   — *undelivered* — see redistribution-policy note.
+    mini_ballad_001 — Peter Rudenko / Snowing   (CC BY 3.0, FMA Classical /
+                                                 solo piano)
+
+  Redistribution policy:
+    Only audio with a verifiable, redistributable license (CC-BY /
+    CC-BY-SA from FMA, where the platform itself enforces a license
+    schema) is committed in-repo. Earlier curation seeded
+    ``mini_kpop_001`` with a YouTube clip whose license was
+    uploader-asserted CC-BY; the asset has been removed pending
+    a properly-licensed K-pop replacement. The slot stays in the
+    manifest as ``intended_source`` only so the loader counts it as
+    undelivered. To re-deliver, point ``source`` at an FMA K-pop track
+    or a clip whose license is verified by the publishing platform.
+
+  Earlier ``synthetic_from_midi`` bootstraps (FluidSynth-rendered MIDIs
+  from ``eval/fixtures/clean_midi/``) are gone from the manifest but
+  still drive ``scripts/eval_mini.py`` if you flip a slot back. Two
+  legacy schema-v1 baselines (RF metrics only) are preserved for
+  historical comparison alongside the active schema-v2 baseline:
+
+    * ``pop_mini_v0__main_bde4268.json`` — active CI baseline
+      (Phase 7 metric surface — tier_rf + tier2 + tier3 + Q).
+    * ``pop_mini_v0__main_5532577_real.json`` — legacy v1 (RF only).
+    * ``pop_mini_v0__main_5532577.json`` — legacy v1 (synthetic).
+
+# Each song is clipped to this many seconds before it enters the pipeline,
+# so a 5-song run completes inside the Phase 0 acceptance window (<2 min).
+target_duration_sec: 30.0
+
+# Reference-free chord recognition uses HMM smoothing; the same key prior
+# is used on both sides (input audio and FluidSynth re-synth of the
+# engraved MIDI) so the comparison stays symmetric. ``auto`` defers to
+# whatever the transcribe stage emits as ``HarmonicAnalysis.key``.
+chord_recognition_key: auto
+
+songs:
+  - slug: mini_pop_001
+    title: "Rain"
+    artist: "Madonna"
+    genre: pop_mainstream
+    intended_source:
+      kind: fma_track
+      url: https://freemusicarchive.org/  # populate with real FMA URL
+      license: cc-by-4.0
+      notes: |
+        Target slot: FMA commercial=true mainstream pop track #1.
+    source:
+      kind: audio_file
+      path: songs/mini_pop_001/source.audio.mp3
+      content_hash: sha256:ce9c548cd903319f381895ab2706271ee14c49d88714417d6dcfa539385c3fbb
+      license: cc-by-sa-3.0
+      source_url: https://freemusicarchive.org/track/Two_days/stream/
+      curated_at: 2026-04-26T19:37:20+00:00
+      curated_via: scripts/curate_pop_mini_v0.py
+      notes: |
+        title: Two days
+        artist: Jahzzar
+        FMA track id 62446 (album: Newborn). Genre: Pop. Listens: ~21k. Selected via scripts/fma_catalog_filter.py for the mainstream-pop slot.
+      bootstrap: false
+
+  - slug: mini_pop_002
+    title: "Genie in a Bottle"
+    artist: "Christina Aguilera"
+    genre: pop_synth
+    intended_source:
+      kind: fma_track
+      url: https://freemusicarchive.org/  # populate with real FMA URL
+      license: cc-by-4.0
+      notes: |
+        Target slot: FMA commercial=true synth-pop track #2.
+    source:
+      kind: audio_file
+      path: songs/mini_pop_002/source.audio.mp3
+      content_hash: sha256:e6bac545159bdfd357fceba0e59734d413747a88fd65b965750c625c5eb81637
+      license: cc-by-3.0
+      source_url: https://freemusicarchive.org/track/Tours_-_Enthusiast/stream/
+      curated_at: 2026-04-26T19:37:30+00:00
+      curated_via: scripts/curate_pop_mini_v0.py
+      notes: |
+        title: Enthusiast
+        artist: Tours
+        FMA track id 69170 (album: Enthusiast). Genre: Electronic. Listens: ~335k (most-listened CC track on FMA). Selected for the synth-pop / Electronic slot.
+      bootstrap: false
+
+  - slug: mini_pop_003
+    title: "Unpretty"
+    artist: "TLC"
+    genre: pop_rnb
+    intended_source:
+      kind: fma_track
+      url: https://freemusicarchive.org/  # populate with real FMA URL
+      license: cc-by-4.0
+      notes: |
+        Target slot: FMA commercial=true R&B / soul-pop track #3.
+    source:
+      kind: audio_file
+      path: songs/mini_pop_003/source.audio.mp3
+      content_hash: sha256:8bbb4d14c4c7326cdf63c3f8f8779dff359facbc519e5fc26fd6d7de6017ca0a
+      license: cc-by-sa-3.0
+      source_url: https://freemusicarchive.org/track/Alaclair_Ensemble_-_Le_ro_cest_mo_-_14_Intergalactique/stream/
+      curated_at: 2026-04-26T19:37:41+00:00
+      curated_via: scripts/curate_pop_mini_v0.py
+      notes: |
+        title: Intergalactique
+        artist: Alaclair Ensemble
+        FMA track id 55111 (album: Le roé c'est moé). Genre: Soul-RnB / Quebec hip-hop. Listens: ~27k. Selected for the R&B / soul-pop slot.
+      bootstrap: false
+
+  - slug: mini_kpop_001
+    title: "TBD — K-pop slot, undelivered"
+    artist: "TBD"
+    genre: dance_pop
+    intended_source:
+      kind: fma_track
+      url: https://freemusicarchive.org/  # populate with real FMA K-pop URL
+      license: cc-by
+      notes: |
+        Target slot: K-pop. The previous curation pointed at an
+        uploader-asserted CC-BY YouTube clip whose license could not
+        be independently verified; the asset has been removed pending
+        a redistributable replacement (preferably an FMA-listed
+        K-pop / dance-pop track).
+
+  - slug: mini_ballad_001
+    title: "Vivo Per Lei"
+    artist: "Andrea Bocelli"
+    genre: ballad
+    intended_source:
+      kind: fma_track
+      url: https://freemusicarchive.org/  # populate with real FMA URL
+      license: cc-by-4.0
+      notes: |
+        Target slot: sparse ballad. Operatic ballad with deliberate
+        harmonic motion is a good stand-in until an FMA-equivalent is
+        curated.
+    source:
+      kind: audio_file
+      path: songs/mini_ballad_001/source.audio.mp3
+      content_hash: sha256:39b7ca5711d461b05ba228708bfeaddbe8d16b0666f448c618615ca9e095b0b1
+      license: cc-by-3.0
+      source_url: https://freemusicarchive.org/track/12_-_Peter_Rudenko_-_Snowing/stream/
+      curated_at: 2026-04-26T19:37:47+00:00
+      curated_via: scripts/curate_pop_mini_v0.py
+      notes: |
+        title: Snowing
+        artist: Peter Rudenko
+        FMA track id 65792 (album: 15 Etudes). Genre: Classical (solo piano). Listens: ~178k. Selected for the sparse-ballad slot — slow tempo, single instrument, ambient texture.
+      bootstrap: false
+

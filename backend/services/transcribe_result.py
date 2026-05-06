@@ -15,6 +15,7 @@ from backend.contracts import (
     InstrumentRole,
     MidiTrack,
     Note,
+    PitchBendPoint,
     QualitySignal,
     RealtimeChordEvent,
     TempoMapEntry,
@@ -34,6 +35,11 @@ from backend.services.transcription_cleanup import CleanupStats, NoteEvent
 log = logging.getLogger(__name__)
 
 
+# BP's per-frame bend values are in CQT-bin offset units. BP uses
+# 3 bins per semitone (100 cents), so one bend unit ≈ 33.33 cents.
+_BP_BEND_TO_CENTS = 100.0 / 3.0
+
+
 def _event_to_note(event: NoteEvent) -> Note:
     """Convert a Basic Pitch ``note_events`` tuple to a contract ``Note``.
 
@@ -41,15 +47,43 @@ def _event_to_note(event: NoteEvent) -> Note:
     (see ``basic_pitch.note_creation.note_events_to_midi``); we replicate
     it here so the contract notes match what the rebuilt pretty_midi
     would contain, without needing to cross-reference ``pm.instruments``.
+
+    When the BP run has ``multiple_pitch_bends=True`` the per-frame bend
+    list is carried into ``pitch_bend_cents`` as ``(time_sec, cents)``
+    pairs distributed evenly across the note's duration. Bends are
+    converted from BP bin offsets using
+    ``cents = bend * 100/3`` (3 bins per semitone in BP's CQT setup).
     """
-    start, end, pitch, amplitude, _bends = event
+    start, end, pitch, amplitude, bends = event
     velocity = int(round(127 * float(amplitude)))
     velocity = max(1, min(127, velocity))
+    pitch_bend_cents: list[PitchBendPoint] = []
+    if bends:
+        n = len(bends)
+        if n == 1:
+            pitch_bend_cents.append(
+                PitchBendPoint(
+                    time_sec=float(start),
+                    cents=float(bends[0]) * _BP_BEND_TO_CENTS,
+                ),
+            )
+        else:
+            duration = max(float(end) - float(start), 1e-3)
+            denom = max(n - 1, 1)
+            for i, b in enumerate(bends):
+                t = float(start) + (i / denom) * duration
+                pitch_bend_cents.append(
+                    PitchBendPoint(
+                        time_sec=t,
+                        cents=float(b) * _BP_BEND_TO_CENTS,
+                    ),
+                )
     return Note(
         pitch=int(pitch),
         onset_sec=float(start),
         offset_sec=float(end),
         velocity=velocity,
+        pitch_bend_cents=pitch_bend_cents,
     )
 
 
@@ -74,6 +108,7 @@ def _pretty_midi_to_transcription_result(
     default_bpm: float = 120.0,
     *,
     tempo_map_override: list[TempoMapEntry] | None = None,
+    downbeats_override: list[float] | None = None,
     key_label: str = "C:major",
     time_signature: tuple[int, int] = (4, 4),
     key_stats: KeyEstimationStats | None = None,
@@ -185,6 +220,7 @@ def _pretty_midi_to_transcription_result(
         tempo_map=tempo_map,
         chords=list(chord_labels) if chord_labels else [],
         sections=[],
+        downbeats=list(downbeats_override) if downbeats_override else [],
     )
 
     total_notes = sum(len(t.notes) for t in midi_tracks)
@@ -246,33 +282,21 @@ def _pretty_midi_to_transcription_result(
     )
 
 
+class TranscriptionFailure(RuntimeError):
+    """Raised when transcription cannot produce a real result.
+
+    Replaces the previous silent C-E-G-C arpeggio stub: surfacing the
+    failure makes the user-visible error actionable instead of shipping
+    a fake melody dressed up as a successful job.
+    """
+
+
 def _stub_result(reason: str) -> TranscriptionResult:
-    """Tiny shape-correct fallback so downstream stages still run."""
-    log.info("transcribe: stub result — %s", reason)
-    return TranscriptionResult(
-        schema_version=SCHEMA_VERSION,
-        midi_tracks=[
-            MidiTrack(
-                notes=[
-                    Note(pitch=60, onset_sec=0.0, offset_sec=0.5, velocity=80),
-                    Note(pitch=64, onset_sec=0.5, offset_sec=1.0, velocity=80),
-                    Note(pitch=67, onset_sec=1.0, offset_sec=1.5, velocity=80),
-                    Note(pitch=72, onset_sec=1.5, offset_sec=2.0, velocity=80),
-                ],
-                instrument=InstrumentRole.MELODY,
-                program=None,
-                confidence=0.7,
-            ),
-        ],
-        analysis=HarmonicAnalysis(
-            key="C:major",
-            time_signature=(4, 4),
-            tempo_map=[TempoMapEntry(time_sec=0.0, beat=0.0, bpm=120.0)],
-            chords=[],
-            sections=[],
-        ),
-        quality=QualitySignal(
-            overall_confidence=0.3,
-            warnings=[f"Basic Pitch fallback stub: {reason}"],
-        ),
-    )
+    """Compatibility shim — now raises ``TranscriptionFailure(reason)``.
+
+    Kept under the old name to keep call sites in transcribe.py working
+    until they're refactored to raise directly. Intentionally never
+    returns: there is no longer a "shape-correct fallback" path.
+    """
+    log.error("transcribe: failure — %s", reason)
+    raise TranscriptionFailure(reason)

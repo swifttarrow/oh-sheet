@@ -17,7 +17,16 @@ def run(job_id: str, payload_uri: str) -> str:
 
     service = TranscribeService(blob_store=blob)
     # asyncio.run() is safe with Celery's default prefork pool; breaks with gevent/eventlet.
-    result = asyncio.run(service.run(bundle, job_id=job_id))
+    # ``variant_hint`` survives the InputBundle → JSON boundary and lets
+    # the dispatcher in TranscribeService pick the AMT-APC cover-mode
+    # pipeline when the user chose "Piano cover" upstream.
+    result = asyncio.run(
+        service.run(
+            bundle,
+            job_id=job_id,
+            variant=bundle.metadata.variant_hint,
+        )
+    )
 
     output_uri = blob.put_json(
         f"jobs/{job_id}/transcribe/output.json",

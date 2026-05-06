@@ -17,6 +17,7 @@ celery_app.conf.update(
     task_default_queue="default",
     task_routes={
         "ingest.run": {"queue": "ingest"},
+        "separate.run": {"queue": "separate"},
         "transcribe.run": {"queue": "transcribe"},
         "arrange.run": {"queue": "arrange"},
         "condense.run": {"queue": "arrange"},
