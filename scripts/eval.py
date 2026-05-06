@@ -137,6 +137,17 @@ def cli(ctx: click.Context, verbose: bool) -> None:
     is_flag=True,
     help="When the baseline path is missing, skip gating (don't fail).",
 )
+@click.option(
+    "--song-timeout-sec",
+    type=int,
+    default=180,
+    show_default=True,
+    help=(
+        "Per-song wall-clock budget. A hung song (network fetch, ONNX "
+        "deadlock) trips the alarm and the harness moves on to the next "
+        "song instead of blocking the workflow timeout. 0 disables."
+    ),
+)
 def cmd_ci(
     eval_set_path: Path,
     output_dir: Path,
@@ -144,6 +155,7 @@ def cmd_ci(
     limit: int,
     label: str,
     allow_missing_baseline: bool,
+    song_timeout_sec: int,
 ) -> None:
     """Run the cheap CI gate.
 
@@ -159,6 +171,7 @@ def cmd_ci(
         only_first_n=limit,
         is_ci=True,
         label=label,
+        song_timeout_sec=song_timeout_sec or None,
     )
 
     # A run that scored zero songs cannot meaningfully gate on any

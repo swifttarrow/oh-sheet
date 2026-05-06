@@ -13,6 +13,9 @@ from __future__ import annotations
 
 import json
 import logging
+import threading
+import time
+from collections import deque
 from typing import Any
 
 from pydantic import ValidationError
@@ -27,11 +30,43 @@ from backend.services.interpret_prompt import (
     build_user_prompt,
     submit_arrangement_hints_tool_schema,
 )
-from backend.services.refine import _clamp_hint
 
 log = logging.getLogger(__name__)
 
 _HINT_MAX_LEN = 200
+_RATE_LIMIT_WINDOW_SEC = 60.0
+
+
+# Per-process sliding-window LLM call counter. ``deque`` of monotonic
+# timestamps; a lock keeps it consistent under thread-pool / solo Celery
+# workers (the prefork pool isolates state per process so the lock is
+# only needed when a single process serves concurrent tasks). Module-
+# level state is intentional — Celery prefork workers don't share state
+# across processes, so the effective production cap is roughly
+# ``settings.interpret_max_calls_per_minute × worker_concurrency``.
+_call_times: deque[float] = deque()
+_rate_lock = threading.Lock()
+
+
+def _rate_limit_exceeded() -> bool:
+    """Return True when the per-process call cap has been reached.
+
+    Records the current call timestamp on the way out, so each invocation
+    that returns False also reserves its slot in the window. Set
+    ``interpret_max_calls_per_minute = 0`` to disable.
+    """
+    cap = settings.interpret_max_calls_per_minute
+    if cap <= 0:
+        return False
+    now = time.monotonic()
+    cutoff = now - _RATE_LIMIT_WINDOW_SEC
+    with _rate_lock:
+        while _call_times and _call_times[0] < cutoff:
+            _call_times.popleft()
+        if len(_call_times) >= cap:
+            return True
+        _call_times.append(now)
+        return False
 
 
 def _clamp_prompt(s: str, max_len: int) -> str:
@@ -39,6 +74,14 @@ def _clamp_prompt(s: str, max_len: int) -> str:
     cleaned = "".join(ch if ch.isprintable() or ch == " " else " " for ch in s)
     cleaned = " ".join(cleaned.split())
     return cleaned[:max_len]
+
+
+def _clamp_hint(s: str | None, max_len: int = _HINT_MAX_LEN) -> str | None:
+    """Sanitize a user-controlled title/artist hint before it reaches the LLM."""
+    if s is None:
+        return None
+    cleaned = _clamp_prompt(s, max_len)
+    return cleaned or None
 
 
 def _build_txr_summary(txr: TranscriptionResult) -> dict[str, Any]:
@@ -110,6 +153,13 @@ class InterpretService:
 
         title_hint = _clamp_hint(title_hint, _HINT_MAX_LEN)
         artist_hint = _clamp_hint(artist_hint, _HINT_MAX_LEN)
+
+        if _rate_limit_exceeded():
+            log.warning(
+                "interpret: rate limit exceeded (cap=%d/min), passing through",
+                settings.interpret_max_calls_per_minute,
+            )
+            return self._with_warning(payload, "interpret: rate_limited")
 
         log.info(
             "interpret: start prompt_len=%d title_hint=%r artist_hint=%r",

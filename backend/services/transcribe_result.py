@@ -15,6 +15,7 @@ from backend.contracts import (
     InstrumentRole,
     MidiTrack,
     Note,
+    PitchBendPoint,
     QualitySignal,
     RealtimeChordEvent,
     TempoMapEntry,
@@ -56,19 +57,27 @@ def _event_to_note(event: NoteEvent) -> Note:
     start, end, pitch, amplitude, bends = event
     velocity = int(round(127 * float(amplitude)))
     velocity = max(1, min(127, velocity))
-    pitch_bend_cents: list[tuple[float, float]] = []
+    pitch_bend_cents: list[PitchBendPoint] = []
     if bends:
         n = len(bends)
         if n == 1:
             pitch_bend_cents.append(
-                (float(start), float(bends[0]) * _BP_BEND_TO_CENTS),
+                PitchBendPoint(
+                    time_sec=float(start),
+                    cents=float(bends[0]) * _BP_BEND_TO_CENTS,
+                ),
             )
         else:
             duration = max(float(end) - float(start), 1e-3)
             denom = max(n - 1, 1)
             for i, b in enumerate(bends):
                 t = float(start) + (i / denom) * duration
-                pitch_bend_cents.append((t, float(b) * _BP_BEND_TO_CENTS))
+                pitch_bend_cents.append(
+                    PitchBendPoint(
+                        time_sec=t,
+                        cents=float(b) * _BP_BEND_TO_CENTS,
+                    ),
+                )
     return Note(
         pitch=int(pitch),
         onset_sec=float(start),

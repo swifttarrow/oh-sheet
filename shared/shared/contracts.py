@@ -177,16 +177,28 @@ class InputBundle(BaseModel):
 # Contract 2 — TRANSCRIBE
 # ---------------------------------------------------------------------------
 
+class PitchBendPoint(BaseModel):
+    """One sample on a note's pitch-bend trajectory.
+
+    Self-documenting alternative to a ``tuple[float, float]`` payload:
+    the field names survive every cross-language serialization (Dart,
+    JSON Schema generators, downstream consumers) so callers don't have
+    to remember which slot holds time vs. cents.
+    """
+    time_sec: float
+    cents: float
+
+
 class Note(BaseModel):
     pitch: int = Field(..., ge=0, le=127)
     onset_sec: float
     offset_sec: float
     velocity: int = Field(..., ge=0, le=127)
-    # Pitch-bend trajectory in (time_sec, cents) pairs. Populated when
-    # Basic Pitch is run with ``multiple_pitch_bends=True`` so vibrato /
-    # portamento can survive the contract boundary; an empty list means
-    # "no bend information available" (not "no bend present").
-    pitch_bend_cents: list[tuple[float, float]] = Field(default_factory=list)
+    # Pitch-bend trajectory. Populated when Basic Pitch is run with
+    # ``multiple_pitch_bends=True`` so vibrato / portamento can survive
+    # the contract boundary; an empty list means "no bend information
+    # available" (not "no bend present").
+    pitch_bend_cents: list[PitchBendPoint] = Field(default_factory=list)
 
 
 class MidiTrack(BaseModel):
@@ -282,7 +294,11 @@ class ArrangementHints(BaseModel):
     dynamic_emphasis: Literal["soft", "neutral", "bold"] | None = None
     tempo_bias: float = Field(default=0.0, ge=-0.25, le=0.25)  # fractional nudge
     hand_balance: HandBalance | None = None
-    notes: str | None = None  # short LLM rationale, surfaced for telemetry only
+    # Short LLM rationale for the chosen hints. User-visible: serialized
+    # into the job output blob and reachable by any client that
+    # deserializes the full ``TranscriptionResult`` (not stripped at the
+    # API boundary). Treat as user-facing copy, not internal telemetry.
+    notes: str | None = None
 
 
 class ScoreNote(BaseModel):

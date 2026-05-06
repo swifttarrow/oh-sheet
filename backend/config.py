@@ -225,6 +225,13 @@ class Settings(BaseSettings):
     #    untouched because bass notes from Basic Pitch rarely dip below 40.
     # v2 (min_vel=55, max_onsets=4): raises the floor above typical bass
     #    velocity range and caps density at sight-reading levels.
+    # v3 (min_vel=25, max_onsets=4): lowered from 55 after the Phase 0
+    #    pop_mini_v0 eval showed v2's floor was clipping legitimate quiet
+    #    accompaniment notes (especially on cover-style transcriptions
+    #    where AMT-APC emits soft inner voices). 25 still suppresses the
+    #    sub-noise-floor garbage that v1 was tuned against. Note this is
+    #    only validated against the pop_mini_v0 5-song set; revisit if
+    #    bass-artifact regressions surface on a larger corpus.
     # Two-hand voice caps. Standard piano notation supports up to four
     # voices per staff (two stems-up, two stems-down) but engraver
     # backends differ in how cleanly they render voices 3 and 4. Raised
@@ -623,6 +630,14 @@ class Settings(BaseSettings):
     # Maximum characters accepted from the user's arrangement prompt.
     # Prompts longer than this are truncated before being sent to Claude.
     interpret_prompt_max_chars: int = 1000
+    # Per-process sliding-window cap on Anthropic calls from the interpret
+    # stage. Bounds blast radius when a user batch-submits many prompted
+    # jobs against the same worker (each Celery worker process maintains
+    # its own counter — global production cap is roughly
+    # ``cap × worker_concurrency``). Set to 0 to disable the limit. When
+    # exceeded, the stage skips the LLM call and the input txr passes
+    # through unchanged with a ``rate_limited`` warning appended.
+    interpret_max_calls_per_minute: int = 30
 
     @computed_field  # type: ignore[prop-decorator]
     @property

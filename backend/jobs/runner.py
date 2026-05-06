@@ -8,6 +8,7 @@ the result URI, and deserialize the output for the next stage.
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import io
 import logging
 import time
@@ -76,8 +77,6 @@ def _compute_audio_hash(bundle: InputBundle, blob_store: BlobStore) -> str:
     paths) or when the blob fetch fails — telemetry still records
     the row with ``"unknown"`` so the per-job table stays complete.
     """
-    import hashlib  # noqa: PLC0415
-
     if bundle.audio is None:
         return "unknown"
     try:

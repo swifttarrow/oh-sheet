@@ -8,6 +8,7 @@ from backend.contracts import (
     InstrumentRole,
     MidiTrack,
     Note,
+    PitchBendPoint,
     QualitySignal,
     TempoMapEntry,
     TranscriptionResult,
@@ -188,13 +189,17 @@ class TestRefineVelocitiesMetric:
         assert out[0].notes[1].velocity == 110
 
     def test_pitch_and_other_fields_preserved(self):
+        bend = [
+            PitchBendPoint(time_sec=0.0, cents=0.0),
+            PitchBendPoint(time_sec=0.5, cents=50.0),
+        ]
         notes = [
             Note(
                 pitch=72,
                 onset_sec=0.0,
                 offset_sec=1.0,
                 velocity=90,
-                pitch_bend_cents=[(0.0, 0.0), (0.5, 50.0)],
+                pitch_bend_cents=bend,
             ),
         ]
         tracks = [_track(notes)]
@@ -203,7 +208,7 @@ class TestRefineVelocitiesMetric:
         assert n.pitch == 72
         assert n.onset_sec == 0.0
         assert n.offset_sec == 1.0
-        assert n.pitch_bend_cents == [(0.0, 0.0), (0.5, 50.0)]
+        assert n.pitch_bend_cents == bend
 
 
 class TestRefineVelocitiesDensity:

@@ -175,3 +175,68 @@ async def test_no_api_key_short_circuits_without_calling_anthropic(monkeypatch):
     interpret_warnings = [w for w in result.quality.warnings if w.startswith("interpret: ")]
     assert len(interpret_warnings) == 1, f"Expected one interpret warning, got: {result.quality.warnings}"
     assert not constructed, "AsyncAnthropic constructor should not have been called"
+
+
+# ---------------------------------------------------------------------------
+# Test 4: Rate limit — exceeding the per-process cap short-circuits the call
+# ---------------------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_rate_limit_short_circuits_after_cap(monkeypatch):
+    """Once the sliding-window cap is exceeded, the service returns the input
+    unchanged with a ``rate_limited`` warning and does not invoke the LLM."""
+    from backend.services import interpret as interpret_mod
+
+    monkeypatch.setattr(settings, "anthropic_api_key", "sk-test-key")
+    monkeypatch.setattr(settings, "interpret_enabled", True)
+    monkeypatch.setattr(settings, "interpret_max_calls_per_minute", 2)
+    # Reset the per-process counter so prior tests don't leak into this one.
+    interpret_mod._call_times.clear()
+
+    call_counter = {"n": 0}
+
+    def _make_response() -> Any:
+        call_counter["n"] += 1
+        return _FakeResponse([
+            _FakeToolUseBlock("submit_arrangement_hints", {"difficulty": "beginner"}),
+        ])
+
+    fake_client = _FakeAnthropic(_make_response)
+    svc = InterpretService(client=fake_client)
+
+    # First two calls succeed and consume the budget.
+    for _ in range(2):
+        result = await svc.run(_make_txr(), prompt="make it easy")
+        assert result.arrangement_hints is not None
+
+    # Third call hits the cap — no LLM call, ``rate_limited`` warning.
+    result = await svc.run(_make_txr(), prompt="make it easy")
+    assert result.arrangement_hints is None
+    assert call_counter["n"] == 2, "LLM should not be invoked once the cap is reached"
+    assert any("rate_limited" in w for w in result.quality.warnings)
+
+
+# ---------------------------------------------------------------------------
+# Test 5: Rate limit disabled when cap == 0
+# ---------------------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_rate_limit_disabled_with_zero_cap(monkeypatch):
+    """A zero cap turns the rate limiter off even after many calls."""
+    from backend.services import interpret as interpret_mod
+
+    monkeypatch.setattr(settings, "anthropic_api_key", "sk-test-key")
+    monkeypatch.setattr(settings, "interpret_enabled", True)
+    monkeypatch.setattr(settings, "interpret_max_calls_per_minute", 0)
+    interpret_mod._call_times.clear()
+
+    fake_client = _FakeAnthropic(
+        _FakeResponse([
+            _FakeToolUseBlock("submit_arrangement_hints", {"difficulty": "beginner"}),
+        ])
+    )
+    svc = InterpretService(client=fake_client)
+
+    for _ in range(5):
+        result = await svc.run(_make_txr(), prompt="make it easy")
+        assert result.arrangement_hints is not None

@@ -95,14 +95,32 @@ side-by-side so you can see how the metric surface evolved:
 | `pop_mini_v0__main_5532577_real.json` | v1 (legacy) | Curated audio (pre-Phase-7 manifest) | Reference-free metrics only. Kept for historical comparison. |
 | `pop_mini_v0__main_5532577.json` | v1 (legacy) | Bootstrap (synthetic_from_midi via FluidSynth) | Pre-curation snapshot. Faster to re-run (~35 s) but less faithful to real-pop conditions. |
 
-To regenerate the active baseline after a metric-surface change:
+### Regenerating the active baseline
 
-```
+The `eval-ci.yml` workflow gates on aggregate keys (e.g.
+`mean_tier2_chord_score`, `mean_tier3_playability`) by comparing the
+PR's run against the committed baseline. Two situations need a regen:
+
+1. **Metric surface evolves** — a new tier or key lands in `eval/harness.py`
+   and the committed baseline doesn't carry it. The gate now fails loud
+   ("baseline missing key X") rather than silently skipping, so a stale
+   baseline shows up as a red CI run on the next PR.
+2. **Intentional baseline shift** — a change is *meant* to move metrics
+   (e.g. enabling a new transcriber path). Regenerate so future PRs
+   compare against the new normal.
+
+Run from the repo root on a clean working copy of `main`:
+
+```bash
 python scripts/eval.py bootstrap-baseline eval/pop_mini_v0/ \
-    --baseline-out eval/baselines/pop_mini_v0__main_<sha>.json
+    --baseline-out eval/baselines/pop_mini_v0__main_<short-sha>.json
 ```
 
-Then update `--baseline` in `.github/workflows/eval-ci.yml` and commit.
+Then update the `--baseline` arg in
+[`.github/workflows/eval-ci.yml`](../../.github/workflows/eval-ci.yml)
+to point at the new file and commit both in the same change. The
+workflow itself carries the same recipe in a top-of-file comment for
+discoverability when triaging a red gate.
 
 Subsequent PRs compare their `aggregate.json` against the active baseline
 using the `scripts/eval.py ci` subcommand (cheap PR gate) or

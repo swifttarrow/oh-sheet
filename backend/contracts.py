@@ -22,6 +22,7 @@ from shared.contracts import (
     PianoScore,
     PipelineConfig,
     PipelineVariant,
+    PitchBendPoint,
     QualitySignal,
     RealtimeChordEvent,
     RealtimePedalEvent,

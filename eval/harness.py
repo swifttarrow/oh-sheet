@@ -29,9 +29,11 @@ import-cheap.
 """
 from __future__ import annotations
 
+import contextlib
 import datetime as dt
 import json
 import logging
+import signal
 import statistics
 import subprocess
 import sys
@@ -161,6 +163,43 @@ class SongScore:
 # Per-song orchestration
 # ---------------------------------------------------------------------------
 
+class _SongTimeout(RuntimeError):
+    """Raised when a single song exceeds the configured per-song wall budget."""
+
+
+@contextlib.contextmanager
+def _song_alarm(timeout_sec: int | None):
+    """Per-song wall-clock alarm — POSIX only.
+
+    A whole-eval timeout (CI workflow ``timeout-minutes``) blocks the PR
+    for the full budget when one song hangs in an ML deadlock or network
+    fetch. This wraps the per-song work in ``signal.alarm`` so the next
+    song can still run instead.
+
+    Falls back to a no-op when ``timeout_sec`` is ``None``/``<=0`` or
+    when ``signal.alarm`` is unavailable (Windows, non-main thread).
+    """
+    if not timeout_sec or timeout_sec <= 0 or not hasattr(signal, "SIGALRM"):
+        yield
+        return
+
+    def _on_alarm(signum, frame):  # noqa: ARG001
+        raise _SongTimeout(f"per-song wall-clock budget exceeded ({timeout_sec}s)")
+
+    try:
+        prev_handler = signal.signal(signal.SIGALRM, _on_alarm)
+    except ValueError:
+        # Not running on the main thread — alarms aren't available here.
+        yield
+        return
+    signal.alarm(int(timeout_sec))
+    try:
+        yield
+    finally:
+        signal.alarm(0)
+        signal.signal(signal.SIGALRM, prev_handler)
+
+
 def run_one_song(
     *,
     slug: str,
@@ -172,6 +211,7 @@ def run_one_song(
     title: str | None = None,
     artist: str | None = None,
     genre: str | None = None,
+    song_timeout_sec: int | None = None,
 ) -> SongScore:
     """Score one song against the requested tier selection.
 
@@ -180,6 +220,10 @@ def run_one_song(
     top of the score + engraved MIDI it produces. Returns a
     :class:`SongScore`; per-tier failures populate ``notes`` rather
     than raising — Phase 0's contract.
+
+    ``song_timeout_sec`` is an optional per-song wall-clock budget. When
+    set, a SIGALRM-based timer aborts the song and continues with the
+    next one — keeps a single hung song from blocking the whole CI gate.
     """
     row = SongScore(slug=slug, title=title, artist=artist, genre=genre)
     row.audio_path = (
@@ -190,37 +234,41 @@ def run_one_song(
 
     t0 = time.perf_counter()
     try:
-        from scripts.eval_mini import _run_pipeline  # noqa: PLC0415
-        artifacts = _run_pipeline(audio_path)
-        row.key_label = artifacts.key_label
-        score = artifacts.score
-        midi_bytes = artifacts.midi_bytes
-        key_for_recog = (
-            artifacts.key_label
-            if chord_recognition_key == "auto"
-            else chord_recognition_key
-        )
-
-        if tiers.tier_rf:
-            row.tier_rf = _compute_tier_rf(audio_path, score, midi_bytes, key_for_recog)
-
-        if tiers.tier2:
-            row.tier2 = _compute_tier2(audio_path, midi_bytes, key_for_recog)
-
-        if tiers.tier3:
-            row.tier3 = _compute_tier3(score)
-
-        if tiers.tier4:
-            row.tier4 = _compute_tier4(
-                audio_path, midi_bytes,
-                transcribe_callable=transcribe_callable if tiers.tier4_round_trip else None,
-                enable_clap=tiers.tier4_clap,
-                enable_mert=tiers.tier4_mert,
+        with _song_alarm(song_timeout_sec):
+            from scripts.eval_mini import _run_pipeline  # noqa: PLC0415
+            artifacts = _run_pipeline(audio_path)
+            row.key_label = artifacts.key_label
+            score = artifacts.score
+            midi_bytes = artifacts.midi_bytes
+            key_for_recog = (
+                artifacts.key_label
+                if chord_recognition_key == "auto"
+                else chord_recognition_key
             )
 
-        if tiers.composite_q:
-            row.composite_q = _compute_composite_q(row)
+            if tiers.tier_rf:
+                row.tier_rf = _compute_tier_rf(audio_path, score, midi_bytes, key_for_recog)
 
+            if tiers.tier2:
+                row.tier2 = _compute_tier2(audio_path, midi_bytes, key_for_recog)
+
+            if tiers.tier3:
+                row.tier3 = _compute_tier3(score)
+
+            if tiers.tier4:
+                row.tier4 = _compute_tier4(
+                    audio_path, midi_bytes,
+                    transcribe_callable=transcribe_callable if tiers.tier4_round_trip else None,
+                    enable_clap=tiers.tier4_clap,
+                    enable_mert=tiers.tier4_mert,
+                )
+
+            if tiers.composite_q:
+                row.composite_q = _compute_composite_q(row)
+
+    except _SongTimeout as exc:
+        log.warning("per-song timeout slug=%s: %s", slug, exc)
+        row.error = f"timeout: {exc}"
     except Exception as exc:  # noqa: BLE001 — one bad song must not sink the run
         log.exception("per-song eval failed slug=%s", slug)
         row.error = f"{type(exc).__name__}: {exc}"
@@ -315,6 +363,7 @@ def run_eval_set(
     is_ci: bool = False,
     is_nightly: bool = False,
     label: str | None = None,
+    song_timeout_sec: int | None = None,
 ) -> dict[str, Any]:
     """Orchestrate :func:`run_one_song` over every song in a manifest.
 
@@ -377,6 +426,7 @@ def run_eval_set(
             title=song.get("title"),
             artist=song.get("artist"),
             genre=song.get("genre"),
+            song_timeout_sec=song_timeout_sec,
         )
         rows.append(row)
         if row.error:

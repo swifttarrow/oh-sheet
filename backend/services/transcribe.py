@@ -80,6 +80,18 @@ from backend.storage.base import BlobStore
 
 log = logging.getLogger(__name__)
 
+# Mirrors the ``PipelineVariant`` Literal in shared.contracts. Kept as a
+# plain set here so a contract addition (new variant) only needs to update
+# the Literal — the dispatcher then logs a warning when an unrecognised
+# value flows in via the wire-format ``variant_hint`` field.
+_KNOWN_VARIANTS: frozenset[str] = frozenset({
+    "full",
+    "audio_upload",
+    "midi_upload",
+    "sheet_only",
+    "pop_cover",
+})
+
 
 def _run_basic_pitch_sync(
     audio_path: Path,
@@ -399,6 +411,15 @@ class TranscribeService:
             payload.audio.uri if payload.audio else None,
             len(payload.audio_stems),
         )
+        # Surface API-layer typos: ``variant_hint`` is wire-string-typed
+        # (str | None) so a misspelt value silently falls through to the
+        # default (faithful) routing path. Log loudly so the bad value is
+        # discoverable in production logs without changing behaviour.
+        if variant is not None and variant not in _KNOWN_VARIANTS:
+            log.warning(
+                "transcribe: unknown variant_hint=%r — falling through to default routing",
+                variant,
+            )
         if payload.audio is None:
             raise TranscriptionFailure("no audio in InputBundle")
 
