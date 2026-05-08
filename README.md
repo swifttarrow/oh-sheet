@@ -193,6 +193,46 @@ docker compose up -d
 
 See `.github/workflows/deploy.yml` and `docker-compose.yml` for deployment details.
 
+### External engraver service (`oh-sheet-ml-pipeline`)
+
+The `engrave` stage for `audio_upload` and `midi_upload` jobs is **not**
+performed in this repo. The orchestrator POSTs the humanized MIDI to an
+external HTTP service (`POST {OHSHEET_ENGRAVER_SERVICE_URL}/engrave`,
+MIDI bytes in → MusicXML bytes out) implemented by the
+`oh-sheet-ml-pipeline` project. See `backend/services/ml_engraver_client.py`
+for the wire contract and `backend/config.py` for the settings.
+
+**There is no local fallback.** If the service is unreachable, returns
+a non-2xx, or sends back a stub-sized response (< 500 bytes), the job
+fails with `MLEngraverError`. The retry loop tries 3 attempts with
+exponential backoff for transient errors only — it is the same service,
+not a fallback path.
+
+**Self-hosting status (as of this writing):** `oh-sheet-ml-pipeline`
+is a hosted-only dependency — no public source repo, no published
+Docker image. External contributors who clone Oh Sheet cannot run the
+full audio/MIDI pipeline end-to-end yet. See
+[issue #105](https://github.com/Oh-Sheet-Team/oh-sheet/issues/105) for
+the documentation gap and
+[issue #107](https://github.com/Oh-Sheet-Team/oh-sheet/issues/107) for
+the publishing RFC.
+
+| Job variant     | Reaches ML engraver? | Self-hostable today? |
+| --------------- | -------------------- | -------------------- |
+| `audio_upload`  | Yes                  | No                   |
+| `midi_upload`   | Yes                  | No                   |
+| `title_lookup`  | Only if TuneChat fails (falls through to ML engraver) | Partial — works fully when `OHSHEET_TUNECHAT_ENABLED=true` and TuneChat resolves |
+| `full` / others | Yes                  | No                   |
+
+Until #107 ships, the practical self-hosting options are: (a) point
+`OHSHEET_ENGRAVER_SERVICE_URL` at any service that honours the contract
+above, or (b) restrict usage to TuneChat-resolved title-lookup jobs.
+
+`docker-compose.prod.yml` requires `OHSHEET_ENGRAVER_SERVICE_URL` to be
+set (`${VAR:?}` syntax — compose refuses to start without it).
+`docker-compose.yml` (dev) does not pass this through, so a local
+`make backend` defaults to `http://localhost:8080`.
+
 `make help` lists every target. Useful overrides:
 
 ```bash

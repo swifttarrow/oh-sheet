@@ -98,3 +98,50 @@ Both VMs share the same firewall tag (`oh-sheet-vm`) so the existing rules on po
 | Prod        | `oh-sheet.duckdns.org`    | DuckDNS A record → `104.196.254.221` |
 
 Caddy auto-provisions Let's Encrypt certificates on first deploy for whichever hostname the `DOMAIN` env var resolves to. If you later add a new environment or rename a domain, just update the env-scoped `DOMAIN` variable — no Caddyfile change required.
+
+## External engraver service (`oh-sheet-ml-pipeline`)
+
+The orchestrator container does **not** generate MusicXML itself. The
+engrave stage POSTs the humanized MIDI to an external HTTP service —
+`oh-sheet-ml-pipeline` — and surfaces the response as the MusicXML
+artifact. See `backend/services/ml_engraver_client.py` for the wire
+contract and retry policy.
+
+### Required configuration
+
+| Var | Required? | Default | Notes |
+|-----|-----------|---------|-------|
+| `OHSHEET_ENGRAVER_SERVICE_URL` | **Yes** in prod (compose refuses to start without it via `${VAR:?}`) | `http://localhost:8080` (dev only) | Base URL; the client appends `/engrave`. |
+| `OHSHEET_ENGRAVER_SERVICE_TIMEOUT_SEC` | No | `60` | Per-attempt httpx timeout. |
+
+The orchestrator retries transient failures (timeouts, 5xx, transport
+errors) up to 3 times with exponential backoff. **There is no local
+fallback** — a sustained outage fails every `audio_upload` /
+`midi_upload` job. `title_lookup` jobs are first delegated to TuneChat
+when `OHSHEET_TUNECHAT_ENABLED=true`; if TuneChat fails or is disabled
+they fall through to the ML engraver and inherit the same dependency.
+
+### Self-hosting status
+
+`oh-sheet-ml-pipeline` is currently a hosted-only dependency. No public
+source repo, no published Docker image. This is a known gap tracked in:
+
+- [#105 — document engraver self-hosting story](https://github.com/Oh-Sheet-Team/oh-sheet/issues/105) (this section addresses that)
+- [#107 — RFC: how to publish `oh-sheet-ml-pipeline`](https://github.com/Oh-Sheet-Team/oh-sheet/issues/107) (open question; see `docs/rfc-ml-pipeline-publishing.md` if/when it lands)
+
+Operators standing up Oh Sheet outside the team's GCP project today
+have to either point `OHSHEET_ENGRAVER_SERVICE_URL` at a service that
+honours the same contract (`POST /engrave`, raw MIDI in → MusicXML
+bytes out, payload > 500 bytes) or restrict use to TuneChat-resolved
+title-lookup jobs.
+
+### Operational checks
+
+- The QA/prod orchestrator logs every call as `ml_engraver: POST <url>
+  bytes_in=<n> timeout=<s>s`. A burst of `MLEngraverTimeout` /
+  `MLEngraverUpstreamError` lines is the canonical "engraver is
+  degraded" signal.
+- Stub-sized responses (< 500 bytes) raise `MLEngraverStub` rather than
+  silently returning a blank score. If you see these, the engraver
+  service is up but running its in-tree placeholder model rather than
+  the real weights — re-check the deploy on the engraver side.
