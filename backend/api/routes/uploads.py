@@ -45,6 +45,11 @@ async def upload_audio(
             status_code=415,
             detail=f"Unsupported audio format: {ext!r}. Allowed: {sorted(AUDIO_FORMATS)}",
         )
+    if file.filename and len(file.filename) > 255:
+        raise HTTPException(
+            status_code=400,
+            detail="filename too long (max 255)",
+        )
 
     data = await file.read()
     digest = hashlib.sha256(data).hexdigest()
@@ -72,6 +77,11 @@ async def upload_midi(
         raise HTTPException(
             status_code=415,
             detail=f"Unsupported MIDI format: {ext!r}. Allowed: {sorted(MIDI_FORMATS)}",
+        )
+    if file.filename and len(file.filename) > 255:
+        raise HTTPException(
+            status_code=400,
+            detail="filename too long (max 255)",
         )
 
     data = await file.read()

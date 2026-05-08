@@ -53,8 +53,13 @@ def run(job_id: str, payload_uri: str) -> str:
     blob = LocalBlobStore(settings.blob_root)
     envelope = blob.get_json(payload_uri)
 
-    txr = TranscriptionResult.model_validate(envelope["txr"])
-    prompt: str = envelope["prompt"]
+    raw_txr = envelope.get("txr")
+    if raw_txr is None:
+        raise ValueError("interpret envelope missing required field 'txr'")
+    prompt = envelope.get("prompt")
+    if prompt is None:
+        raise ValueError("interpret envelope missing required field 'prompt'")
+    txr = TranscriptionResult.model_validate(raw_txr)
     title_hint: str | None = envelope.get("title_hint")
     artist_hint: str | None = envelope.get("artist_hint")
 

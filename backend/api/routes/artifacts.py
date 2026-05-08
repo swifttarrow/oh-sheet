@@ -166,9 +166,12 @@ def download_artifact(
     try:
         data = blob.get_bytes(uri)
     except (FileNotFoundError, ValueError) as exc:
+        # Don't leak filesystem paths or internal error types to clients —
+        # log the full exception server-side and return a generic message.
+        log.exception("artifacts: failed to read %s/%s from blob store", job_id, kind)
         raise HTTPException(
             status_code=500,
-            detail=f"Failed to read artifact: {exc}",
+            detail="Failed to read artifact",
         ) from exc
 
     return Response(
