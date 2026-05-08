@@ -71,9 +71,12 @@ class _ResultScreenState extends State<ResultScreen> {
     });
   }
 
-  void _download(String kind) {
+  Future<void> _download(String kind) async {
     final url = widget.api.artifactUrl(widget.job.jobId, kind);
-    launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
+    final uri = Uri.parse(url);
+    if (await canLaunchUrl(uri)) {
+      await launchUrl(uri, mode: LaunchMode.externalApplication);
+    }
   }
 
   @override
@@ -196,10 +199,12 @@ class _ResultScreenState extends State<ResultScreen> {
         if (_sourceUrl case final url?) ...[
           const SizedBox(height: 8),
           GestureDetector(
-            onTap: () => launchUrl(
-              Uri.parse(url),
-              mode: LaunchMode.externalApplication,
-            ),
+            onTap: () async {
+              final uri = Uri.parse(url);
+              if (await canLaunchUrl(uri)) {
+                await launchUrl(uri, mode: LaunchMode.externalApplication);
+              }
+            },
             child: const Row(
               mainAxisSize: MainAxisSize.min,
               children: [

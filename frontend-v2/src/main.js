@@ -61,11 +61,13 @@ let unsubscribeWs = null; // close the previous job's WS on each re-submit
 // (e.g. the "Turn any song..." tagline is irrelevant once the job's
 // done — target `body[data-phase="complete"]` in style.css to hide it).
 store.onChange((phase) => {
-  card.classList.add("morph");
-  setTimeout(() => card.classList.remove("morph"), 450);
+  if (card) {
+    card.classList.add("morph");
+    setTimeout(() => card.classList.remove("morph"), 450);
+  }
   swapMascot(phase);
   document.body.setAttribute("data-phase", phase.name);
-  renderPhase(card, phase, handlers);
+  if (card) renderPhase(card, phase, handlers);
 });
 
 // ── Handlers bridge views → api ─────────────────────────────────
