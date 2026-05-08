@@ -126,6 +126,8 @@ def _basic_pitch_single_pass(
             onset_threshold=onset_threshold if onset_threshold is not None else settings.basic_pitch_onset_threshold,
             frame_threshold=frame_threshold if frame_threshold is not None else settings.basic_pitch_frame_threshold,
             minimum_note_length=settings.basic_pitch_minimum_note_length_ms,
+            minimum_frequency=settings.minimum_frequency_hz,
+            multiple_pitch_bends=settings.multiple_pitch_bends,
         )
     finally:
         if preprocessed_tempfile is not None:

@@ -7,7 +7,6 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from shared.contracts import (
-    SCHEMA_VERSION,
     HarmonicAnalysis,
     InstrumentRole,
     MidiTrack,

@@ -1,0 +1,28 @@
+{
+  "schema_version": 1,
+  "eval_set": "pop_eval_v1",
+  "eval_set_version": "1.0.0-draft",
+  "manifest_relpath": "eval/pop_eval_v1/manifest.yaml",
+  "run_id": "phase3_init_pre_delivery",
+  "git_sha": "55325774cde4225f3c42c08973aca0d20c53b27a",
+  "config": {
+    "target_duration_sec": 0,
+    "chord_recognition_key": "auto",
+    "side": "tune"
+  },
+  "delivery_status": {
+    "n_total": 30,
+    "n_delivered": 0,
+    "n_fma_redistributable_total": 10,
+    "n_fma_redistributable_delivered": 0,
+    "n_commercial_sync_internal_total": 20,
+    "n_commercial_sync_internal_delivered": 0,
+    "notes": "Placeholder baseline. Phase 3 manifest scaffolding shipped; transcriber contract has not yet delivered any songs. Re-snapshot this file once at least one tune-side song is delivered. Per the plan (docs/research/transcription-improvement-implementation-plan.md §Phase 3), the first real-pop F1 number is the milestone — the tune set will be re-baselined incrementally as the contract delivers."
+  },
+  "songs": [],
+  "aggregate": {
+    "n_songs_total": 0,
+    "n_songs_scored": 0,
+    "n_songs_errored": 0
+  }
+}

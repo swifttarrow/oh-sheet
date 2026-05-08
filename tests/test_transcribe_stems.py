@@ -48,7 +48,7 @@ from backend.services import transcribe_audio as audio_mod  # noqa: E402
 from backend.services import transcribe_inference as inference_mod  # noqa: E402
 from backend.services import transcribe_pipeline_single as single_mod  # noqa: E402
 from backend.services import transcribe_pipeline_stems as stems_mod  # noqa: E402
-from backend.services.audio_timing import tempo_map_from_audio_path  # noqa: E402,F401
+from backend.services.audio_timing import tempo_map_and_downbeats_from_audio_path  # noqa: E402,F401
 from backend.services.chord_recognition import recognize_chords  # noqa: E402,F401
 from backend.services.melody_extraction import extract_melody  # noqa: E402,F401
 from backend.services.stem_separation import SeparatedStems, StemSeparationStats  # noqa: E402
@@ -124,7 +124,7 @@ def stub_audio_helpers(monkeypatch):
     doesn't clutter the log.
     """
     monkeypatch.setattr(
-        stems_mod, "tempo_map_from_audio_path", lambda _path, **_kw: None
+        stems_mod, "tempo_map_and_downbeats_from_audio_path", lambda _path, **_kw: None
     )
     monkeypatch.setattr(
         audio_mod, "_audio_duration_sec", lambda _path: None
@@ -828,7 +828,8 @@ def test_run_with_stems_blob_midi_inherits_audio_tempo_and_4_4(
         TempoMapEntry(time_sec=0.5, beat=1.0, bpm=123.5),
     ]
     monkeypatch.setattr(
-        stems_mod, "tempo_map_from_audio_path", lambda _path, **_kw: fake_tempo_map,
+        stems_mod, "tempo_map_and_downbeats_from_audio_path",
+        lambda _path, **_kw: (fake_tempo_map, []),
     )
 
     from backend.config import settings
@@ -941,7 +942,7 @@ def test_run_without_stems_falls_back_to_midi_data_when_cleaned_events_empty(
     # tempo here, so shut them all off to keep the test focused on the
     # blob-MIDI fallback path.
     monkeypatch.setattr(
-        single_mod, "tempo_map_from_audio_path", lambda _path, **_kw: None
+        single_mod, "tempo_map_and_downbeats_from_audio_path", lambda _path, **_kw: None
     )
     monkeypatch.setattr(
         audio_mod, "_audio_duration_sec", lambda _path: None

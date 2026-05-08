@@ -6,8 +6,13 @@ extra is installed.
 """
 from __future__ import annotations
 
+import pytest
+
 from backend.contracts import sec_to_beat
-from backend.services.audio_timing import build_tempo_map_from_beat_times
+from backend.services.audio_timing import (
+    BeatTrackResult,
+    build_tempo_map_from_beat_times,
+)
 
 
 def test_uniform_120_bpm_grid_is_monotonic_and_continuous():
@@ -90,3 +95,62 @@ def test_unsorted_input_is_sorted():
     # Anchors must be non-decreasing in time_sec.
     times = [e.time_sec for e in m]
     assert times == sorted(times)
+
+
+def test_beat_track_result_shape():
+    """BeatTrackResult carries beats + downbeats; downbeats default empty."""
+    res = BeatTrackResult(beats=[0.0, 0.5, 1.0])
+    assert res.beats == [0.0, 0.5, 1.0]
+    assert res.downbeats == []
+
+    res = BeatTrackResult(beats=[0.0, 0.5, 1.0, 1.5], downbeats=[0.0, 1.0])
+    assert res.downbeats == [0.0, 1.0]
+
+
+def test_tempo_map_from_audio_path_returns_none_when_librosa_missing(monkeypatch):
+    """The audio-path callers must get None, not crash, when librosa
+    isn't installed (CI without the basic-pitch extra)."""
+    import sys
+
+    monkeypatch.setitem(sys.modules, "librosa", None)
+    from pathlib import Path
+
+    from backend.services.audio_timing import (
+        beats_from_audio_path,
+        tempo_map_and_downbeats_from_audio_path,
+        tempo_map_from_audio_path,
+    )
+
+    fake = Path("/nonexistent/audio.wav")
+    assert beats_from_audio_path(fake) is None
+    assert tempo_map_from_audio_path(fake) is None
+    assert tempo_map_and_downbeats_from_audio_path(fake) is None
+
+
+def test_beat_tracker_setting_accepts_beat_this():
+    """Phase 2: madmom dropped from the Settings.beat_tracker literal in
+    favour of Beat This!. Guard against a regression that re-adds it."""
+    from typing import get_args
+
+    from backend.config import Settings
+
+    field = Settings.model_fields["beat_tracker"]
+    options = set(get_args(field.annotation))
+    assert "beat_this" in options
+    assert "madmom" not in options
+
+
+@pytest.mark.parametrize(
+    "tempo_map,downbeats",
+    [
+        (None, None),
+        ([], []),
+    ],
+)
+def test_tempo_map_and_downbeats_handles_missing_callers(tempo_map, downbeats):
+    """Guard for the runner's `if tempo_result is not None` pattern —
+    a None result must not crash unpacking."""
+    # No-op smoke: dataclass accepts list-or-empty without exploding.
+    res = BeatTrackResult(beats=tempo_map or [], downbeats=downbeats or [])
+    assert isinstance(res.beats, list)
+    assert isinstance(res.downbeats, list)

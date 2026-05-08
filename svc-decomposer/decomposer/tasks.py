@@ -8,7 +8,6 @@ service — no backend import needed.
 import os
 from pathlib import Path
 
-from decomposer.celery_app import celery_app
 from shared.contracts import (
     SCHEMA_VERSION,
     HarmonicAnalysis,
@@ -21,6 +20,8 @@ from shared.contracts import (
     TranscriptionResult,
 )
 from shared.storage.local import LocalBlobStore
+
+from decomposer.celery_app import celery_app
 
 _BLOB_ROOT = Path(os.environ.get("OHSHEET_BLOB_ROOT", "./blob"))
 

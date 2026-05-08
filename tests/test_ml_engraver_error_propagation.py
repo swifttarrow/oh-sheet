@@ -39,7 +39,9 @@ def runner():
 @pytest.mark.asyncio
 async def test_ml_engraver_error_fails_audio_upload_job(runner, monkeypatch):
     """An MLEngraverError during audio_upload engrave must propagate
-    rather than degrade to a local fallback (there is no fallback)."""
+    when the remote HTTP backend is the only configured engrave route."""
+    monkeypatch.setattr(settings, "engrave_backend", "remote_http")
+
     async def raising(midi_bytes: bytes) -> bytes:
         raise ml_engraver_client.MLEngraverError("simulated outage")
 
@@ -67,7 +69,9 @@ async def test_ml_engraver_error_fails_audio_upload_job(runner, monkeypatch):
 
 @pytest.mark.asyncio
 async def test_ml_engraver_error_fails_midi_upload_job(runner, monkeypatch):
-    """Same contract for midi_upload — no fallback, error propagates."""
+    """Same contract for midi_upload under the remote_http backend."""
+    monkeypatch.setattr(settings, "engrave_backend", "remote_http")
+
     async def raising(midi_bytes: bytes) -> bytes:
         raise ml_engraver_client.MLEngraverError("simulated 503")
 

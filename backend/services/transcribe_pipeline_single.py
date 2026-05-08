@@ -24,7 +24,7 @@ from backend.services import transcribe_audio as _audio_mod
 from backend.services import transcribe_inference as _bp_mod
 from backend.services import transcribe_midi as _midi_mod
 from backend.services import transcribe_result as _result_mod
-from backend.services.audio_timing import tempo_map_from_audio_path
+from backend.services.audio_timing import tempo_map_and_downbeats_from_audio_path
 from backend.services.bass_extraction import (
     BassExtractionStats,
     extract_bass,
@@ -170,6 +170,7 @@ def _run_without_stems(
     # concurrently with onset/duration refinement.
 
     audio_tempo_map = None
+    audio_downbeats: list[float] = []
     key_label = "C:major"
     time_signature: tuple[int, int] = (4, 4)
     key_stats = None
@@ -177,8 +178,10 @@ def _run_without_stems(
     chord_labels: list[RealtimeChordEvent] = []
     chord_stats: ChordRecognitionStats | None = None
 
-    def _run_tempo() -> list | None:
-        return tempo_map_from_audio_path(audio_path, preloaded_audio=preloaded_audio)
+    def _run_tempo() -> tuple[list, list[float]] | None:
+        return tempo_map_and_downbeats_from_audio_path(
+            audio_path, preloaded_audio=preloaded_audio,
+        )
 
     def _run_key_meter() -> tuple:
         return _audio_mod._maybe_analyze_key_and_meter(
@@ -268,7 +271,9 @@ def _run_without_stems(
                     offset += role_len
 
         # ── Collect audio-analysis results ───────────────────────────
-        audio_tempo_map = fut_tempo.result()
+        tempo_result = fut_tempo.result()
+        if tempo_result is not None:
+            audio_tempo_map, audio_downbeats = tempo_result
         key_label, time_signature, key_stats, meter_stats = fut_key.result()
 
         # Chord recognition needs key_label, so submit after fut_key.
@@ -307,6 +312,7 @@ def _run_without_stems(
         events_by_role,
         model_output,
         tempo_map_override=audio_tempo_map,
+        downbeats_override=audio_downbeats,
         key_label=key_label,
         time_signature=time_signature,
         key_stats=key_stats,

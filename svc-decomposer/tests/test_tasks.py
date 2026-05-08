@@ -11,7 +11,6 @@ from shared.contracts import (
     InputBundle,
     InputMetadata,
     RemoteAudioFile,
-    TempoMapEntry,
 )
 from shared.storage.local import LocalBlobStore
 

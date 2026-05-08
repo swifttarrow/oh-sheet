@@ -146,6 +146,7 @@ def _condense_sync(payload: TranscriptionResult, difficulty: Difficulty) -> Pian
                 difficulty=difficulty,
                 sections=[_section_to_score_section(s, tempo_map) for s in analysis.sections],
                 chord_symbols=[_chord_to_score_chord(c, tempo_map) for c in analysis.chords],
+                downbeats=list(analysis.downbeats),
             ),
         )
 
@@ -190,6 +191,7 @@ def _condense_sync(payload: TranscriptionResult, difficulty: Difficulty) -> Pian
             difficulty=difficulty,
             sections=[_section_to_score_section(s, tempo_map) for s in analysis.sections],
             chord_symbols=[_chord_to_score_chord(c, tempo_map) for c in analysis.chords],
+            downbeats=list(analysis.downbeats),
         ),
     )
 

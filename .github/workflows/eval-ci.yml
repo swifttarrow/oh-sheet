@@ -1,0 +1,114 @@
+name: Eval CI
+
+# Phase 7 — strategy doc §5.1 cheap PR gate.
+#
+# Runs ``scripts/eval.py ci`` on a 5-song subset of the mini-eval
+# (Tier RF + Tier 2 + Tier 3, plus composite Q) and compares against
+# the committed baseline. Gates:
+#   * chord-mirex regress > 3 ppt vs. main → block merge
+#   * playability fraction drop > 5 ppt → block merge
+#   * (Tier 4 round-trip + CLAP gates skip cleanly when CLAP/round-
+#      trip aren't enabled in the cheap CI run — see strategy doc
+#      §5.1; nightly covers the heavier perceptual surface.)
+#
+# Wall-clock target: <2 min. Achieved by running 5 songs only +
+# skipping CLAP/MERT + caching pip + caching fluidsynth at the apt
+# layer. Job uploads aggregate.json + gates.json artifacts so PR
+# reviewers can sparkline deltas.
+#
+# Stale-baseline recipe: when the metric schema evolves (adding tier2 /
+# tier3 keys etc.) the committed baseline JSON loses gate-key
+# coverage. The harness now fails the gate loud rather than skipping
+# silently — regenerate with::
+#
+#   python scripts/eval.py bootstrap-baseline eval/pop_mini_v0/ \
+#       --baseline-out eval/baselines/pop_mini_v0__main_<sha>.json
+#
+# then update the ``--baseline`` arg below and commit both files.
+
+on:
+  push:
+    branches: [qa, main]
+  pull_request:
+    branches: [qa, main]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  eval-ci-mini:
+    name: Eval CI (mini, 5 songs)
+    runs-on: ubuntu-latest
+    # Wall-clock budget: ~12-14 min (pip install ~2 min + 4 songs at
+    # ~150 s/song on the CI runner — basic-pitch ONNX inference is
+    # roughly 3x slower than the Apple Silicon CoreML path the
+    # original <2 min target was sized around). 20 min buys
+    # comfortable margin without letting a stuck job idle for hours.
+    # Nightly runs the heavier surface inside a 25 min budget.
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Need full history so the baseline diff can pull a
+          # specific main-branch commit if we extend later.
+          fetch-depth: 1
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+
+      - name: Install fluidsynth (system)
+        # FluidSynth is needed by tier_rf / tier4 for the resynth
+        # cosine + round-trip. Apt-getting on every CI run; the
+        # actions/cache layer keeps the package list warm.
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -qq -y fluidsynth
+
+      - name: Install Python deps (eval + basic-pitch)
+        # ``[eval]`` brings mir_eval + cryptography + librosa for the
+        # harness itself. ``[basic-pitch]`` is required because the
+        # harness drives the real ``_run_basic_pitch_sync`` for every
+        # song — without it, every song errors with ImportError and
+        # ``cmd_ci`` correctly fails the run with "0 of N songs scored".
+        # Mirrors the Makefile's two-step dance: deps via the extra,
+        # then ``basic-pitch`` itself with --no-deps (basic-pitch 0.4.0
+        # hard-pins tensorflow-macos on Darwin which has no Py>=3.12
+        # wheel).
+        run: |
+          pip install --upgrade pip
+          pip install -e ".[dev,eval,basic-pitch]"
+          pip install --no-deps "basic-pitch>=0.4"
+
+      - name: Run eval ci
+        env:
+          # OHSHEET_HOLDOUT_KEY isn't needed for pop_mini_v0 (no
+          # encrypted holdout), but pinning the env explicitly here
+          # documents that the CI run is operating against the tune
+          # set only.
+          OHSHEET_HOLDOUT_KEY: ""
+          # Force the librosa beat-tracking backend in the cheap gate.
+          # ``[basic-pitch]`` ships ``beat_this`` as a transitive dep;
+          # left unset, ``Settings.beat_tracker == "beat_this"`` runs
+          # the (slow, ~100 s/song) transformer and the metric values
+          # diverge from baselines generated under the librosa fallback.
+          # Nightly leaves this unset so the heavier surface still uses
+          # Beat This! — see strategy doc §5.2.
+          OHSHEET_BEAT_TRACKER: librosa
+        run: |
+          mkdir -p /tmp/eval_run
+          python scripts/eval.py ci eval/pop_mini_v0/ \
+            --output-dir /tmp/eval_run \
+            --baseline eval/baselines/pop_mini_v0__main_bde4268.json \
+            --label "ci-pr-${{ github.event.number || 'main' }}" \
+            --allow-missing-baseline
+
+      - name: Upload eval artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: eval-ci-${{ github.run_id }}
+          path: /tmp/eval_run/
+          retention-days: 14

@@ -1,0 +1,263 @@
+{
+  "$schema": "https://raw.githubusercontent.com/grafana/grafana/main/public/app/plugins/datasource/grafana/dashboard.schema.json",
+  "title": "Oh Sheet — Eval (Phase 7)",
+  "uid": "oh-sheet-eval",
+  "version": 1,
+  "schemaVersion": 39,
+  "editable": true,
+  "graphTooltip": 1,
+  "tags": ["oh-sheet", "eval", "phase7"],
+  "timezone": "utc",
+  "time": {
+    "from": "now-7d",
+    "to": "now"
+  },
+  "refresh": "5m",
+  "templating": {
+    "list": [
+      {
+        "name": "datasource",
+        "type": "datasource",
+        "query": "postgres",
+        "current": {
+          "selected": false,
+          "text": "Postgres (eval)",
+          "value": "postgres-eval"
+        },
+        "label": "Postgres datasource",
+        "description": "Datasource pointing at the OHSHEET_EVAL_TELEMETRY_DSN database."
+      },
+      {
+        "name": "q_version",
+        "type": "query",
+        "datasource": {
+          "type": "postgres",
+          "uid": "$datasource"
+        },
+        "query": "SELECT DISTINCT q_version AS __value FROM eval_production_quality_scores ORDER BY q_version DESC",
+        "current": {
+          "selected": false,
+          "text": "Q_v0.1_phase7",
+          "value": "Q_v0.1_phase7"
+        },
+        "label": "Q version",
+        "refresh": 1,
+        "includeAll": false,
+        "multi": false
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1,
+      "title": "Production composite-Q (per-job, last 7d)",
+      "type": "timeseries",
+      "datasource": {
+        "type": "postgres",
+        "uid": "$datasource"
+      },
+      "description": "Per-job composite quality score from backend.eval.telemetry. Strategy doc §8.2.",
+      "gridPos": {"h": 9, "w": 12, "x": 0, "y": 0},
+      "targets": [
+        {
+          "refId": "A",
+          "rawSql": "SELECT created_at AS time, composite_quality_score AS value, 'composite_q' AS metric FROM eval_production_quality_scores WHERE $__timeFilter(created_at) AND q_version = '$q_version' ORDER BY created_at",
+          "format": "time_series"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "min": 0,
+          "max": 1,
+          "unit": "none",
+          "color": {"mode": "thresholds"},
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {"color": "red",   "value": 0},
+              {"color": "orange","value": 0.55},
+              {"color": "green", "value": 0.75}
+            ]
+          }
+        }
+      },
+      "options": {
+        "legend": {"displayMode": "list", "placement": "bottom"},
+        "tooltip": {"mode": "single"}
+      }
+    },
+    {
+      "id": 2,
+      "title": "Production composite-Q distribution (histogram)",
+      "type": "histogram",
+      "datasource": {
+        "type": "postgres",
+        "uid": "$datasource"
+      },
+      "description": "Distribution of composite_q over the visible time window. Look for left-skew or bimodality.",
+      "gridPos": {"h": 9, "w": 12, "x": 12, "y": 0},
+      "targets": [
+        {
+          "refId": "A",
+          "rawSql": "SELECT composite_quality_score FROM eval_production_quality_scores WHERE $__timeFilter(created_at) AND q_version = '$q_version'",
+          "format": "table"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "min": 0,
+          "max": 1,
+          "unit": "none"
+        }
+      },
+      "options": {
+        "bucketSize": 0.05,
+        "combine": false
+      }
+    },
+    {
+      "id": 3,
+      "title": "Tier 3 — playability fraction (mean per hour)",
+      "type": "timeseries",
+      "datasource": {
+        "type": "postgres",
+        "uid": "$datasource"
+      },
+      "description": "Hourly mean of tier3_playability_fraction. Strategy doc §2.3 — fraction of chords with span ≤14 st AND ≤5 notes.",
+      "gridPos": {"h": 8, "w": 8, "x": 0, "y": 9},
+      "targets": [
+        {
+          "refId": "A",
+          "rawSql": "SELECT date_trunc('hour', created_at) AS time, AVG(tier3_playability_fraction) AS value, 'playability' AS metric FROM eval_production_quality_scores WHERE $__timeFilter(created_at) AND tier3_playability_fraction IS NOT NULL GROUP BY 1 ORDER BY 1",
+          "format": "time_series"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {"min": 0, "max": 1, "unit": "percentunit"}
+      }
+    },
+    {
+      "id": 4,
+      "title": "Tier 3 — voice-leading smoothness (mean per hour)",
+      "type": "timeseries",
+      "datasource": {
+        "type": "postgres",
+        "uid": "$datasource"
+      },
+      "description": "Hourly mean of tier3_voice_leading_smoothness. 1.0 = static voicing; 0.0 = octave jumps every chord. Strategy doc §2.3.",
+      "gridPos": {"h": 8, "w": 8, "x": 8, "y": 9},
+      "targets": [
+        {
+          "refId": "A",
+          "rawSql": "SELECT date_trunc('hour', created_at) AS time, AVG(tier3_voice_leading_smoothness) AS value, 'voice_leading' AS metric FROM eval_production_quality_scores WHERE $__timeFilter(created_at) AND tier3_voice_leading_smoothness IS NOT NULL GROUP BY 1 ORDER BY 1",
+          "format": "time_series"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {"min": 0, "max": 1, "unit": "percentunit"}
+      }
+    },
+    {
+      "id": 5,
+      "title": "Tier 3 — sight-readability (mean per hour)",
+      "type": "timeseries",
+      "datasource": {
+        "type": "postgres",
+        "uid": "$datasource"
+      },
+      "description": "Hourly mean of tier3_sight_readability — composite heuristic over playability + vleading + warning density. Strategy doc §2.3, RubricNet stand-in.",
+      "gridPos": {"h": 8, "w": 8, "x": 16, "y": 9},
+      "targets": [
+        {
+          "refId": "A",
+          "rawSql": "SELECT date_trunc('hour', created_at) AS time, AVG(tier3_sight_readability) AS value, 'sight_readability' AS metric FROM eval_production_quality_scores WHERE $__timeFilter(created_at) AND tier3_sight_readability IS NOT NULL GROUP BY 1 ORDER BY 1",
+          "format": "time_series"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {"min": 0, "max": 1, "unit": "percentunit"}
+      }
+    },
+    {
+      "id": 6,
+      "title": "Tier 2 — chord-symbol presence rate (per hour)",
+      "type": "timeseries",
+      "datasource": {
+        "type": "postgres",
+        "uid": "$datasource"
+      },
+      "description": "Fraction of jobs that emitted ≥1 chord symbol. Drops here mean Phase 2's chord-symbol plumbing regressed. Strategy doc §2.2.",
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 17},
+      "targets": [
+        {
+          "refId": "A",
+          "rawSql": "SELECT date_trunc('hour', created_at) AS time, AVG(CASE WHEN tier2_chord_symbol_count > 0 THEN 1.0 ELSE 0.0 END) AS value, 'chord_symbol_rate' AS metric FROM eval_production_quality_scores WHERE $__timeFilter(created_at) GROUP BY 1 ORDER BY 1",
+          "format": "time_series"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {"min": 0, "max": 1, "unit": "percentunit"}
+      }
+    },
+    {
+      "id": 7,
+      "title": "Tier 3 — engraving warnings per job (mean)",
+      "type": "timeseries",
+      "datasource": {
+        "type": "postgres",
+        "uid": "$datasource"
+      },
+      "description": "Hourly mean count of engraving warnings (ledger-line excess, voice crossing, hand crossing). Higher = scarier scores.",
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 17},
+      "targets": [
+        {
+          "refId": "A",
+          "rawSql": "SELECT date_trunc('hour', created_at) AS time, AVG(tier3_engraving_warning_count) AS value, 'engraving_warnings' AS metric FROM eval_production_quality_scores WHERE $__timeFilter(created_at) AND tier3_engraving_warning_count IS NOT NULL GROUP BY 1 ORDER BY 1",
+          "format": "time_series"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {"min": 0, "unit": "short"}
+      }
+    },
+    {
+      "id": 8,
+      "title": "Engrave route mix (per day)",
+      "type": "barchart",
+      "datasource": {
+        "type": "postgres",
+        "uid": "$datasource"
+      },
+      "description": "Local vs. remote_http vs. remote_http_fallback split, per day.",
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 25},
+      "targets": [
+        {
+          "refId": "A",
+          "rawSql": "SELECT date_trunc('day', created_at) AS time, engrave_route AS metric, COUNT(*) AS value FROM eval_production_quality_scores WHERE $__timeFilter(created_at) AND engrave_route IS NOT NULL GROUP BY 1, 2 ORDER BY 1",
+          "format": "time_series"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {"unit": "short"}
+      }
+    },
+    {
+      "id": 9,
+      "title": "Recent low-quality jobs (Q < 0.55)",
+      "type": "table",
+      "datasource": {
+        "type": "postgres",
+        "uid": "$datasource"
+      },
+      "description": "Bottom-20 by composite_q in the visible window. Click into a job_id to debug.",
+      "gridPos": {"h": 12, "w": 12, "x": 12, "y": 25},
+      "targets": [
+        {
+          "refId": "A",
+          "rawSql": "SELECT created_at, job_id, title, composite_quality_score, tier3_playability_fraction, tier2_chord_symbol_count, engrave_route FROM eval_production_quality_scores WHERE $__timeFilter(created_at) AND composite_quality_score < 0.55 ORDER BY created_at DESC LIMIT 20",
+          "format": "table"
+        }
+      ]
+    }
+  ]
+}

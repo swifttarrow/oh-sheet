@@ -24,11 +24,19 @@ class UploadScreen extends StatefulWidget {
   State<UploadScreen> createState() => _UploadScreenState();
 }
 
+// Phase 8: transcription style. "Faithful" routes through Kong/BP for a
+// note-accurate transcription; "Cover" routes through AMT-APC for an
+// idiomatic piano cover with re-arranged accompaniment patterns. Bound
+// to the ``cover_mode`` flag the backend forwards into PipelineConfig.
+enum _TranscriptionStyle { faithful, cover }
+
 class _UploadScreenState extends State<UploadScreen> {
   _SourceMode _mode = _SourceMode.audio;
+  _TranscriptionStyle _style = _TranscriptionStyle.faithful;
   final _titleController = TextEditingController();
   final _artistController = TextEditingController();
   final _youtubeController = TextEditingController();
+  final _promptController = TextEditingController();
 
   PlatformFile? _pickedFile;
   bool _submitting = false;
@@ -58,6 +66,7 @@ class _UploadScreenState extends State<UploadScreen> {
     _titleController.dispose();
     _artistController.dispose();
     _youtubeController.dispose();
+    _promptController.dispose();
     super.dispose();
   }
 
@@ -102,6 +111,13 @@ class _UploadScreenState extends State<UploadScreen> {
             artist: _artistController.text.trim().isEmpty
                 ? null
                 : _artistController.text.trim(),
+            // Only forward cover_mode when the user explicitly switched
+            // the style toggle; the backend default (faithful) is the
+            // safer fallback for unmodified clients.
+            coverMode: _style == _TranscriptionStyle.cover ? true : null,
+            arrangementPrompt: _promptController.text.trim().isEmpty
+                ? null
+                : _promptController.text.trim(),
           );
           break;
         case _SourceMode.midi:
@@ -120,6 +136,9 @@ class _UploadScreenState extends State<UploadScreen> {
             artist: _artistController.text.trim().isEmpty
                 ? null
                 : _artistController.text.trim(),
+            arrangementPrompt: _promptController.text.trim().isEmpty
+                ? null
+                : _promptController.text.trim(),
           );
           break;
         case _SourceMode.title:
@@ -130,6 +149,9 @@ class _UploadScreenState extends State<UploadScreen> {
             artist: _artistController.text.trim().isEmpty
                 ? null
                 : _artistController.text.trim(),
+            arrangementPrompt: _promptController.text.trim().isEmpty
+                ? null
+                : _promptController.text.trim(),
           );
           break;
         case _SourceMode.youtube:
@@ -142,6 +164,9 @@ class _UploadScreenState extends State<UploadScreen> {
                 ? null
                 : _artistController.text.trim(),
             preferCleanSource: true,
+            arrangementPrompt: _promptController.text.trim().isEmpty
+                ? null
+                : _promptController.text.trim(),
           );
           break;
       }
@@ -293,6 +318,54 @@ class _UploadScreenState extends State<UploadScreen> {
                         ),
                         const SizedBox(height: 18),
                       ],
+                      // Phase 8: faithful vs. cover toggle. Only meaningful for
+                      // audio uploads — AMT-APC needs a waveform, so MIDI / title /
+                      // YouTube paths skip it. Default to faithful: most users
+                      // submitting a song want a transcription, not a re-arrangement.
+                      if (_mode == _SourceMode.audio) ...[
+                        const Align(
+                          alignment: Alignment.centerLeft,
+                          child: Text(
+                            'Style',
+                            style: TextStyle(
+                              fontWeight: FontWeight.w700,
+                              fontSize: 13,
+                              color: OhSheetColors.mutedText,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 6),
+                        SegmentedButton<_TranscriptionStyle>(
+                          segments: const [
+                            ButtonSegment(
+                              value: _TranscriptionStyle.faithful,
+                              label: Text('Faithful'),
+                              icon: Icon(Icons.music_note),
+                            ),
+                            ButtonSegment(
+                              value: _TranscriptionStyle.cover,
+                              label: Text('Piano cover'),
+                              icon: Icon(Icons.piano),
+                            ),
+                          ],
+                          selected: {_style},
+                          onSelectionChanged: _submitting
+                              ? null
+                              : (s) => setState(() => _style = s.first),
+                        ),
+                        const SizedBox(height: 6),
+                        Text(
+                          _style == _TranscriptionStyle.faithful
+                              ? 'Note-accurate transcription with pedal markings.'
+                              : 'Idiomatic piano cover (rearranged accompaniment).',
+                          style: const TextStyle(
+                            fontSize: 12,
+                            color: OhSheetColors.mutedText,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                        const SizedBox(height: 18),
+                      ],
                       if (_mode == _SourceMode.youtube) ...[
                         TextField(
                           controller: _youtubeController,
@@ -330,6 +403,19 @@ class _UploadScreenState extends State<UploadScreen> {
                           ),
                         ),
                       ],
+                      const SizedBox(height: 12),
+                      TextField(
+                        controller: _promptController,
+                        decoration: const InputDecoration(
+                          labelText: 'How should it sound? (optional)',
+                          hintText: 'e.g. easier for beginners, jazzy left hand, sparse',
+                          alignLabelWithHint: true,
+                        ),
+                        minLines: 3,
+                        maxLines: 5,
+                        maxLength: 1000,
+                        textInputAction: TextInputAction.newline,
+                      ),
                       const SizedBox(height: 22),
                       OhSheetStickerCTA(
                         key: const ValueKey('ohsheet_primary_submit'),

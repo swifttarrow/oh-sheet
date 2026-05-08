@@ -118,12 +118,11 @@ def test_arrange_dedups_same_pitch_across_tracks_keep_loudest() -> None:
 
 
 def test_arrange_beginner_reduces_max_polyphony() -> None:
-    """Voice caps: intermediate=2 RH voices, beginner=1. PR-10 / plan 3.1.
+    """Voice caps: intermediate≤4 RH voices, beginner=1. Phase 1 A2.
 
     Three overlapping notes at beat 0 force the voice allocator up to
-    three concurrent voices. Intermediate keeps voices 1 and 2 (the
-    piano cap) and drops the third; beginner keeps only voice 1 and
-    drops both extras.
+    three concurrent voices. Intermediate (default cap = 4) accepts all
+    three; beginner caps at one voice and drops the extras.
     """
     payload = _payload(
         tracks=[
@@ -144,8 +143,8 @@ def test_arrange_beginner_reduces_max_polyphony() -> None:
     intermediate = _arrange_sync(payload, "intermediate")
 
     assert len(beginner.right_hand) == 1
-    assert len(intermediate.right_hand) == 2
-    assert max(n.voice for n in intermediate.right_hand) <= 2
+    assert len(intermediate.right_hand) == 3
+    assert max(n.voice for n in intermediate.right_hand) <= settings.arrange_max_voices_rh
     assert max(n.voice for n in beginner.right_hand) == 1
 
 

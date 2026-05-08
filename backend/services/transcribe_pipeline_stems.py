@@ -27,7 +27,7 @@ from backend.services import transcribe_inference as _bp_mod
 from backend.services import transcribe_midi as _midi_mod
 from backend.services import transcribe_pipeline_single as _single_mod
 from backend.services import transcribe_result as _result_mod
-from backend.services.audio_timing import tempo_map_from_audio_path
+from backend.services.audio_timing import tempo_map_and_downbeats_from_audio_path
 from backend.services.chord_recognition import (
     ChordRecognitionStats,
     recognize_chords,
@@ -477,23 +477,27 @@ def _run_with_stems(
                 events_by_role[role] = refined_dur_events
             per_stem_duration_stats[label] = dur_stats
 
-    # Tempo map — prefer the drums stem when enabled and available.
-    # A drums-stem beat track that returns no beats (possible on
-    # cappella / ambient material) falls back to the mix so the
+    # Tempo map + downbeats — prefer the drums stem when enabled and
+    # available. A drums-stem beat track that returns no beats (possible
+    # on cappella / ambient material) falls back to the mix so the
     # downstream tempo_map is still waveform-derived.
     tempo_src: Path = audio_path
     tempo_preloaded = mix_audio
     if settings.demucs_use_drums_for_beats and stems.drums is not None:
         tempo_src = stems.drums
         tempo_preloaded = _preload(stems.drums)
-    audio_tempo_map = tempo_map_from_audio_path(
+    audio_tempo_map: list | None = None
+    audio_downbeats: list[float] = []
+    tempo_result = tempo_map_and_downbeats_from_audio_path(
         tempo_src, preloaded_audio=tempo_preloaded,
     )
-    if audio_tempo_map is None and tempo_src != audio_path:
+    if tempo_result is None and tempo_src != audio_path:
         log.debug("drums-stem beat tracking returned None, retrying with mix")
-        audio_tempo_map = tempo_map_from_audio_path(
+        tempo_result = tempo_map_and_downbeats_from_audio_path(
             audio_path, preloaded_audio=mix_audio,
         )
+    if tempo_result is not None:
+        audio_tempo_map, audio_downbeats = tempo_result
 
     # Key + meter estimation — always run against the original mix
     # rather than any single stem. Vocals alone lose the harmonic
@@ -608,6 +612,7 @@ def _run_with_stems(
         events_by_role,
         stems_model_output,
         tempo_map_override=audio_tempo_map,
+        downbeats_override=audio_downbeats,
         key_label=key_label,
         time_signature=time_signature,
         key_stats=key_stats,

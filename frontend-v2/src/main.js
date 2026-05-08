@@ -11,6 +11,7 @@
  */
 
 import * as api from "./api.js";
+import { mountLegalDisclaimer } from "./legal.js";
 import { createStore, reduceJobEvent } from "./state.js";
 import { renderPhase } from "./views.js";
 
@@ -146,3 +147,4 @@ const handlers = {
 
 // Initial render
 store.setPhase({ name: "idle", source: "youtube" });
+mountLegalDisclaimer();

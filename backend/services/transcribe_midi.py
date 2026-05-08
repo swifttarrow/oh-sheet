@@ -46,12 +46,11 @@ def _rebuild_blob_midi(
     ``PrettyMIDI(initial_tempo=...)`` wires the seconds-per-tick map
     through the MIDI ``set_tempo`` meta event, and the notes are a
     straight translation of the ``NoteEvent`` tuple. Per-note pitch
-    bends are intentionally dropped: the blob MIDI is a debugging
-    artifact (not authoritative — the contract carries the tracks),
-    and basic-pitch's own encoding bloats the file with one
-    instrument per pitch-bend group. Keeping everything in a single
-    piano instrument makes the blob easier to inspect in MuseScore /
-    Logic without hiding the real transcription data.
+    bends are emitted as ``pretty_midi.PitchBend`` events on the
+    single piano instrument — coalescing onto one instrument avoids
+    the per-pitch-bend-group instrument bloat that
+    ``basic_pitch.note_creation.note_events_to_midi`` produces, while
+    still preserving the bend channel for downstream consumers.
 
     Avoiding ``basic_pitch.note_creation.note_events_to_midi`` here
     also means this code path works on the CI dev install (which
@@ -73,7 +72,13 @@ def _rebuild_blob_midi(
         return None
     pm = pretty_midi.PrettyMIDI(initial_tempo=float(initial_bpm))
     instrument = pretty_midi.Instrument(program=0)
-    for start, end, pitch, amplitude, _pitch_bend in events:
+    # MIDI pitch-bend integer per cent: 4096 units per semitone (default
+    # ±2-semitone range, 8192 = neutral). 1 semitone = 100 cents → 40.96
+    # units/cent. We round at emit time to land on legal MIDI values.
+    _MIDI_UNITS_PER_CENT = 4096.0 / 100.0
+    # BP bend units → cents (3 bins per semitone in BP's CQT setup).
+    _BP_BEND_TO_CENTS = 100.0 / 3.0
+    for start, end, pitch, amplitude, pitch_bend in events:
         velocity = int(round(127 * float(amplitude)))
         velocity = max(1, min(127, velocity))
         instrument.notes.append(
@@ -84,6 +89,18 @@ def _rebuild_blob_midi(
                 end=float(end),
             )
         )
+        if pitch_bend:
+            n = len(pitch_bend)
+            duration = max(float(end) - float(start), 1e-3)
+            denom = max(n - 1, 1)
+            for i, b in enumerate(pitch_bend):
+                t = float(start) + (i / denom) * duration if n > 1 else float(start)
+                cents = float(b) * _BP_BEND_TO_CENTS
+                midi_units = int(round(cents * _MIDI_UNITS_PER_CENT))
+                midi_units = max(-8192, min(8191, midi_units))
+                instrument.pitch_bends.append(
+                    pretty_midi.PitchBend(pitch=midi_units, time=t),
+                )
     pm.instruments.append(instrument)
     pm.time_signature_changes = [
         pretty_midi.TimeSignature(numerator=4, denominator=4, time=0.0)

@@ -1,0 +1,170 @@
+name: Eval Nightly
+
+# Phase 7 — strategy doc §5.2 nightly corpus run.
+#
+# Runs ``scripts/eval.py nightly`` against the full pop_mini_v0
+# manifest with all tiers + composite Q + the round-trip
+# self-consistency probe enabled. CLAP / MERT stay opt-in
+# (workflow_dispatch inputs) because their model weights cost
+# ~5 GB of cold-start download — toggle on when investigating a
+# perceptual regression specifically.
+#
+# Wall-clock target: <15 min. Posts a per-tier summary line to the
+# ``#oh-sheet-eval`` Slack channel via webhook (secret
+# ``SLACK_OH_SHEET_EVAL_WEBHOOK``). When the secret is not configured
+# (forks, dev clones), the post step skips silently — the artifact
+# upload still runs.
+
+on:
+  schedule:
+    # 02:00 UTC per strategy doc §5.2. Same cadence the human
+    # on-call expects so a per-night sparkline lines up against
+    # production-quality readings (Phase 7 telemetry table).
+    - cron: '0 2 * * *'
+  workflow_dispatch:
+    inputs:
+      enable_clap:
+        description: "Enable Tier 4 CLAP-music cosine"
+        required: false
+        default: "false"
+      enable_mert:
+        description: "Enable Tier 4 MERT cosine"
+        required: false
+        default: "false"
+      eval_set:
+        description: "Eval-set directory (relative to repo root)"
+        required: false
+        default: "eval/pop_mini_v0/"
+
+jobs:
+  eval-nightly:
+    name: Eval Nightly (all tiers + Q)
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+
+      - name: Install fluidsynth (system)
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -qq -y fluidsynth
+
+      - name: Install Python deps (full eval surface)
+        # Nightly needs the basic-pitch extra for the round-trip
+        # self-consistency probe (transcribe → engrave → resynth →
+        # re-transcribe). The CLAP/MERT extras stay opt-in via
+        # workflow_dispatch inputs; default schedule keeps them off.
+        #
+        # The ``[basic-pitch]`` extra pins the runtime deps (mir_eval,
+        # librosa, onnxruntime, …) but deliberately does NOT pull in the
+        # ``basic-pitch`` package itself — basic-pitch 0.4.0 hard-codes
+        # tensorflow-macos as a base dep on Darwin/Python>3.11 and there
+        # is no wheel for 3.13. Mirroring the Makefile's two-step dance:
+        # install deps via the extra, then install ``basic-pitch``
+        # itself with ``--no-deps``. Without this second step the
+        # round-trip probe silently falls back to the 4-note stub and
+        # the eval-nightly numbers drift from real production behavior.
+        run: |
+          pip install --upgrade pip
+          pip install -e ".[dev,eval,basic-pitch]"
+          pip install --no-deps "basic-pitch>=0.4"
+
+      - name: Run eval nightly
+        env:
+          OHSHEET_HOLDOUT_KEY: ""
+        run: |
+          mkdir -p /tmp/eval_run
+          ARGS=()
+          if [ "${{ github.event.inputs.enable_clap }}" = "true" ]; then
+            ARGS+=(--enable-clap)
+          fi
+          if [ "${{ github.event.inputs.enable_mert }}" = "true" ]; then
+            ARGS+=(--enable-mert)
+          fi
+          EVAL_SET="${{ github.event.inputs.eval_set || 'eval/pop_mini_v0/' }}"
+          python scripts/eval.py nightly "$EVAL_SET" \
+            --output-dir /tmp/eval_run \
+            --label "nightly-$(date -u +%Y%m%dT%H%M%SZ)" \
+            "${ARGS[@]}"
+
+      - name: Render summary for Slack
+        # Slack post step (below) reads /tmp/eval_run/summary.txt.
+        # The harness writes JSON; this step distills it to a
+        # 4-line sparkline-shaped summary keyed on the §8.2 composite
+        # Q + per-tier means.
+        if: always()
+        run: |
+          python - <<'PY'
+          import json, os, pathlib
+          p = pathlib.Path("/tmp/eval_run/aggregate.json")
+          if not p.is_file():
+              pathlib.Path("/tmp/eval_run/summary.txt").write_text(
+                  "Eval nightly: no aggregate.json produced.\n"
+              )
+              raise SystemExit(0)
+          data = json.loads(p.read_text())
+          agg = data.get("aggregate", {})
+          lines = [
+              f"*Oh Sheet — Eval Nightly* `{data.get('label', 'nightly')}`",
+              f"  run_id: `{data.get('run_id', '?')}`  sha: `{data.get('git_sha', '?')[:8]}`",
+              f"  songs: {agg.get('n_songs_scored', 0)}/{agg.get('n_songs_total', 0)} scored",
+          ]
+          for k in (
+              "mean_tier2_chord_score",
+              "mean_tier3_playability_fraction",
+              "mean_tier3_composite",
+              "mean_tier4_round_trip_f1_no_offset",
+              "mean_tier4_chroma_cosine",
+              "mean_composite_q",
+          ):
+              if k in agg:
+                  lines.append(f"  {k}: {agg[k]:.4f}")
+          pathlib.Path("/tmp/eval_run/summary.txt").write_text("\n".join(lines) + "\n")
+          PY
+          cat /tmp/eval_run/summary.txt
+
+      - name: Post to Slack #oh-sheet-eval
+        # Skip cleanly when the secret isn't configured (forks). The
+        # webhook URL is a single-channel incoming webhook
+        # (https://api.slack.com/messaging/webhooks) so no token
+        # negotiation is needed. ``if`` conditions can't reference
+        # ``secrets.*`` directly, so the env-based guard below is
+        # the canonical idiom — empty webhook → noop.
+        if: always()
+        env:
+          SLACK_WEBHOOK: ${{ secrets.SLACK_OH_SHEET_EVAL_WEBHOOK }}
+        run: |
+          if [ -z "$SLACK_WEBHOOK" ]; then
+            echo "SLACK_OH_SHEET_EVAL_WEBHOOK not configured; skipping Slack post"
+            exit 0
+          fi
+          if [ ! -f /tmp/eval_run/summary.txt ]; then
+            echo "no summary.txt; skipping Slack post"
+            exit 0
+          fi
+          export SUMMARY="$(cat /tmp/eval_run/summary.txt)"
+          python - <<'PY'
+          import json, os, urllib.request
+          payload = {"text": os.environ.get("SUMMARY", "(empty summary)")}
+          req = urllib.request.Request(
+              os.environ["SLACK_WEBHOOK"],
+              data=json.dumps(payload).encode("utf-8"),
+              headers={"Content-Type": "application/json"},
+          )
+          urllib.request.urlopen(req, timeout=15)
+          PY
+
+      - name: Upload eval artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: eval-nightly-${{ github.run_id }}
+          path: /tmp/eval_run/
+          retention-days: 60

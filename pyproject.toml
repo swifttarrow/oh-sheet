@@ -62,7 +62,6 @@ midi = [
 basic-pitch = [
     "coremltools; platform_system == 'Darwin'",
     "librosa>=0.8.0",
-    "madmom>=0.16",
     "mir_eval>=0.6.0",
     "numpy>=1.26",
     "onnxruntime>=1.19",
@@ -71,9 +70,20 @@ basic-pitch = [
     "scikit-learn",
     "scipy>=1.4.1",
     "typing_extensions",
+    # Beat This! (CPJKU, MIT) — transformer beat tracker that emits
+    # beats AND downbeats. Replaces madmom in the audio path; downbeats
+    # flow onto HarmonicAnalysis.downbeats and surface as MIDI Cue
+    # Points in midi_render so the engraver can lock bar lines to the
+    # perceived pulse.
+    #
+    # Pulls in torch as a transitive dependency.
+    "beat_this",
 ]
-madmom = [
-    "madmom>=0.16",
+# Standalone beat-tracker extra so `make install-beat-tracking`
+# (and the eval harness) can pull just the beat tracker without the
+# full Basic Pitch dependency tree.
+beat-tracking = [
+    "beat_this",
 ]
 # Offline eval harness (scripts/eval_transcription.py) — scores
 # TranscribeService output against clean_midi ground truth via
@@ -85,6 +95,20 @@ madmom = [
 eval = [
     "anthropic>=0.40",
     "mir_eval>=0.6.0",
+    # Fernet (AES-128-CBC + HMAC-SHA-256) for the encrypted Phase 3
+    # holdout manifest (eval/holdout.py). The threat model is "engineer
+    # accidentally peeks at holdout while debugging a tune-set
+    # regression"; cryptography's Fernet is the standard Python recipe
+    # for that. Already a transitive dep of basic-pitch via librosa, so
+    # listing it explicitly here just pins the import surface.
+    "cryptography>=42",
+    # librosa for chroma_cqt / chroma cosine in tier_rf, tier4, tier2.
+    # Pulls in soundfile, numpy, scipy as transitive deps.
+    "librosa>=0.10",
+    # soundfile (libsndfile bindings) for the FluidSynth resynth path in
+    # eval/tier_rf.py and the Kong inference helper. Already transitive
+    # via librosa but pinned explicitly so the import surface is stable.
+    "soundfile>=0.12",
 ]
 # Demucs source separation, used by TranscribeService when
 # OHSHEET_DEMUCS_ENABLED=1. Splits the input mix into
@@ -132,6 +156,58 @@ demucs = [
     "torchaudio>=2.0",
     "torchcrepe>=0.0.22",
 ]
+# AMT-APC piano-cover transcriber (Phase 8). MIT-licensed end-to-end —
+# code, weights, and training pipeline. The upstream repo is
+# ``misya11p/amt-apc`` (see strategy doc Part III §B6); the package is
+# installed directly from GitHub because there is no PyPI release as of
+# this writing. Pin a commit before relying on this in production —
+# ``main`` is moving — and verify the Transcriber import path matches
+# what ``backend/services/transcribe_amt_apc.py`` expects.
+#
+# Without this extra the dispatcher in ``transcribe.py`` raises
+# ImportError when the cover variant fires and falls back to the
+# faithful Kong/Basic-Pitch path (no cover-mode rearrangement).
+#
+# Reuses the ``demucs``/``kong`` torch pin so the three extras coexist.
+amt_apc = [
+    "amt_apc @ git+https://github.com/misya11p/amt-apc.git",
+    "torch>=2.0",
+    "librosa>=0.10",
+]
+# ByteDance Kong piano transcription (Phase 6). MIT-licensed PyPI
+# package that wraps the high-resolution piano transcription model
+# from "High-resolution Piano Transcription with Pedals by Regressing
+# Onset and Offset Times" (Kong et al., 2021). Emits per-note
+# onset/offset/velocity AND sustain-pedal CC64 on/off events — pedal
+# tracking is the key reason to add this on top of Basic Pitch.
+#
+# Pin the PyPI package (not GitHub): the upstream repo was archived
+# Dec 2025 but the PyPI distribution is still actively maintained.
+# Weights (~170 MB CRNN-Regress checkpoint) are fetched lazily from
+# Zenodo on first use; pre-cache in the Docker build to dodge cold-
+# start latency on Cloud Run. Reuses the demucs extra's torch pin so
+# both extras can coexist without conflicting torch versions.
+kong = [
+    "piano_transcription_inference>=0.0.5",
+    "torch>=2.0",
+    "librosa>=0.10",
+]
+# Local engrave stack (Phase 4): music21 → MusicXML + Verovio → SVG +
+# LilyPond → PDF. music21 is a top-level dep so the MusicXML half always
+# works; this extra adds:
+#   * verovio (LGPL — dynamic link via PyPI wheel) for in-process SVG.
+#     Never link statically; the wheel is the only legal path.
+#   * lilypond is installed at the system level (apt-get on Debian, brew
+#     on macOS — see Dockerfile python-base stage). It's GPL and stays
+#     isolated to the ``musicxml2ly`` + ``lilypond`` subprocesses; no
+#     Python-side data sharing beyond passing the MusicXML file by path.
+#
+# Without this extra the runner's local engrave succeeds for MusicXML
+# but ``musicxml_to_svg`` raises ``EngraveLocalError`` and ``musicxml_to_pdf``
+# falls back to the remote HTTP path on any LilyPond binary failure.
+engrave = [
+    "verovio>=4.0",
+]
 
 [project.scripts]
 ohsheet = "backend.main:run"
@@ -170,6 +246,11 @@ testpaths = ["tests"]
 filterwarnings = ["ignore::DeprecationWarning"]
 addopts = "--cov=backend --cov-report=term-missing --cov-report=xml"
 asyncio_mode = "auto"
+markers = [
+    "real_transcribe: opt out of the stub TranscribeService fixture and exercise real Basic Pitch inference",
+    "real_engrave: opt out of the stub engrave_score_locally fixture and exercise real music21 / LilyPond / Verovio",
+    "real_separate: opt out of the stub SeparateService fixture and exercise the real source-separation logic (cache lookup, blob persistence, fallback paths) — does NOT pull in real Demucs",
+]
 
 [tool.ruff]
 target-version = "py311"

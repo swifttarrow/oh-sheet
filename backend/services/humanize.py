@@ -202,6 +202,16 @@ def _humanize_sync(score: PianoScore, seed: int) -> HumanizedPerformance:
     rh_velocity = _humanize_velocity(score.right_hand, sections, seed)
     lh_velocity = _humanize_velocity(score.left_hand, sections, seed + 100)
 
+    # If the interpret stage supplied a tempo_bias, scale timing offsets by (1 + tempo_bias).
+    # Future iterations will also consume density / style_tags / dynamic_emphasis / hand_balance.
+    hints = meta.arrangement_hints
+    tempo_bias = hints.tempo_bias if hints is not None else 0.0
+    _TIMING_CAP = 50.0  # hard cap matching ExpressiveNote.timing_offset_ms field bounds
+
+    def _scale_timing(raw: float) -> float:
+        scaled = raw * (1.0 + tempo_bias)
+        return max(-_TIMING_CAP, min(_TIMING_CAP, scaled))
+
     expressive_notes: list[ExpressiveNote] = []
     for n in score.right_hand:
         vo = rh_velocity.get(n.id, 0)
@@ -213,7 +223,7 @@ def _humanize_sync(score: PianoScore, seed: int) -> HumanizedPerformance:
             velocity=max(1, min(127, n.velocity + vo)),
             hand="rh",
             voice=n.voice,
-            timing_offset_ms=rh_timing.get(n.id, 0.0),
+            timing_offset_ms=_scale_timing(rh_timing.get(n.id, 0.0)),
             velocity_offset=vo,
         ))
     for n in score.left_hand:
@@ -226,7 +236,7 @@ def _humanize_sync(score: PianoScore, seed: int) -> HumanizedPerformance:
             velocity=max(1, min(127, n.velocity + vo)),
             hand="lh",
             voice=n.voice,
-            timing_offset_ms=lh_timing.get(n.id, 0.0),
+            timing_offset_ms=_scale_timing(lh_timing.get(n.id, 0.0)),
             velocity_offset=vo,
         ))
 
@@ -238,9 +248,17 @@ def _humanize_sync(score: PianoScore, seed: int) -> HumanizedPerformance:
         (n.onset_beat + n.duration_beat for n in all_notes),
         default=0.0,
     )
-    pedal = _generate_pedal(
-        meta.chord_symbols, sections, meta.time_signature, fallback_end,
-    )
+    # Phase 6: prefer real transcribed pedal data (Kong) over the
+    # chord-symbol heuristic. ``ScoreMetadata.pedal_events`` is
+    # populated by arrange when the upstream transcriber emitted
+    # pedal CC events; empty-list means we should fall back to the
+    # legacy heuristic generator.
+    if meta.pedal_events:
+        pedal = list(meta.pedal_events)
+    else:
+        pedal = _generate_pedal(
+            meta.chord_symbols, sections, meta.time_signature, fallback_end,
+        )
 
     articulations = (
         _detect_articulations(score.right_hand, "rh")

@@ -32,7 +32,7 @@
 - **AI transcription** — Spotify's Basic Pitch detects notes from audio; optional Demucs stem separation isolates instruments first
 - **Two-hand piano arrangement** — Melody goes to right hand, bass + harmony to left hand, with intelligent voice assignment
 - **Humanized playback** — Micro-timing, velocity dynamics, pedal marks, and articulations make it sound natural
-- **Publication-quality engraving** — LilyPond or MuseScore renders clean PDF sheet music; music21 generates MusicXML
+- **Publication-quality engraving** — Default backend is in-process music21 → MusicXML + LilyPond → PDF; falls through to the `oh-sheet-ml-pipeline` HTTP service when LilyPond is missing or the local stack errors. See [Engraver service](#engraver-service)
 - **Interactive viewer** — OSMD renders notation in the browser with Tone.js playback and cursor sync
 - **Custom piano roll** — Canvas-based visualization with color-coded hands, Y-axis note labels, and tempo-synced beat grid
 - **Real-time progress** — WebSocket events stream pipeline status with kawaii mascot animations per stage
@@ -69,6 +69,23 @@ make frontend                 # Flutter Web on Chrome
 Open the app, paste a YouTube URL, and hit **Let's go!**
 
 OpenAPI docs: [localhost:8000/docs](http://localhost:8000/docs)
+
+## Engraver service
+
+The engrave stage has two backends, controlled by `OHSHEET_ENGRAVE_BACKEND`:
+
+- **`local` (default)** — music21 emits MusicXML in-process, LilyPond renders the PDF. Reads the structured `(PianoScore, ExpressionMap)` directly so chord symbols, dynamics, pedal marks, and per-note voices survive into the score. Requires `lilypond` on `PATH` for PDF output (MusicXML still works without it). System packages: `apt-get install lilypond` (Debian/Ubuntu) or `brew install lilypond` (macOS).
+- **`remote_http`** — POSTs MIDI bytes to the `oh-sheet-ml-pipeline` HTTP engraver service at `OHSHEET_ENGRAVER_SERVICE_URL` (default `http://localhost:8080`). Returns MusicXML only — no PDF. Used when `engrave_backend=remote_http` is set explicitly, or when the `local` backend raises `EngraveLocalError` (missing LilyPond, music21 emission failure) and falls through automatically.
+
+The `oh-sheet-ml-pipeline` service is currently a hosted/proprietary Oh Sheet component — not open source, no public Docker image. Self-hosters can run on the `local` backend without it. See [#107](https://github.com/Oh-Sheet-Team/oh-sheet/issues/107) for the open-sourcing discussion.
+
+Relevant env vars (all listed in `.env.example`):
+
+| Var | Default | Purpose |
+| --- | --- | --- |
+| `OHSHEET_ENGRAVE_BACKEND` | `local` | `local` or `remote_http` |
+| `OHSHEET_ENGRAVER_SERVICE_URL` | `http://localhost:8080` | URL for the `oh-sheet-ml-pipeline` service |
+| `OHSHEET_ENGRAVER_SERVICE_TIMEOUT_SEC` | `60` | Per-request timeout for the HTTP engraver |
 
 ## How It Works
 
@@ -124,7 +141,8 @@ backend/
 │   ├── transcribe.py        # Basic Pitch (ONNX) + beat tracking
 │   ├── arrange.py           # Two-hand piano reduction
 │   ├── humanize.py          # Rule-based expression
-│   └── engrave.py           # music21 → MusicXML, LilyPond → PDF
+│   ├── engrave_local.py     # music21 → MusicXML + LilyPond → PDF (default)
+│   └── ml_engraver_client.py # HTTP client for oh-sheet-ml-pipeline (remote_http fallback)
 ├── jobs/
 │   ├── manager.py           # In-memory job state + WebSocket pub/sub
 │   ├── runner.py            # Pipeline orchestration
@@ -300,7 +318,7 @@ See `CONTRIBUTING.md` for detailed guidelines.
 | Backend         | Python 3.10+, FastAPI, Pydantic v2                  |
 | Transcription   | Basic Pitch (ONNX), Demucs (stem separation)        |
 | Arrangement     | Custom Python (quantization, voice assignment)       |
-| Engraving       | music21, LilyPond, pretty_midi                      |
+| Engraving       | music21 + LilyPond (in-process, default); oh-sheet-ml-pipeline HTTP service as fallback; pretty_midi |
 | Frontend        | Flutter 3.19+ (Web + Mobile)                        |
 | Sheet Viewer    | OpenSheetMusicDisplay (OSMD), Tone.js               |
 | Deployment      | Docker Compose, GCP VM, GitHub Actions               |
