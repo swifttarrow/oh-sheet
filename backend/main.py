@@ -54,10 +54,15 @@ def create_app() -> FastAPI:
         lifespan=lifespan,
     )
 
+    # CORS: a wildcard origin combined with allow_credentials=True is
+    # actually an unsafe spec violation that modern browsers reject —
+    # so when the operator leaves the dev default of ["*"], drop
+    # credentials. Operators who pin explicit origins keep them.
+    cors_wildcard = "*" in settings.cors_origins
     app.add_middleware(
         CORSMiddleware,
         allow_origins=settings.cors_origins,
-        allow_credentials=True,
+        allow_credentials=not cors_wildcard,
         allow_methods=["*"],
         allow_headers=["*"],
     )

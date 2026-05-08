@@ -3,6 +3,7 @@
 from shared.contracts import (
     SCHEMA_VERSION,
     Articulation,
+    Density,
     Difficulty,
     DynamicMarking,
     EngravedOutput,
@@ -10,6 +11,7 @@ from shared.contracts import (
     EvaluationReport,
     ExpressionMap,
     ExpressiveNote,
+    HandBalance,
     HarmonicAnalysis,
     HumanizedPerformance,
     InputBundle,

@@ -250,6 +250,39 @@ def test_artifact_refuses_proxy_to_foreign_host(client, monkeypatch):
     assert "not allowed" in response.json()["detail"].lower()
 
 
+def test_artifact_proxy_does_not_follow_redirects(client, monkeypatch):
+    """Defense-in-depth for SSRF: even after the host allowlist passes,
+    httpx must NOT follow upstream redirects. A redirect from TuneChat
+    to e.g. http://169.254.169.254/ would otherwise bypass the guard
+    since we only validate the initial URL.
+    """
+    captured: dict = {}
+
+    class FakeResponse:
+        status_code = 200
+        content = b"ok"
+        def raise_for_status(self): pass
+
+    class FakeClient:
+        def __init__(self, *a, **kw):
+            captured["kwargs"] = kw
+        def __enter__(self): return self
+        def __exit__(self, *a): return False
+        def get(self, url): return FakeResponse()
+
+    monkeypatch.setattr("backend.api.routes.artifacts.httpx.Client", FakeClient)
+
+    job_id = _install_tunechat_job(
+        client,
+        pdf=None,
+        musicxml="http://localhost:3000/pipeline/tc-fake-123/score.musicxml",
+        midi=None,
+    )
+    response = client.get(f"/v1/artifacts/{job_id}/musicxml")
+    assert response.status_code == 200
+    assert captured["kwargs"].get("follow_redirects") is False
+
+
 def test_artifact_proxy_scheme_mismatch_is_rejected(client, monkeypatch):
     """Scheme mismatch (https target vs http configured) also blocked —
     prevents downgrade/upgrade attacks where an attacker swaps
