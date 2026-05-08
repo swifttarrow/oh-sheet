@@ -58,13 +58,13 @@ Options are not mutually exclusive. C is compatible with any of A/B/D (publishin
 
 **What we'd need to know:** What's the minimum HTTP contract a third-party engraver would need to implement? `POST /engrave` with MIDI in / MusicXML out is the obvious starting point, but: do we want to pass structured `PianoScore` instead of MIDI (preserves dynamics/pedal/voices, see §1)? Versioned protocol? Capability negotiation?
 
-**First step:** Extract the current `oh-sheet-ml-pipeline` endpoint into an OpenAPI spec, freeze it as v0.1, publish under `docs/engraver-protocol/`. This is cheap and preserves optionality regardless of A/B/D outcome.
+**First step (landed):** Extracted the current `oh-sheet-ml-pipeline` endpoint into an OpenAPI spec, frozen as v0.1, published under [`docs/engraver-protocol/`](./engraver-protocol/). The structured-input evolution remains open as a v0.2+ question.
 
 ## 4. Recommendation (starting point for discussion, not a decision)
 
 Sequence: **C → consider B**.
 
-1. **Land C immediately.** Publish the HTTP contract for `POST /engrave` as an OpenAPI spec. Cost: a few hours of work. Benefit: documents the existing extension point, preserves optionality for everything else, lets a motivated self-hoster build their own engraver today.
+1. **Land C immediately.** ✅ **Done** — see [`docs/engraver-protocol/`](./engraver-protocol/) for the v0.1 OpenAPI spec and conformance notes. Documents the existing extension point, preserves optionality for everything else, lets a motivated self-hoster build their own engraver today.
 
 2. **Answer Q1 + Q3 + Q4 before committing to B or A.** Specifically:
    - Q1 (training-data audit): if any dataset blocks redistribution, A and B are blocked until re-train.
