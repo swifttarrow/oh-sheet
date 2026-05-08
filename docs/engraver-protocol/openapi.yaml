@@ -1,0 +1,139 @@
+openapi: 3.1.0
+info:
+  title: Oh Sheet Engraver Protocol
+  version: 0.1.0
+  summary: HTTP contract for a third-party engraver service.
+  description: |
+    Oh Sheet's `engrave_backend = "remote_http"` mode (and the
+    `remote_http_fallback` route from the local backend) POSTs MIDI bytes
+    to an engraver service and expects MusicXML bytes in return.
+
+    This document freezes that contract as **v0.1** so a third party can
+    implement an engraver without having to read Oh Sheet's source. The
+    canonical client implementation is
+    [`backend/services/ml_engraver_client.py`](https://github.com/Oh-Sheet-Team/oh-sheet/blob/main/backend/services/ml_engraver_client.py);
+    if the spec and the client disagree, the client is the source of
+    truth and the spec is a bug.
+
+    **Scope of v0.1.** The contract exposes a single endpoint that takes
+    raw MIDI bytes in and returns raw MusicXML bytes out. It does *not*
+    yet pass the structured `PianoScore` / `ExpressionMap` types that
+    flow through the rest of Oh Sheet's pipeline — that evolution is
+    tracked as Q5 in the parent
+    [RFC](../rfc-ml-pipeline-publishing.md) and would land as v0.2+.
+  contact:
+    name: Oh Sheet
+    url: https://github.com/Oh-Sheet-Team/oh-sheet
+  license:
+    name: MIT
+    url: https://github.com/Oh-Sheet-Team/oh-sheet/blob/main/LICENSE
+
+servers:
+  - url: http://localhost:8080
+    description: Default `OHSHEET_ENGRAVER_SERVICE_URL` for local development.
+
+paths:
+  /engrave:
+    post:
+      summary: Convert MIDI bytes to MusicXML.
+      description: |
+        The request body is a raw Standard MIDI File (SMF), sent as
+        `application/octet-stream`. The response body is a MusicXML 3.x
+        document, sent as `application/vnd.recordare.musicxml+xml`.
+
+        **Idempotency.** Implementations SHOULD treat the same MIDI input
+        as deterministic — Oh Sheet's client retries transient failures
+        (timeout, 5xx) up to three times with exponential backoff, and a
+        non-deterministic output during retry would surface as flaky
+        downstream rendering.
+
+        **Stub-detection.** Oh Sheet's client refuses any 200 response
+        whose body is shorter than 500 bytes, treating it as the in-tree
+        placeholder skeleton rather than a real transcription. A
+        conforming implementation MUST therefore return either a real
+        MusicXML document of substantive size or an error status — never
+        a tiny 200 placeholder.
+      operationId: engrave
+      requestBody:
+        required: true
+        description: Raw Standard MIDI File bytes.
+        content:
+          application/octet-stream:
+            schema:
+              type: string
+              format: binary
+              description: SMF (Standard MIDI File) bytes. No multipart wrapping.
+      responses:
+        "200":
+          description: Engraving succeeded. Body is a MusicXML document.
+          content:
+            application/vnd.recordare.musicxml+xml:
+              schema:
+                type: string
+                format: binary
+                description: |
+                  MusicXML 3.x document. Must be longer than 500 bytes
+                  (see "Stub-detection" above).
+        "400":
+          description: |
+            The request body could not be parsed as MIDI, or violated a
+            documented input constraint (e.g. exceeded a maximum size
+            the server enforces). Deterministic — Oh Sheet's client does
+            not retry 4xx.
+          content:
+            text/plain:
+              schema:
+                type: string
+                example: "invalid MIDI: unexpected EOF in track 0"
+        "413":
+          description: |
+            Request body exceeded the server's size limit. Deterministic;
+            not retried.
+          content:
+            text/plain:
+              schema:
+                type: string
+                example: "MIDI input exceeds 5 MiB limit"
+        "422":
+          description: |
+            MIDI parsed but engraving failed at the model/post-processing
+            layer (e.g. empty track, unsupported time signature in this
+            implementation). Deterministic; not retried.
+          content:
+            text/plain:
+              schema:
+                type: string
+                example: "no notes detected in input"
+        "500":
+          description: |
+            Unhandled server error. Oh Sheet's client treats 5xx as
+            transient and retries up to three times before surfacing.
+          content:
+            text/plain:
+              schema:
+                type: string
+                example: "internal error"
+        "502":
+          description: |
+            Upstream dependency failure (e.g. inference backend
+            unreachable). Treated as transient; retried.
+          content:
+            text/plain:
+              schema:
+                type: string
+        "503":
+          description: |
+            Service overloaded or starting up. Treated as transient;
+            retried.
+          content:
+            text/plain:
+              schema:
+                type: string
+        "504":
+          description: |
+            Request timed out at an upstream proxy. Treated as transient;
+            retried.
+          content:
+            text/plain:
+              schema:
+                type: string
