@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from shared.contracts import ArrangementHints
+
 from backend.contracts import (
     HarmonicAnalysis,
     InstrumentRole,
@@ -7,6 +9,7 @@ from backend.contracts import (
     Note,
     QualitySignal,
     RealtimeChordEvent,
+    RealtimePedalEvent,
     Section,
     SectionLabel,
     TempoMapEntry,
@@ -21,6 +24,8 @@ def _payload(
     chords: list[RealtimeChordEvent] | None = None,
     sections: list[Section] | None = None,
     tempo_map: list[TempoMapEntry] | None = None,
+    pedal_events: list[RealtimePedalEvent] | None = None,
+    arrangement_hints: ArrangementHints | None = None,
 ) -> TranscriptionResult:
     return TranscriptionResult(
         midi_tracks=tracks,
@@ -32,6 +37,8 @@ def _payload(
             sections=sections or [],
         ),
         quality=QualitySignal(overall_confidence=0.9, warnings=[]),
+        pedal_events=pedal_events or [],
+        arrangement_hints=arrangement_hints,
     )
 
 
@@ -151,3 +158,48 @@ def test_condense_caps_polyphony_per_hand() -> None:
     )
     score = _condense_sync(payload, "intermediate")
     assert len(score.right_hand) == 16
+
+
+def test_condense_carries_pedal_events_through_to_score() -> None:
+    """When OHSHEET_SCORE_PIPELINE=condense_only, condense replaces arrange
+    in the pipeline. humanize reads ``meta.pedal_events`` to render
+    sustain marks, so condense must convert payload pedal data the same
+    way arrange does — silent drop here was a real-but-quiet regression."""
+    payload = _payload(
+        tracks=[
+            MidiTrack(
+                instrument=InstrumentRole.PIANO,
+                program=0,
+                confidence=0.9,
+                notes=[Note(pitch=60, onset_sec=0.0, offset_sec=1.0, velocity=80)],
+            ),
+        ],
+        pedal_events=[
+            RealtimePedalEvent(cc=64, onset_sec=0.0, offset_sec=0.5, confidence=1.0),
+        ],
+    )
+    score = _condense_sync(payload, "intermediate")
+    assert len(score.metadata.pedal_events) == 1
+    assert score.metadata.pedal_events[0].type == "sustain"
+
+
+def test_condense_carries_arrangement_hints_through_to_score() -> None:
+    """humanize reads ``meta.arrangement_hints`` to apply tempo bias and
+    other interpret-stage hints. condense must pass them through, just
+    like arrange does."""
+    hints = ArrangementHints(tempo_bias=0.1, density="moderate")
+    payload = _payload(
+        tracks=[
+            MidiTrack(
+                instrument=InstrumentRole.PIANO,
+                program=0,
+                confidence=0.9,
+                notes=[Note(pitch=60, onset_sec=0.0, offset_sec=1.0, velocity=80)],
+            ),
+        ],
+        arrangement_hints=hints,
+    )
+    score = _condense_sync(payload, "intermediate")
+    assert score.metadata.arrangement_hints is not None
+    assert score.metadata.arrangement_hints.tempo_bias == 0.1
+    assert score.metadata.arrangement_hints.density == "moderate"

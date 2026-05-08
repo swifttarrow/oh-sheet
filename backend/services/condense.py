@@ -24,6 +24,7 @@ from backend.contracts import (
     Difficulty,
     MidiTrack,
     Note,
+    PedalEvent,
     PianoScore,
     RealtimeChordEvent,
     ScoreChordEvent,
@@ -35,6 +36,12 @@ from backend.contracts import (
     TranscriptionResult,
     sec_to_beat,
 )
+
+# Reused from the arrange service: condense replaces arrange when
+# OHSHEET_SCORE_PIPELINE=condense_only, so it must produce a PianoScore
+# with the same metadata fields downstream stages expect (humanize reads
+# meta.pedal_events at services/humanize.py:256).
+from backend.services.arrange import _pedal_to_score_pedal
 
 log = logging.getLogger(__name__)
 
@@ -147,6 +154,7 @@ def _condense_sync(payload: TranscriptionResult, difficulty: Difficulty) -> Pian
                 sections=[_section_to_score_section(s, tempo_map) for s in analysis.sections],
                 chord_symbols=[_chord_to_score_chord(c, tempo_map) for c in analysis.chords],
                 downbeats=list(analysis.downbeats),
+                arrangement_hints=payload.arrangement_hints,
             ),
         )
 
@@ -178,7 +186,18 @@ def _condense_sync(payload: TranscriptionResult, difficulty: Difficulty) -> Pian
         for i, (pitch, onset, dur, vel, voice) in enumerate(lh_voiced)
     ]
 
-    log.info("Condensed: RH=%d notes, LH=%d notes", len(right_hand), len(left_hand))
+    # Mirror arrange's pedal conversion so condense_only doesn't silently
+    # drop sustain rendering when the transcriber emits pedal data (Kong).
+    pedal_events: list[PedalEvent] = []
+    for raw in payload.pedal_events:
+        converted = _pedal_to_score_pedal(raw, tempo_map)
+        if converted is not None:
+            pedal_events.append(converted)
+
+    log.info(
+        "Condensed: RH=%d notes, LH=%d notes pedal_events=%d",
+        len(right_hand), len(left_hand), len(pedal_events),
+    )
 
     return PianoScore(
         schema_version=SCHEMA_VERSION,
@@ -192,6 +211,8 @@ def _condense_sync(payload: TranscriptionResult, difficulty: Difficulty) -> Pian
             sections=[_section_to_score_section(s, tempo_map) for s in analysis.sections],
             chord_symbols=[_chord_to_score_chord(c, tempo_map) for c in analysis.chords],
             downbeats=list(analysis.downbeats),
+            pedal_events=pedal_events,
+            arrangement_hints=payload.arrangement_hints,
         ),
     )
 
