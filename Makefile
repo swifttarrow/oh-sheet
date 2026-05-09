@@ -20,7 +20,7 @@ PYTHON       ?= python3
 
 DART_DEFINE := $(if $(API_BASE_URL),--dart-define=API_BASE_URL=$(API_BASE_URL),)
 
-.PHONY: help install install-backend install-basic-pitch install-pop2piano install-demucs install-amt-apc install-eval install-frontend backend build rebuild frontend test test-backend test-e2e eval lint typecheck clean require-flutter require-port-free require-base-image
+.PHONY: help install install-backend install-basic-pitch install-pop2piano install-demucs install-amt-apc install-eval install-frontend backend build rebuild frontend test test-backend test-e2e eval eval-refine lint typecheck clean require-flutter require-port-free require-base-image
 
 help:
 	@echo "Oh Sheet — make targets"

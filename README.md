@@ -263,7 +263,6 @@ as a stateless worker that takes an `OrchestratorCommand` and returns a
 - `POST /v1/stages/condense`
 - `POST /v1/stages/transform`
 - `POST /v1/stages/humanize`
-- `POST /v1/stages/engrave`
 
 ## TuneChat Integration
 

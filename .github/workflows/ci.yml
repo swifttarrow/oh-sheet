@@ -19,6 +19,7 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.13"
+          cache: 'pip'
       - run: pip install -e ".[dev]"
       - run: ruff check backend tests
 
@@ -30,6 +31,7 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.13"
+          cache: 'pip'
       - run: pip install -e ".[dev]"
       - run: mypy
 
@@ -41,6 +43,7 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.13"
+          cache: 'pip'
       - name: Install fluidsynth (system)
         run: |
           sudo apt-get update -qq
@@ -107,6 +110,7 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.13"
+          cache: 'pip'
       - run: pip install python-semantic-release
       - name: Validate config parses correctly
         shell: bash {0}
