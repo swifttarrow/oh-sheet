@@ -101,6 +101,38 @@ def test_upload_midi_preserves_source_filename(client):
     assert response.json()["source_filename"] == "Chopin_Nocturne.mid"
 
 
+def test_audio_upload_rejects_oversized(client, monkeypatch):
+    # The /v1/uploads/audio endpoint streams the request body and aborts
+    # with 413 once the cumulative byte count exceeds the configured cap.
+    # Set the cap to 1 MB and post >1 MB of payload to trip it.
+    from backend.config import settings
+    monkeypatch.setattr(settings, "max_audio_upload_mb", 1)
+
+    oversized = b"ID3\x04" + b"\x00" * (2 * 1024 * 1024)  # ~2 MB
+    response = client.post(
+        "/v1/uploads/audio",
+        files={"file": ("big.mp3", oversized, "audio/mpeg")},
+    )
+    assert response.status_code == 413
+    assert "too large" in response.json()["detail"].lower()
+
+
+def test_midi_upload_rejects_oversized(client, monkeypatch):
+    # Same 413 contract for MIDI, with the dedicated MIDI cap. We don't
+    # need a valid MThd header here — the size check fires before the
+    # magic-header gate.
+    from backend.config import settings
+    monkeypatch.setattr(settings, "max_midi_upload_mb", 1)
+
+    oversized = b"MThd" + b"\x00" * (2 * 1024 * 1024)  # ~2 MB
+    response = client.post(
+        "/v1/uploads/midi",
+        files={"file": ("big.mid", oversized, "audio/midi")},
+    )
+    assert response.status_code == 413
+    assert "too large" in response.json()["detail"].lower()
+
+
 def test_upload_midi_accepts_valid_smf_header(client):
     # Regression guard: the fix must not reject real MIDI files. A
     # minimal valid SMF header starts with "MThd" + 4-byte length +

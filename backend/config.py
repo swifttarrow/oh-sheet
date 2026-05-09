@@ -24,6 +24,13 @@ class Settings(BaseSettings):
     # Where the LocalBlobStore writes its files. Returned URIs are file:// based.
     blob_root: Path = Path("./blob")
 
+    # Maximum upload sizes for /v1/uploads/{audio,midi}. Enforced by streaming
+    # the request body and aborting with HTTP 413 once the cumulative byte
+    # count exceeds the cap (Content-Length is not trusted). MIDI files are
+    # tiny in practice, so the MIDI cap is much smaller than the audio cap.
+    max_audio_upload_mb: int = 100
+    max_midi_upload_mb: int = 5
+
     # Redis URL for Celery broker + result backend.
     redis_url: str = "redis://localhost:6379/0"
 

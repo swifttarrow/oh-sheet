@@ -14,6 +14,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 
 from backend.api.deps import get_blob_store
+from backend.config import settings
 from backend.contracts import RemoteAudioFile, RemoteMidiFile
 from backend.storage.local import LocalBlobStore
 
@@ -29,9 +30,33 @@ MIDI_FORMATS = {"mid", "midi"}
 # HTTP layer. Deeper structural validation is ingest's job.
 _MIDI_MAGIC = b"MThd"
 
+# Chunk size for streaming uploads off the wire. 1 MiB strikes a balance
+# between syscall overhead and memory pressure under concurrent uploads.
+_UPLOAD_CHUNK_BYTES = 1024 * 1024
+
 
 def _ext(filename: str) -> str:
     return filename.rsplit(".", 1)[-1].lower() if "." in filename else ""
+
+
+async def _read_capped(upload_file: UploadFile, max_bytes: int) -> bytes:
+    """Stream ``upload_file`` in chunks, aborting with 413 past ``max_bytes``.
+
+    Content-Length is client-supplied and untrusted, so the cap is enforced
+    by counting bytes as they arrive. Returning the joined bytes preserves
+    the existing handler contract — callers continue to assign to ``data``.
+    """
+    chunks: list[bytes] = []
+    total = 0
+    while chunk := await upload_file.read(_UPLOAD_CHUNK_BYTES):
+        total += len(chunk)
+        if total > max_bytes:
+            raise HTTPException(
+                status_code=413,
+                detail=f"upload too large; max {max_bytes} bytes",
+            )
+        chunks.append(chunk)
+    return b"".join(chunks)
 
 
 @router.post("/uploads/audio", response_model=RemoteAudioFile)
@@ -46,7 +71,7 @@ async def upload_audio(
             detail=f"Unsupported audio format: {ext!r}. Allowed: {sorted(AUDIO_FORMATS)}",
         )
 
-    data = await file.read()
+    data = await _read_capped(file, settings.max_audio_upload_mb * 1024 * 1024)
     digest = hashlib.sha256(data).hexdigest()
     uri = blob.put_bytes(f"uploads/audio/{digest}.{ext}", data)
 
@@ -74,7 +99,7 @@ async def upload_midi(
             detail=f"Unsupported MIDI format: {ext!r}. Allowed: {sorted(MIDI_FORMATS)}",
         )
 
-    data = await file.read()
+    data = await _read_capped(file, settings.max_midi_upload_mb * 1024 * 1024)
 
     # Content-integrity check: the .mid/.midi extension is a hint, not
     # a guarantee. Reject anything that doesn't begin with the Standard
