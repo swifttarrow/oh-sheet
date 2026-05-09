@@ -392,17 +392,22 @@ def _build_meta_events(
     # for MIDI meta event FF 07. Bar numbers are 1-indexed for human
     # readability when an engraver dumps them as text; engravers that
     # actually use the cue points read the *time* and ignore the label.
+    # Use a counter that only increments on emission so bar labels stay
+    # contiguous: when an audio source's first tempo_map entry is at
+    # e.g. 0.65s, downbeats earlier than that are skipped, and an
+    # ``enumerate`` index would mislabel surviving bars (bar3, bar4...
+    # for what should be bar1, bar2...).
     downbeat_count = 0
-    for i, db_sec in enumerate(downbeats or []):
+    for db_sec in downbeats or []:
         sec_in_render = float(db_sec) - initial_time_offset
         if sec_in_render < 0:
             continue
         tick = _sec_to_tick(sec_in_render)
+        downbeat_count += 1
         events.append((
             tick,
-            mido_module.MetaMessage("cue_marker", text=f"bar{i + 1}"),
+            mido_module.MetaMessage("cue_marker", text=f"bar{downbeat_count}"),
         ))
-        downbeat_count += 1
     if downbeat_count:
         features.downbeats = True
         features.downbeat_cue_count = downbeat_count
