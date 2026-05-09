@@ -272,6 +272,36 @@ def test_render_skips_downbeat_cues_when_field_empty():
     assert not cues
 
 
+def test_render_relabels_downbeats_after_offset_skip():
+    """Regression: when the audio path's first tempo_map entry sits at
+    e.g. t=0.5s, every downbeat earlier than that gets skipped from the
+    cue stream. Pre-fix, the surviving bars were labelled with the
+    enumerate index of the *original* sequence — so a downbeats list of
+    [0.0, 0.25, 0.5, 1.0, 1.5] with tempo_map starting at 0.5s would
+    emit 'bar3' / 'bar4' / 'bar5' instead of the contiguous 'bar1' /
+    'bar2' / 'bar3'. Engravers ignore the label (they use the time)
+    but the human-readable layer was wrong.
+    """
+    import mido  # noqa: PLC0415
+
+    # tempo_map starts at 0.5s — anything earlier than that is dropped
+    # by midi_render's offset-skip logic.
+    tempo_map = [TempoMapEntry(time_sec=0.5, beat=0.0, bpm=120.0)]
+    rendered = render_midi(
+        _perf(
+            _basic_notes(),
+            tempo_map=tempo_map,
+            downbeats=[0.0, 0.25, 0.5, 1.0, 1.5],
+        ),
+    )
+
+    mid = mido.MidiFile(file=io.BytesIO(rendered.midi_bytes))
+    cues = [m for tr in mid.tracks for m in tr if m.type == "cue_marker"]
+    # Three downbeats at or after the offset survive (0.5, 1.0, 1.5).
+    assert [c.text for c in cues] == ["bar1", "bar2", "bar3"]
+    assert rendered.features.downbeat_cue_count == 3
+
+
 def test_pedal_events_set_includes_pedal_marks_flag():
     """Sustain pedal events emit CC64 and surface on the features flag."""
     pedal = [PedalEvent(onset_beat=0.0, offset_beat=2.0, type="sustain")]
