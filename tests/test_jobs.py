@@ -76,7 +76,7 @@ def test_create_job_from_audio_runs_to_completion(client):
             break
         time.sleep(0.05)
 
-    assert status is not None
+    assert status is not None, "job polling timed out before reaching terminal state"
     assert status["status"] == "succeeded", status
     assert status["result"] is not None
     # pdf_uri is intentionally empty — the ML engraver returns MusicXML only.
@@ -282,7 +282,7 @@ def test_midi_job_condense_pipeline_emits_condense_and_transform(monkeypatch, cl
             break
         time.sleep(0.05)
 
-    assert status is not None
+    assert status is not None, "job polling timed out before reaching terminal state"
     assert status["status"] == "succeeded", status
 
     with client.websocket_connect(f"/v1/jobs/{job_id}/ws") as ws:
