@@ -93,12 +93,15 @@ async def _run_stage(
             cmd.job_id,
             cmd.step_id,
         )
+        # Don't ship repr(exc) to the caller — it leaks internal paths,
+        # variable contents, and traceback hints. Surface only the
+        # exception class so the orchestrator can branch on type.
         return WorkerResponse(
             schema_version=SCHEMA_VERSION,
             job_id=cmd.job_id,
             status="fatal_error",
             output_uri=None,
-            logs=repr(exc),
+            logs=type(exc).__name__,
         )
 
 

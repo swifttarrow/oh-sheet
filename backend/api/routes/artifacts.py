@@ -127,7 +127,11 @@ def download_artifact(
                 detail="Upstream artifact host is not allowed.",
             )
         try:
-            with httpx.Client(timeout=_PROXY_TIMEOUT_SEC, follow_redirects=True) as client:
+            # follow_redirects=False: a redirect from TuneChat to e.g.
+            # http://169.254.169.254/ would bypass _is_allowed_proxy_target
+            # since we only check the initial URL. If TuneChat ever needs
+            # redirects, validate each hop instead.
+            with httpx.Client(timeout=_PROXY_TIMEOUT_SEC, follow_redirects=False) as client:
                 response = client.get(tunechat_url)
                 response.raise_for_status()
         except httpx.HTTPError as exc:
