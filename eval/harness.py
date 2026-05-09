@@ -656,7 +656,30 @@ def apply_ci_gates(
             continue
 
         if not head_present:
-            # CI ran the tier but head failed to produce the metric —
+            # If the CI run didn't request this tier, the metric is
+            # legitimately absent on head; the *baseline* may still
+            # have it (captured by an earlier all-tiers run). Per the
+            # docstring contract above, only fail when the run *did*
+            # request the tier. Without this skip, a "tier3 off" CI
+            # run gating against an all-tiers baseline would mark every
+            # tier3 gate as a harness regression.
+            tier_inactive = (
+                selected_tiers is not None
+                and not _tier_active_for_key(selected_tiers, key)
+            )
+            if tier_inactive:
+                outcomes.append(GateOutcome(
+                    name=name,
+                    passed=True,
+                    head_value=None,
+                    baseline_value=float(base_v) if base_present else None,
+                    delta=None,
+                    threshold=threshold,
+                    direction=direction,
+                    message=f"skipped: tier inactive for this run ('{key}')",
+                ))
+                continue
+            # Tier was requested but head failed to produce the metric —
             # signals a harness regression. Block merge so the bug is
             # surfaced before the eval set drifts further.
             outcomes.append(GateOutcome(
