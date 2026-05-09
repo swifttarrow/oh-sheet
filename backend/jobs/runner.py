@@ -442,14 +442,23 @@ class PipelineRunner:
                             try:
                                 from backend.services.tunechat_client import transcribe_via_tunechat
                                 audio_bytes = self.blob_store.get_bytes(audio_data["uri"])
-                                emit("ingest", "stage_completed", progress=0.25)
-                                emit("transcribe", "stage_started", progress=0.25)
                                 log.info("tunechat-only: sending audio for job_id=%s", job_id)
                                 tc_result = await transcribe_via_tunechat(
                                     audio_bytes, "audio.wav",
                                     title=title, artist=composer,
                                 )
                                 if tc_result is not None:
+                                    # Synthetic stage events only fire on the
+                                    # success path. On TuneChat failure / None
+                                    # result we fall back to the regular Oh
+                                    # Sheet pipeline below; the outer loop's
+                                    # own emit() calls become canonical.
+                                    # Previously these fired before the await,
+                                    # leaving subscribers with a phantom
+                                    # "transcribe stage_started" + duplicate
+                                    # "ingest stage_completed" on every fallback.
+                                    emit("ingest", "stage_completed", progress=0.25)
+                                    emit("transcribe", "stage_started", progress=0.25)
                                     emit("transcribe", "stage_completed", progress=0.75)
                                     emit("engrave", "stage_started", progress=0.75)
                                     emit("engrave", "stage_completed", progress=1.0)
@@ -540,7 +549,11 @@ class PipelineRunner:
                     payload_uri = self._serialize_stage_input(job_id, step, interpret_envelope)
                     output_uri = await self._dispatch_task(task_name, job_id, payload_uri, config.stage_timeout_sec)
                     enriched = self.blob_store.get_json(output_uri)
-                    txr_dict = enriched["txr"]
+                    txr_dict = enriched.get("txr")
+                    if txr_dict is None:
+                        raise RuntimeError(
+                            "interpret worker output missing required 'txr' key"
+                        )
 
                 elif step in ("arrange", "condense"):
                     if txr_dict is None:

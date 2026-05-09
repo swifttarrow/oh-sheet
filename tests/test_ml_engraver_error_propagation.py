@@ -169,3 +169,70 @@ async def test_title_lookup_falls_through_to_local_engrave_when_tunechat_returns
     )
     assert result is not None
     assert result.musicxml_uri or result.tunechat_job_id
+
+
+@pytest.mark.asyncio
+async def test_title_lookup_tunechat_fallback_emits_no_phantom_events(
+    runner, monkeypatch,
+):
+    """Regression: when TuneChat returns None, the runner used to fire a
+    synthetic ``transcribe stage_started`` (and a duplicate ``ingest
+    stage_completed``) before the fallback, leaving subscribers with
+    a transcribe-started event that never had a matching completion.
+    On the fallback path, only the regular per-step loop events should
+    fire; synthetic events stay confined to the success branch.
+    """
+    monkeypatch.setattr(settings, "tunechat_enabled", True)
+
+    from backend.services import tunechat_client  # noqa: PLC0415
+
+    async def _tunechat_returns_none(*args, **kwargs):
+        return None
+
+    monkeypatch.setattr(
+        tunechat_client, "transcribe_via_tunechat", _tunechat_returns_none,
+    )
+
+    events: list[tuple[str, str]] = []
+
+    def on_event(ev) -> None:
+        events.append((ev.stage or "", ev.type))
+
+    bundle = InputBundle(
+        audio=RemoteAudioFile(
+            uri="file:///fake/audio.wav",
+            format="wav",
+            sample_rate=44100,
+            duration_sec=10.0,
+            channels=1,
+        ),
+        metadata=InputMetadata(
+            title="Title Lookup Song",
+            artist="Tester",
+            source="title_lookup",
+        ),
+    )
+    config = PipelineConfig(variant="audio_upload", enable_refine=False)
+
+    await runner.run(
+        job_id="title-lookup-tunechat-fallback-events",
+        bundle=bundle,
+        config=config,
+        on_event=on_event,
+    )
+
+    started = [s for s, t in events if t == "stage_started"]
+    completed = [s for s, t in events if t == "stage_completed"]
+
+    # Every stage that started must also complete on the fallback path.
+    assert sorted(started) == sorted(completed), (
+        f"unbalanced stage events on fallback: started={started}, "
+        f"completed={completed}"
+    )
+    # No duplicate stage_completed for ingest — used to fire twice
+    # (once inside the TuneChat branch at progress=0.25 and again from
+    # the outer loop after the branch returned).
+    ingest_completed = [s for s, t in events if t == "stage_completed" and s == "ingest"]
+    assert len(ingest_completed) == 1, (
+        f"ingest stage_completed fired {len(ingest_completed)} times: {events}"
+    )
