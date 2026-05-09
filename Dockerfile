@@ -113,4 +113,10 @@ ENV PORT=8080
 
 EXPOSE ${PORT}
 
-CMD uvicorn backend.main:app --host 0.0.0.0 --port ${PORT}
+# `exec` so uvicorn replaces the shell as PID 1 and receives SIGTERM
+# directly. Cloud Run's graceful-shutdown contract sends SIGTERM to
+# PID 1 and waits up to 10s before SIGKILL; without `exec`, /bin/sh
+# would trap the signal and uvicorn would only see SIGKILL — in-flight
+# jobs cut off mid-stage and WS clients see abrupt closes. Shell form
+# (rather than exec/JSON form) is preserved so ${PORT} still expands.
+CMD exec uvicorn backend.main:app --host 0.0.0.0 --port ${PORT}
