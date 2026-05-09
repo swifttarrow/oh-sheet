@@ -435,3 +435,35 @@ def test_audio_metadata_handles_missing_internal_storage_uri():
         }
     )
     assert meta.internal_storage_uri is None
+
+
+# ---------------------------------------------------------------------------
+# Per-song parse-error robustness — corrupt JSON / YAML in one song must
+# not sink the whole load. The loader's docstring promises "a single
+# broken slot doesn't sink a whole load"; this used to be true only for
+# *missing* files, not malformed ones.
+# ---------------------------------------------------------------------------
+
+def test_corrupt_audio_metadata_json_returns_none_with_warning(tmp_path, caplog):
+    songs_dir = tmp_path / "songs" / "broken"
+    songs_dir.mkdir(parents=True)
+    (songs_dir / loader.AUDIO_METADATA_FILENAME).write_text("{ this is not json")
+
+    with caplog.at_level("WARNING", logger="eval.loader"):
+        result = loader._maybe_load_audio_metadata(songs_dir)
+
+    assert result is None
+    assert any("not valid JSON" in rec.message for rec in caplog.records)
+
+
+def test_corrupt_structural_yaml_returns_none_with_warning(tmp_path, caplog):
+    songs_dir = tmp_path / "songs" / "broken"
+    songs_dir.mkdir(parents=True)
+    # Unclosed flow-style mapping — yaml.safe_load raises ParserError.
+    (songs_dir / loader.STRUCTURAL_FILENAME).write_text("{key: value, [oops")
+
+    with caplog.at_level("WARNING", logger="eval.loader"):
+        result = loader._maybe_load_structural(songs_dir)
+
+    assert result is None
+    assert any("not valid YAML" in rec.message for rec in caplog.records)
