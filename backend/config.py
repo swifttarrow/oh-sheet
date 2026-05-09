@@ -33,6 +33,14 @@ class Settings(BaseSettings):
     # Worker timeout used by OrchestratorCommand envelopes.
     job_timeout_sec: int = 600
 
+    # Cap on the number of completed (succeeded/failed) JobRecords retained
+    # in the in-memory JobManager. When this limit is exceeded, the oldest
+    # completed records are evicted in insertion order. Running/pending jobs
+    # are never evicted. Set high enough to cover your typical
+    # status-polling window; long-running deployments without this cap
+    # accumulate JobRecords for the process lifetime.
+    max_completed_jobs: int = 1000
+
     # Logging level for ``backend.*`` (pipeline, jobs, services). The root
     # logger defaults to WARNING, so without configuration ``log.info`` would
     # not appear when you run the API server.
