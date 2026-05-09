@@ -32,12 +32,15 @@ them with the live pipeline output.
 from __future__ import annotations
 
 import json
+import logging
 from collections.abc import Iterator
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
 import yaml
+
+log = logging.getLogger(__name__)
 
 # Paths inside ``songs/<slug>/`` for each deliverable. Constants so tests
 # and the holdout / curate scripts can reference them by name instead of
@@ -332,7 +335,14 @@ def _maybe_load_audio_metadata(songs_dir: Path) -> AudioMetadata | None:
     meta_path = songs_dir / AUDIO_METADATA_FILENAME
     if not meta_path.is_file():
         return None
-    raw = json.loads(meta_path.read_text())
+    # The whole point of the _maybe_ prefix is graceful degradation when
+    # the file is missing; treat malformed JSON the same way (warn so the
+    # eval-set author sees the corruption, but don't sink the whole load).
+    try:
+        raw = json.loads(meta_path.read_text())
+    except json.JSONDecodeError as exc:
+        log.warning("eval/loader: %s is not valid JSON (%s); skipping", meta_path, exc)
+        return None
     if not isinstance(raw, dict):
         return None
     return AudioMetadata.from_mapping(raw)
@@ -350,7 +360,11 @@ def _maybe_load_structural(songs_dir: Path) -> StructuralReference | None:
     path = songs_dir / STRUCTURAL_FILENAME
     if not path.is_file():
         return None
-    raw = yaml.safe_load(path.read_text())
+    try:
+        raw = yaml.safe_load(path.read_text())
+    except yaml.YAMLError as exc:
+        log.warning("eval/loader: %s is not valid YAML (%s); skipping", path, exc)
+        return None
     if not isinstance(raw, dict):
         return None
     return StructuralReference.from_mapping(raw)
