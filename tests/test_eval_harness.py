@@ -191,6 +191,30 @@ def test_ci_gates_skip_when_tier_inactive_for_run():
     assert "tier inactive" in rt.message.lower()
 
 
+def test_ci_gates_skip_when_head_missing_but_tier_inactive():
+    """Regression: when CI's TierSelection has tier4 off but the
+    baseline payload has tier4 metrics (because it was captured by an
+    earlier nightly/all-tiers run), the gate's head_v is None but
+    base_v is a real number. Pre-fix, this surfaced as a "FAIL: head
+    missing" gate even though the run never asked for tier4 — a false
+    positive that would block PRs every time CI compared against a
+    nightly-captured baseline.
+    """
+    base = _payload({
+        "mean_tier2_chord_score": 0.50,
+        "mean_tier4_round_trip_f1_no_offset": 0.80,
+        "mean_tier4_clap_cosine": 0.60,
+    })
+    head = _payload({"mean_tier2_chord_score": 0.50})
+    report = apply_ci_gates(head, base, selected_tiers=TierSelection.ci())
+    rt = next(o for o in report.outcomes if o.name == "round_trip_regression")
+    assert rt.passed
+    assert "tier inactive" in rt.message.lower()
+    # The baseline value should still be reported on the skip outcome
+    # so reviewers can see what was on the other side of the gate.
+    assert rt.baseline_value == pytest.approx(0.80)
+
+
 # ---------------------------------------------------------------------------
 # aggregate_rows
 # ---------------------------------------------------------------------------
