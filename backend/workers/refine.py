@@ -29,8 +29,12 @@ def run(job_id: str, payload_uri: str) -> str:
     blob = LocalBlobStore(settings.blob_root)
     raw = blob.get_json(payload_uri)
 
-    payload_type = raw["payload_type"]
-    payload_data = raw["payload"]
+    payload_type = raw.get("payload_type")
+    if payload_type is None:
+        raise ValueError("refine envelope missing required field 'payload_type'")
+    payload_data = raw.get("payload")
+    if payload_data is None:
+        raise ValueError("refine envelope missing required field 'payload'")
     title_hint = raw.get("title_hint")
     artist_hint = raw.get("artist_hint")
     filename_hint = raw.get("filename_hint")

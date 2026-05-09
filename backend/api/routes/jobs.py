@@ -160,6 +160,10 @@ async def create_job(
         source_filename = body.audio.source_filename
     elif body.midi is not None:
         source_filename = body.midi.source_filename
+    # Normalize: strip surrounding whitespace and treat empty/whitespace-only
+    # values as absent so downstream stages see a clean optional field.
+    if source_filename is not None:
+        source_filename = source_filename.strip() or None
 
     if body.audio is not None:
         # Phase 8: cover_mode flips the variant from audio_upload to
