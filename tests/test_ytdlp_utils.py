@@ -157,3 +157,29 @@ def test_stat_raising_oserror_is_graceful(
     opts: dict = {}
     apply_ytdlp_cookies(opts)  # must not raise
     assert "cookiefile" not in opts
+
+
+def test_concurrent_calls_get_distinct_tmp_paths(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path,
+) -> None:
+    """Regression: two calls in the same process used to share one
+    pid-scoped tmp path, so concurrent yt-dlp downloads in one Celery
+    worker would clobber each other's rotated session tokens. Now each
+    call must get its own tmp file.
+    """
+    cookies = tmp_path / "cookies.txt"
+    cookies.write_text("# Netscape HTTP Cookie File\nfoo\tbar\n")
+    _patch_path(monkeypatch, str(cookies))
+
+    opts_a: dict = {}
+    apply_ytdlp_cookies(opts_a)
+    opts_b: dict = {}
+    apply_ytdlp_cookies(opts_b)
+
+    assert "cookiefile" in opts_a and "cookiefile" in opts_b
+    assert opts_a["cookiefile"] != opts_b["cookiefile"], (
+        "concurrent calls must not share a tmp path"
+    )
+    # Both copies still mirror the source.
+    assert Path(opts_a["cookiefile"]).read_text() == cookies.read_text()
+    assert Path(opts_b["cookiefile"]).read_text() == cookies.read_text()

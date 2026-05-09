@@ -113,10 +113,13 @@ def _download_youtube_sync(url: str, blob_store) -> tuple[RemoteAudioFile, str |
         except Exception as exc:
             raise RuntimeError(f"yt-dlp download failed for {url}: {exc}") from exc
 
-        # Find the downloaded WAV file
-        wav_path = Path(tmp_dir) / f"{info['id']}.wav"
-        if not wav_path.exists():
-            # yt-dlp may use a different naming — find any .wav in the dir
+        # Find the downloaded WAV file. Prefer ``info['id']`` when yt-dlp
+        # populates it; fall back to a glob if 'id' is absent (rare but
+        # observed on some unlisted/age-restricted videos) or if yt-dlp
+        # used a different naming convention than expected.
+        info_id = info.get("id") if isinstance(info, dict) else None
+        wav_path = Path(tmp_dir) / f"{info_id}.wav" if info_id else None
+        if wav_path is None or not wav_path.exists():
             wav_files = list(Path(tmp_dir).glob("*.wav"))
             if not wav_files:
                 raise RuntimeError(f"No WAV file produced by yt-dlp for {url}")
