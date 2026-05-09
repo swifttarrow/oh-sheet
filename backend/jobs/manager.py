@@ -10,8 +10,10 @@ import asyncio
 import logging
 import time
 import uuid
+from collections import OrderedDict
 from dataclasses import dataclass, field
 
+from backend.config import settings
 from backend.contracts import EngravedOutput, InputBundle, PipelineConfig
 from backend.jobs.events import JobEvent, JobStatus
 from backend.jobs.runner import PipelineRunner
@@ -35,6 +37,13 @@ class JobRecord:
 class JobManager:
     def __init__(self, runner: PipelineRunner) -> None:
         self._jobs: dict[str, JobRecord] = {}
+        # Ordered set of completed job_ids in insertion-of-completion order.
+        # ``OrderedDict`` is used as an insertion-ordered set (values unused);
+        # eviction pops from the front (oldest). Active subscribers' queues
+        # are independent — dropping the JobRecord here does not close their
+        # asyncio.Queues, so any pending events they already received still
+        # drain on .get().
+        self._completed_jobs: OrderedDict[str, None] = OrderedDict()
         self._runner = runner
         self._lock = asyncio.Lock()
 
@@ -110,11 +119,27 @@ class JobManager:
                 elapsed_ms,
             )
             record.status = "failed"
-            record.error = repr(exc)
+            # Surface only the exception class name to API consumers — the
+            # full traceback is captured server-side via log.exception above.
+            # Mirrors the same info-leak fix applied to /v1/stages/{name}
+            # in PR #124 (backend/api/routes/stages.py).
+            record.error = type(exc).__name__
             self._emit(
                 record,
                 JobEvent(job_id=record.job_id, type="job_failed", message=str(exc)),
             )
+        # Track completion order and evict the oldest records over the cap.
+        # Holding the lock here serializes against submit() so we never race
+        # with a concurrent insert of a new JobRecord. Active subscribers
+        # already hold their own asyncio.Queue references — evicting the
+        # JobRecord does not close those queues, so a websocket consumer
+        # still drains the events it has received.
+        async with self._lock:
+            self._completed_jobs[record.job_id] = None
+            cap = settings.max_completed_jobs
+            while len(self._completed_jobs) > cap:
+                oldest_id, _ = self._completed_jobs.popitem(last=False)
+                self._jobs.pop(oldest_id, None)
 
     # ---- queries ---------------------------------------------------------
 
