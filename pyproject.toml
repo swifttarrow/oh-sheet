@@ -3,7 +3,7 @@ name = "ohsheet"
 version = "0.1.0"
 description = "FastAPI backend for the Song-to-Humanized-Piano-Sheet-Music pipeline"
 requires-python = ">=3.10"
-license = { text = "Proprietary" }
+license = "AGPL-3.0-or-later"
 authors = [{ name = "Ross" }]
 dependencies = [
     "ohsheet-shared @ file:shared",
@@ -168,7 +168,11 @@ upload_to_vcs_release = false
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 filterwarnings = ["ignore::DeprecationWarning"]
-addopts = "--cov=backend --cov-report=term-missing --cov-report=xml"
+# Coverage is opt-in to keep local iteration fast (it adds ~30% overhead).
+# Run ``make test-coverage`` (or pass ``--cov=backend --cov-report=term-missing``
+# directly) when you actually need a coverage report. CI runs the full
+# coverage target; bare ``pytest`` stays snappy for TDD loops.
+addopts = ""
 asyncio_mode = "auto"
 
 [tool.ruff]

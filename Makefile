@@ -144,6 +144,13 @@ test: test-backend
 test-backend:
 	pytest
 
+# Coverage-enabled run. Slower (~30% overhead) but produces coverage.xml
+# for CI artifact upload + the terminal "missing lines" report locally.
+# Local TDD loops should use plain ``make test`` / ``pytest`` for speed;
+# reach for this when you need to see what's actually covered.
+test-coverage:
+	pytest --cov=backend --cov-report=term-missing --cov-report=xml
+
 test-e2e:
 	cd e2e && npx playwright test
 

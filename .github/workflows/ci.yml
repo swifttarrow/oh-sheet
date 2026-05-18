@@ -42,7 +42,7 @@ jobs:
         with:
           python-version: "3.13"
       - run: pip install -e ".[dev]"
-      - run: pytest
+      - run: make test-coverage
       - name: Upload coverage report
         if: always()
         uses: actions/upload-artifact@v4
