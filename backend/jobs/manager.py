@@ -12,9 +12,12 @@ import time
 import uuid
 from dataclasses import dataclass, field
 
+from backend.config import settings
 from backend.contracts import EngravedOutput, InputBundle, PipelineConfig
 from backend.jobs.events import JobEvent, JobStatus
 from backend.jobs.runner import PipelineRunner
+from backend.jobs.youtube_cache import YouTubeJobCache
+from backend.jobs.youtube_url import extract_video_id
 
 log = logging.getLogger(__name__)
 
@@ -33,10 +36,83 @@ class JobRecord:
 
 
 class JobManager:
-    def __init__(self, runner: PipelineRunner) -> None:
+    def __init__(
+        self,
+        runner: PipelineRunner,
+        youtube_cache: YouTubeJobCache | None = None,
+    ) -> None:
         self._jobs: dict[str, JobRecord] = {}
         self._runner = runner
+        self._youtube_cache = youtube_cache
         self._lock = asyncio.Lock()
+
+    # ---- cache plumbing --------------------------------------------------
+
+    def lookup_youtube_cache(self, title: str | None) -> JobRecord | None:
+        """If ``title`` is a YouTube URL whose video has a cached
+        completed job, return the JobRecord. Otherwise None.
+
+        Used by routes/jobs.py before dispatching a new job, so re-submits
+        of the same URL short-circuit to the prior success.
+        """
+        if not settings.youtube_cache_enabled or self._youtube_cache is None:
+            return None
+        video_id = extract_video_id(title)
+        if video_id is None:
+            return None
+        entry = self._youtube_cache.get(video_id)
+        if entry is None:
+            return None
+        cached_job_id = entry.get("job_id")
+        if not cached_job_id:
+            return None
+        record = self._jobs.get(cached_job_id)
+        # If JobManager has been restarted (in-process state lost) the
+        # cached job_id will not resolve. Treat as a cache miss and let
+        # the route dispatch a new job. Will be revisited once
+        # JobManager is backed by Redis.
+        if record is None or record.status != "succeeded":
+            return None
+        log.info(
+            "youtube_cache hit video_id=%s job_id=%s",
+            video_id,
+            cached_job_id,
+        )
+        return record
+
+    def _write_youtube_cache_on_success(self, record: JobRecord) -> None:
+        """Best-effort: record this success in the YouTube cache.
+
+        Only fires for title_lookup jobs whose ``metadata.title`` parses
+        as a YouTube URL. Errors are swallowed by YouTubeJobCache itself.
+        """
+        if not settings.youtube_cache_enabled or self._youtube_cache is None:
+            return
+        if record.bundle.metadata.source != "title_lookup":
+            return
+        video_id = extract_video_id(record.bundle.metadata.title)
+        if video_id is None:
+            return
+        result = record.result
+        # Only cache if the result has TuneChat URLs — those are the
+        # artifact URLs the artifacts route proxies, and they're the
+        # whole point of the cache hit. A locally-engraved success has
+        # only file:// URIs which a fresh process can't read.
+        if result is None or not (
+            getattr(result, "tunechat_pdf_url", None)
+            or getattr(result, "tunechat_musicxml_url", None)
+            or getattr(result, "tunechat_midi_url", None)
+        ):
+            return
+        entry = {
+            "job_id": record.job_id,
+            "title": record.bundle.metadata.title,
+            "tunechat_pdf_url": getattr(result, "tunechat_pdf_url", None),
+            "tunechat_musicxml_url": getattr(result, "tunechat_musicxml_url", None),
+            "tunechat_midi_url": getattr(result, "tunechat_midi_url", None),
+        }
+        self._youtube_cache.set(video_id, entry)
+        log.info("youtube_cache write video_id=%s job_id=%s", video_id, record.job_id)
 
     # ---- pub/sub fan-out -------------------------------------------------
 
@@ -87,6 +163,7 @@ class JobManager:
             )
             record.result = result
             record.status = "succeeded"
+            self._write_youtube_cache_on_success(record)
             elapsed_ms = (time.perf_counter() - t0) * 1000
             log.info(
                 "job succeeded job_id=%s duration_ms=%.0f pdf_uri=%s",

@@ -131,6 +131,16 @@ async def create_job(
             ),
         )
 
+    # Short-circuit: if this is a YouTube URL we've already processed,
+    # return the original job's summary without dispatching anything.
+    # See backend/jobs/youtube_cache.py for the cache semantics + the
+    # "denormalized cache as durable read-side" design note (Option B
+    # from the Step 2 design conversation).
+    if is_title_lookup:
+        cached = manager.lookup_youtube_cache(body.title)
+        if cached is not None:
+            return _record_to_summary(cached)
+
     # Integrity: the audio / midi URI must point to a real blob in
     # storage. Without this check a client could forge a Remote*File
     # with an arbitrary URI and the pipeline would "succeed" by

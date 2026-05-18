@@ -597,6 +597,20 @@ class Settings(BaseSettings):
     tunechat_api_key: str = ""
     tunechat_timeout_sec: int = 300
 
+    # ---- YouTube job cache ------------------------------------------------
+    # Env: OHSHEET_YOUTUBE_CACHE_ENABLED, OHSHEET_YOUTUBE_CACHE_TTL_SEC
+    #
+    # When enabled, a successful title_lookup job is recorded against its
+    # canonical YouTube video ID. Re-submitting the same link short-circuits
+    # the ingest → TuneChat round trip and returns the prior job's
+    # JobSummary immediately.
+    #
+    # Stored in the same Redis instance as Celery (separate key namespace —
+    # see backend/jobs/youtube_cache.py). Fail-open: Redis being down only
+    # costs cache hits, never user requests.
+    youtube_cache_enabled: bool = True
+    youtube_cache_ttl_sec: int = 30 * 24 * 3600  # 30 days
+
     # ---- Deployment-shape toggle: YouTube-only mode -----------------------
     # Env: OHSHEET_YOUTUBE_ONLY_MODE
     #

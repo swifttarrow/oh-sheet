@@ -54,6 +54,37 @@ def mock_youtube_download():
         yield mock_dl
 
 
+@pytest.fixture
+def mock_tunechat_success():
+    """Stub TuneChat client to return a fake successful TranscribeResult.
+
+    Without this, the runner attempts a real httpx call against
+    ``http://localhost:3000`` (the dev default), errors out, and falls
+    through to the local pipeline — which produces NO tunechat_* URLs
+    and so isn't cacheable. Tests that exercise the cache hit path
+    must populate those URLs.
+    """
+    from backend.services.tunechat_client import TuneChatResult
+
+    fake = TuneChatResult(
+        job_id="tc-fake-job",
+        preview_image_url="https://tunechat.example/p.png",
+        midi_url="https://tunechat.example/notation.mid",
+        musicxml_url="https://tunechat.example/notation.musicxml",
+        pdf_url="https://tunechat.example/notation.pdf",
+    )
+
+    async def _fake(*args, **kwargs):  # noqa: ARG001
+        return fake
+
+    with patch("backend.services.tunechat_client.transcribe_via_tunechat", new=_fake):
+        # Patch the symbol the runner actually resolved — it imports
+        # ``transcribe_via_tunechat`` inside _execute(), so we have to
+        # patch at the source module, which the runner re-imports each
+        # call. Single patch is sufficient.
+        yield fake
+
+
 def test_create_job_from_audio_runs_to_completion(client):
     audio = _upload_audio(client)
 
@@ -145,6 +176,96 @@ def test_create_job_allows_title_lookup_when_youtube_only_mode(
         json={"title": "https://www.youtube.com/watch?v=dQw4w9WgXcQ"},
     )
     assert response.status_code == 202, response.text
+
+
+def test_resubmitting_youtube_url_returns_cached_job(
+    client, monkeypatch, mock_tunechat_success
+):
+    """End-to-end cache behavior: a second POST for the same YouTube
+    URL returns the same job_id immediately, without re-running yt-dlp.
+
+    We bypass ``mock_youtube_download`` here because it points at
+    ``/tmp/fake.wav`` (outside the test blob root) — that's fine for
+    most tests, but the TuneChat-fast-path inside the runner reads the
+    audio bytes from the blob store, which fails for that URI and
+    causes the runner to fall through to the local pipeline (which
+    produces no tunechat_* URLs, and therefore nothing cacheable).
+
+    Instead we upload a real audio blob via /v1/uploads/audio and
+    point the yt-dlp stub at that URI so the runner's TuneChat block
+    can read the bytes and the cache write fires on success.
+    """
+    audio = _upload_audio(client)
+    fake_remote = RemoteAudioFile(
+        uri=audio["uri"],
+        format=audio["format"],
+        sample_rate=audio["sample_rate"],
+        duration_sec=audio["duration_sec"],
+        channels=audio["channels"],
+    )
+
+    url = "https://www.youtube.com/watch?v=dQw4w9WgXcQ"
+
+    with patch("backend.services.ingest._download_youtube_sync") as mock_dl:
+        mock_dl.return_value = (fake_remote, "Mock Song Title", "Mock Uploader")
+
+        first = client.post("/v1/jobs", json={"title": url})
+        assert first.status_code == 202, first.text
+        first_job_id = first.json()["job_id"]
+
+        # Poll until succeeded — cache write happens on success.
+        deadline = time.time() + 5
+        while time.time() < deadline:
+            status = client.get(f"/v1/jobs/{first_job_id}").json()
+            if status["status"] in ("succeeded", "failed"):
+                break
+            time.sleep(0.05)
+        assert status["status"] == "succeeded", status
+
+        mock_dl.reset_mock()
+
+        second = client.post("/v1/jobs", json={"title": url})
+        assert second.status_code == 202, second.text
+        assert second.json()["job_id"] == first_job_id, (
+            "Cache hit must return the original job_id, not a new one"
+        )
+        assert mock_dl.call_count == 0, (
+            "Cache hit must NOT re-trigger yt-dlp download"
+        )
+
+
+def test_resubmitting_after_cache_disabled_runs_pipeline_again(
+    client, monkeypatch, mock_youtube_download
+):
+    """Sanity: with the cache disabled (or unreachable), duplicate
+    submits create distinct jobs. Belt-and-suspenders against a
+    regression where the cache is accidentally always-on.
+
+    Both jobs are polled to completion before the test returns —
+    leaving asyncio pipeline tasks running past teardown causes the
+    ``celery_eager_mode`` autouse fixture to flip off mid-task, which
+    surfaces as "Never call result.get() within a task!" in the NEXT
+    test (cross-test pollution).
+    """
+    monkeypatch.setattr(settings, "youtube_cache_enabled", False)
+    url = "https://www.youtube.com/watch?v=dQw4w9WgXcQ"
+
+    first = client.post("/v1/jobs", json={"title": url})
+    second = client.post("/v1/jobs", json={"title": url})
+    assert first.status_code == 202
+    assert second.status_code == 202
+    assert first.json()["job_id"] != second.json()["job_id"]
+
+    # Drain both pipelines so the asyncio tasks finish before teardown.
+    for job_id in (first.json()["job_id"], second.json()["job_id"]):
+        deadline = time.time() + 5
+        while time.time() < deadline:
+            if client.get(f"/v1/jobs/{job_id}").json()["status"] in (
+                "succeeded",
+                "failed",
+            ):
+                break
+            time.sleep(0.05)
 
 
 def test_create_job_rejects_audio_with_nonexistent_uri(client):

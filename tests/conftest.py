@@ -34,6 +34,26 @@ def isolated_blob_root(tmp_path: Path, monkeypatch):
     blob.mkdir()
     monkeypatch.setattr(settings, "blob_root", blob)
 
+    # Replace the YouTube cache factory with one backed by an in-memory
+    # fake — avoids talking to a real Redis during pytest, and lets
+    # cache-hit tests be deterministic without flushing a shared db.
+    from backend.jobs.youtube_cache import YouTubeJobCache
+
+    class _InMemoryFakeRedis:
+        def __init__(self) -> None:
+            self._store: dict[str, bytes] = {}
+
+        def setex(self, key: str, ttl_sec: int, value):  # noqa: ARG002
+            if isinstance(value, str):
+                value = value.encode("utf-8")
+            self._store[key] = value
+
+        def get(self, key: str):
+            return self._store.get(key)
+
+    fake_cache = YouTubeJobCache(_InMemoryFakeRedis(), ttl_seconds=86400)
+    monkeypatch.setattr(deps, "get_youtube_cache", lambda: fake_cache)
+
     deps.get_blob_store.cache_clear()
     deps.get_runner.cache_clear()
     deps.get_job_manager.cache_clear()
