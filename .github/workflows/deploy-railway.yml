@@ -1,0 +1,126 @@
+name: Deploy to Railway (YouTube-only)
+
+# Minimal lift-and-shift workflow that publishes the `app` image to
+# GitHub Container Registry and asks Railway to redeploy the three
+# services that constitute the YouTube-only deployment:
+#
+#   - orchestrator   (FastAPI, public)
+#   - worker-ingest  (yt-dlp + TuneChat handoff)
+#   - redis          (managed Railway plugin, no image)
+#
+# The non-YouTube services (transcribe / arrange / decomposer /
+# assembler / humanize / refine) are deliberately not deployed here.
+# Jobs that need them will queue forever on Celery — see
+# README → Railway deployment for the API-layer guard plan.
+#
+# Trigger: manual dispatch (workflow_dispatch) for now. Flip to
+# `push: { branches: [main] }` once a Railway environment is confirmed
+# healthy and the existing GCP deploy.yml is retired.
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Image tag to publish (defaults to commit SHA)"
+        required: false
+        type: string
+
+concurrency:
+  group: deploy-railway-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}/app
+
+jobs:
+  deploy:
+    name: Build & Push to GHCR + Trigger Railway
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write   # required for ghcr.io push via GITHUB_TOKEN
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Free disk space
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc \
+            /usr/local/share/boost /usr/local/graalvm /usr/local/julia* \
+            /usr/share/swift /opt/hostedtoolcache/CodeQL
+          sudo docker system prune -af
+          df -h /
+
+      # Resolve the image tag. Untrusted input (workflow_dispatch input)
+      # is bound to an env var first, never interpolated into the shell
+      # directly — that's the workflow-injection defense pattern.
+      - name: Resolve image tag
+        id: tag
+        env:
+          INPUT_TAG: ${{ inputs.tag }}
+          SHA: ${{ github.sha }}
+        run: |
+          if [ -n "$INPUT_TAG" ]; then
+            echo "value=$INPUT_TAG" >> "$GITHUB_OUTPUT"
+          else
+            echo "value=$SHA" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      # Only the `app` image is needed for the YouTube-only path.
+      # The decomposer + assembler images are skipped — their workers
+      # aren't deployed on Railway.
+      - name: Build and push app image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: |
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.tag.outputs.value }}
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
+          cache-from: type=gha,scope=app
+          cache-to: type=gha,scope=app,mode=max
+
+      # Trigger Railway to pull the new :latest image. Requires these
+      # repo secrets:
+      #   RAILWAY_TOKEN                  — Railway project token (Settings → Tokens)
+      #   RAILWAY_SERVICE_ORCHESTRATOR   — service ID for orchestrator
+      #   RAILWAY_SERVICE_WORKER_INGEST  — service ID for worker-ingest
+      #
+      # Both services point at the same GHCR image; only the start
+      # command differs (set in the Railway service config, not here).
+      # If RAILWAY_TOKEN is unset the step is a no-op so the build can
+      # still run before Railway is provisioned.
+      - name: Trigger Railway redeploy
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+          SERVICE_ORCHESTRATOR: ${{ secrets.RAILWAY_SERVICE_ORCHESTRATOR }}
+          SERVICE_WORKER_INGEST: ${{ secrets.RAILWAY_SERVICE_WORKER_INGEST }}
+        run: |
+          if [ -z "$RAILWAY_TOKEN" ]; then
+            echo "RAILWAY_TOKEN not set — skipping Railway redeploy."
+            echo "Trigger the redeploy manually in the Railway dashboard."
+            exit 0
+          fi
+          npm install -g @railway/cli@latest
+          railway redeploy --service "$SERVICE_ORCHESTRATOR" --yes
+          railway redeploy --service "$SERVICE_WORKER_INGEST" --yes
+
+      - name: Summary
+        env:
+          REGISTRY: ${{ env.REGISTRY }}
+          IMAGE_NAME: ${{ env.IMAGE_NAME }}
+          TAG: ${{ steps.tag.outputs.value }}
+        run: |
+          echo "Pushed: $REGISTRY/$IMAGE_NAME:$TAG"
+          echo "If RAILWAY_TOKEN was set, Railway has been asked to redeploy."
+          echo "Otherwise, redeploy manually in the Railway dashboard."
