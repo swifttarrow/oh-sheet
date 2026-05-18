@@ -99,6 +99,54 @@ def test_create_job_rejects_both_audio_and_midi(client):
     assert response.status_code == 400
 
 
+def test_create_job_rejects_audio_when_youtube_only_mode(client, monkeypatch):
+    """When ``OHSHEET_YOUTUBE_ONLY_MODE`` is on (Railway demo deployment),
+    audio uploads are refused at the API layer even though the underlying
+    pipeline still works in tests with the flag off. This is the
+    operator-visible kill switch — flip the env var to bring uploads back.
+
+    See `coaching-mode.md` rationale: env-gated feature flag chosen over
+    permanent deletion so the code path stays exercised in CI and reversal
+    is one env var, not a re-architecture.
+    """
+    monkeypatch.setattr(settings, "youtube_only_mode", True)
+    audio = _upload_audio(client)
+    response = client.post(
+        "/v1/jobs",
+        json={"audio": audio, "title": "Test Song", "artist": "QA"},
+    )
+    assert response.status_code == 400
+    # User-facing copy: friendly tone + actionable next step. If you
+    # change the wording, also update frontend-v2/src/views.js error
+    # handling — the SPA surfaces this string verbatim today.
+    detail = response.json()["detail"].lower()
+    assert "youtube" in detail
+
+
+def test_create_job_rejects_midi_when_youtube_only_mode(client, monkeypatch):
+    monkeypatch.setattr(settings, "youtube_only_mode", True)
+    midi = client.post(
+        "/v1/uploads/midi",
+        files={"file": ("a.mid", b"MThd\x00\x00\x00\x06\x00\x00\x00\x00\x00\x00", "audio/midi")},
+    ).json()
+    response = client.post("/v1/jobs", json={"midi": midi})
+    assert response.status_code == 400
+
+
+def test_create_job_allows_title_lookup_when_youtube_only_mode(
+    client, monkeypatch, mock_youtube_download
+):
+    """The whole point of YouTube-only mode is to keep title_lookup working.
+    Belt-and-suspenders test against a regression where the guard
+    accidentally rejects the path it's meant to allow."""
+    monkeypatch.setattr(settings, "youtube_only_mode", True)
+    response = client.post(
+        "/v1/jobs",
+        json={"title": "https://www.youtube.com/watch?v=dQw4w9WgXcQ"},
+    )
+    assert response.status_code == 202, response.text
+
+
 def test_create_job_rejects_audio_with_nonexistent_uri(client):
     # Integrity: clients must not be able to forge a RemoteAudioFile
     # pointing at a blob URI that was never uploaded. Without this

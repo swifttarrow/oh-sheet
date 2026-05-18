@@ -118,6 +118,19 @@ async def create_job(
             ),
         )
 
+    # YouTube-only deployments (Railway demo) refuse direct uploads even
+    # though the underlying pipeline still works in tests. Belt-and-suspenders
+    # against API consumers bypassing the YouTube-only frontend. See
+    # ``settings.youtube_only_mode`` docstring for rationale.
+    if settings.youtube_only_mode and not is_title_lookup:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "Audio and MIDI uploads are temporarily disabled — "
+                "please paste a YouTube link instead."
+            ),
+        )
+
     # Integrity: the audio / midi URI must point to a real blob in
     # storage. Without this check a client could forge a Remote*File
     # with an arbitrary URI and the pipeline would "succeed" by

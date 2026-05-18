@@ -597,6 +597,24 @@ class Settings(BaseSettings):
     tunechat_api_key: str = ""
     tunechat_timeout_sec: int = 300
 
+    # ---- Deployment-shape toggle: YouTube-only mode -----------------------
+    # Env: OHSHEET_YOUTUBE_ONLY_MODE
+    #
+    # When True, ``POST /v1/jobs`` refuses ``audio_upload`` and ``midi_upload``
+    # submissions with a friendly 400. Title-lookup (YouTube URL or song
+    # title) jobs continue normally.
+    #
+    # Rationale: the Railway demo deployment ships without the heavy ML
+    # workers (transcribe/arrange/decomposer/assembler/humanize) and without
+    # the ML engraver service. Those code paths still run in CI tests with
+    # this flag OFF, so the implementations stay healthy — flipping the flag
+    # back to False (or unsetting the env var) re-enables uploads instantly,
+    # no re-architecture needed.
+    #
+    # See ADR-002 in docs/scaling-and-commercialization.md for the
+    # GCP→Railway migration context.
+    youtube_only_mode: bool = False
+
     # ---- ML engraver service ----------------------------------------------
     # audio_upload and midi_upload jobs always route their engraving through
     # the oh-sheet-ml-pipeline HTTP service (POST {url}/engrave, MIDI bytes →
